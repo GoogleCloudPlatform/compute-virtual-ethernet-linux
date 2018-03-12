@@ -156,7 +156,8 @@ int gve_execute_adminq_cmd(struct gve_priv *priv,
 int gve_adminq_configure_device_resources(struct gve_priv *priv,
 					  dma_addr_t counter_array_bus_addr,
 					  int num_counters,
-					  dma_addr_t db_array_bus_addr)
+					  dma_addr_t db_array_bus_addr,
+					  int num_ntfy_blks)
 {
 	union gve_adminq_command cmd;
 
@@ -167,8 +168,9 @@ int gve_adminq_configure_device_resources(struct gve_priv *priv,
 		.counter_array = cpu_to_be64(counter_array_bus_addr),
 		.num_counters = cpu_to_be32(num_counters),
 		.irq_db_addr = cpu_to_be64(db_array_bus_addr),
-		.reserved1 = cpu_to_be32(1),
-		.reserved2 = cpu_to_be32(64),
+		.num_irq_dbs = cpu_to_be32(num_ntfy_blks),
+		.irq_db_stride = cpu_to_be32(L1_CACHE_ALIGN(sizeof(
+						priv->ntfy_blocks[0]))),
 		.ntfy_blk_msix_base_idx = cpu_to_be32(
 						priv->ntfy_blk_msix_base_idx),
 	};
@@ -186,15 +188,15 @@ int gve_adminq_deconfigure_device_resources(struct gve_priv *priv)
 	return gve_execute_adminq_cmd(priv, &cmd);
 }
 
-int gve_adminq_create_tx_queue(struct gve_priv *priv)
+int gve_adminq_create_tx_queue(struct gve_priv *priv, u32 queue_index)
 {
-	struct gve_tx_ring *tx = priv->tx;
+	struct gve_tx_ring *tx = &priv->tx[queue_index];
 	union gve_adminq_command cmd;
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.opcode = cpu_to_be32(GVE_ADMINQ_CREATE_TX_QUEUE);
 	cmd.create_tx_queue = (struct gve_adminq_create_tx_queue) {
-		.queue_id = cpu_to_be32(GVE_TX_RING_ID),
+		.queue_id = cpu_to_be32(queue_index),
 		.reserved = 0,
 		.queue_resources_addr = cpu_to_be64(tx->q_resources_bus),
 		.tx_ring_addr = cpu_to_be64(tx->bus),
@@ -205,17 +207,17 @@ int gve_adminq_create_tx_queue(struct gve_priv *priv)
 	return gve_execute_adminq_cmd(priv, &cmd);
 }
 
-int gve_adminq_create_rx_queue(struct gve_priv *priv)
+int gve_adminq_create_rx_queue(struct gve_priv *priv, u32 queue_index)
 {
-	struct gve_rx_ring *rx = priv->rx;
+	struct gve_rx_ring *rx = &priv->rx[queue_index];
 	union gve_adminq_command cmd;
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.opcode = cpu_to_be32(GVE_ADMINQ_CREATE_RX_QUEUE);
 	cmd.create_rx_queue = (struct gve_adminq_create_rx_queue) {
-		.queue_id = cpu_to_be32(GVE_RX_RING_ID),
-		.reserved[0] = 0,
-		.reserved[1] = 0,
+		.queue_id = cpu_to_be32(queue_index),
+		.index = cpu_to_be32(queue_index),
+		.reserved = 0,
 		.ntfy_id = cpu_to_be32(rx->ntfy_id),
 		.queue_resources_addr = cpu_to_be64(rx->q_resources_bus),
 		.rx_desc_ring_addr = cpu_to_be64(rx->desc.bus),
@@ -226,27 +228,27 @@ int gve_adminq_create_rx_queue(struct gve_priv *priv)
 	return gve_execute_adminq_cmd(priv, &cmd);
 }
 
-int gve_adminq_destroy_tx_queue(struct gve_priv *priv)
+int gve_adminq_destroy_tx_queue(struct gve_priv *priv, u32 queue_index)
 {
 	union gve_adminq_command cmd;
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.opcode = cpu_to_be32(GVE_ADMINQ_DESTROY_TX_QUEUE);
 	cmd.destroy_tx_queue = (struct gve_adminq_destroy_tx_queue) {
-		.queue_id = cpu_to_be32(GVE_TX_RING_ID),
+		.queue_id = cpu_to_be32(queue_index),
 	};
 
 	return gve_execute_adminq_cmd(priv, &cmd);
 }
 
-int gve_adminq_destroy_rx_queue(struct gve_priv *priv)
+int gve_adminq_destroy_rx_queue(struct gve_priv *priv, u32 queue_index)
 {
 	union gve_adminq_command cmd;
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.opcode = cpu_to_be32(GVE_ADMINQ_DESTROY_RX_QUEUE);
 	cmd.destroy_rx_queue = (struct gve_adminq_destroy_rx_queue) {
-		.queue_id = cpu_to_be32(GVE_RX_RING_ID),
+		.queue_id = cpu_to_be32(queue_index),
 	};
 
 	return gve_execute_adminq_cmd(priv, &cmd);

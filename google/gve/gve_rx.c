@@ -36,9 +36,10 @@
 #include "gve_adminq.h"
 #include <linux/etherdevice.h>
 
-void gve_rx_remove_from_block(struct gve_priv *priv)
+void gve_rx_remove_from_block(struct gve_priv *priv, int queue_idx)
 {
-	struct gve_notify_block *block = priv->ntfy_block;
+	struct gve_notify_block *block =
+			&priv->ntfy_blocks[gve_rx_ntfy_idx(priv, queue_idx)];
 
 	block->rx = NULL;
 
@@ -47,15 +48,14 @@ void gve_rx_remove_from_block(struct gve_priv *priv)
 		gve_remove_napi(block);
 }
 
-void gve_rx_free_ring(struct gve_priv *priv)
+static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 {
-	struct gve_rx_ring *rx;
+	struct gve_rx_ring *rx = &priv->rx[idx];
 	struct device *hdev;
 	size_t bytes;
 	int slots;
 
-	gve_rx_remove_from_block(priv);
-	rx = priv->rx;
+	gve_rx_remove_from_block(priv, idx);
 	hdev = &priv->pdev->dev;
 
 	bytes = sizeof(struct gve_rx_desc) * priv->rx_desc_cnt;
@@ -66,6 +66,8 @@ void gve_rx_free_ring(struct gve_priv *priv)
 			  rx->q_resources, rx->q_resources_bus);
 	rx->q_resources = NULL;
 
+	gve_unassign_qpl(priv, rx->data.qpl->id);
+	rx->data.qpl = NULL;
 	kfree(rx->data.page_info);
 
 	slots = rx->data.mask + 1;
@@ -73,7 +75,7 @@ void gve_rx_free_ring(struct gve_priv *priv)
 	dma_free_coherent(hdev, bytes, rx->data.data_ring,
 			  rx->data.data_bus);
 	rx->data.data_ring = NULL;
-	netdev_dbg(priv->dev, "freed rx ring %d\n", GVE_RX_RING_ID);
+	netdev_dbg(priv->dev, "freed rx ring %d\n", idx);
 }
 
 static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
@@ -97,7 +99,7 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 	if (!rx->data.page_info)
 		return -ENOMEM;
 
-	rx->data.qpl = &priv->qpls[GVE_RX_QPL_ID];
+	rx->data.qpl = gve_assign_rx_qpl(priv);
 
 	for (i = 0; i < slots; i++) {
 		page_info = &rx->data.page_info[i];
@@ -111,24 +113,24 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 
 }
 
-static void gve_rx_add_to_block(struct gve_priv *priv)
+static void gve_rx_add_to_block(struct gve_priv *priv, int queue_idx)
 {
-	struct gve_notify_block *block = priv->ntfy_block;
-	struct gve_rx_ring *rx = priv->rx;
+	u32 ntfy_idx = gve_rx_ntfy_idx(priv, queue_idx);
+	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
+	struct gve_rx_ring *rx = &priv->rx[queue_idx];
 
-	BUG_ON(block->rx);
 	block->rx = rx;
-	rx->ntfy_id = 0;
+	rx->ntfy_id = ntfy_idx;
 
 	if (!block->napi_enabled)
 		gve_add_napi(priv, block);
 }
 
-int gve_rx_alloc_ring(struct gve_priv *priv)
+static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 {
+	struct gve_rx_ring *rx = &priv->rx[idx];
 	struct device *hdev = &priv->pdev->dev;
 	int slots, npages, gve_desc_per_page;
-	struct gve_rx_ring *rx = priv->rx;
 	size_t bytes;
 	int err;
 
@@ -137,7 +139,7 @@ int gve_rx_alloc_ring(struct gve_priv *priv)
 	memset(rx, 0, sizeof(*rx));
 
 	rx->gve = priv;
-	rx->q_num = 0;
+	rx->q_num = idx;
 
 	slots = priv->rx_pages_per_qpl;
 	rx->data.mask = slots - 1;
@@ -166,7 +168,7 @@ int gve_rx_alloc_ring(struct gve_priv *priv)
 		err = -ENOMEM;
 		goto abort_filled;
 	}
-	netif_dbg(priv, drv, priv->dev, "rx->data.data_bus=%lx\n",
+	netif_dbg(priv, drv, priv->dev, "rx[%d]->data.data_bus=%lx\n", idx,
 		  (unsigned long)rx->data.data_bus);
 
 	/* alloc rx desc ring */
@@ -174,8 +176,8 @@ int gve_rx_alloc_ring(struct gve_priv *priv)
 	bytes = sizeof(struct gve_rx_desc) * priv->rx_desc_cnt;
 	npages = bytes / PAGE_SIZE;
 	if (npages * PAGE_SIZE != bytes) {
-		netdev_err(priv->dev, "rx->desc.desc_ring size=%lu illegal\n",
-			   bytes);
+		netdev_err(priv->dev, "rx[%d]->desc.desc_ring size=%lu illegal\n",
+			   idx, bytes);
 		err = -EIO;
 		goto abort_with_q_resources;
 	}
@@ -183,14 +185,15 @@ int gve_rx_alloc_ring(struct gve_priv *priv)
 	rx->desc.desc_ring = dma_zalloc_coherent(hdev, bytes, &rx->desc.bus,
 					    GFP_KERNEL);
 	if (!rx->desc.desc_ring) {
-		netdev_err(priv->dev, "alloc failed for rx->desc.desc_ring\n");
+		netdev_err(priv->dev, "alloc failed for rx[%d]->desc.desc_ring\n",
+			   idx);
 		err = -ENOMEM;
 		goto abort_with_q_resources;
 	}
 	rx->desc.mask = slots - 1;
 	rx->desc.cnt = 0;
 	rx->desc.seqno = 1;
-	gve_rx_add_to_block(priv);
+	gve_rx_add_to_block(priv, idx);
 
 	return 0;
 
@@ -206,6 +209,37 @@ abort_with_slots:
 	rx->data.data_ring = NULL;
 
 	return err;
+}
+
+int gve_rx_alloc_rings(struct gve_priv *priv)
+{
+	int err = 0;
+	int i;
+
+	for (i = 0; i < priv->rx_cfg.num_queues; i++) {
+		err = gve_rx_alloc_ring(priv, i);
+		if (err) {
+			netdev_err(priv->dev, "alloc failed for rx ring=%d\n",
+				   i);
+			break;
+		}
+	}
+	/* Unallocate if there was an error */
+	if (err) {
+		int j;
+
+		for (j = 0; j < i; j++)
+			gve_rx_free_ring(priv, j);
+	}
+	return err;
+}
+
+void gve_rx_free_rings(struct gve_priv *priv)
+{
+	int i;
+
+	for (i = 0; i < priv->rx_cfg.num_queues; i++)
+		gve_rx_free_ring(priv, i);
 }
 
 void gve_rx_write_doorbell(struct gve_priv *priv, struct gve_rx_ring *rx)
@@ -232,7 +266,7 @@ static int gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 {
 	struct gve_rx_slot_page_info *page_info;
 	struct gve_priv *priv = rx->gve;
-	struct napi_struct *napi = &priv->ntfy_block[rx->ntfy_id].napi;
+	struct napi_struct *napi = &priv->ntfy_blocks[rx->ntfy_id].napi;
 	struct net_device *dev = priv->dev;
 	bool can_page_flip = true;
 	struct sk_buff *skb;

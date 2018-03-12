@@ -68,7 +68,9 @@ static const char gve_gstrings_main_stats[][ETH_GSTRING_LEN] = {
 
 static void gve_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 {
+	struct gve_priv *priv = netdev_priv(netdev);
 	char *s = (char *)data;
+	int i;
 
 	if (stringset != ETH_SS_STATS)
 		return;
@@ -76,20 +78,24 @@ static void gve_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 	memcpy(s, *gve_gstrings_main_stats,
 	       sizeof(gve_gstrings_main_stats));
 	s += sizeof(gve_gstrings_main_stats);
-	sprintf(s, "rx_desc_cnt");
-	s += ETH_GSTRING_LEN;
-	sprintf(s, "rx_desc_fill_cnt");
-	s += ETH_GSTRING_LEN;
-	sprintf(s, "tx_req");
-	s += ETH_GSTRING_LEN;
-	sprintf(s, "tx_done");
-	s += ETH_GSTRING_LEN;
-	sprintf(s, "tx_wake");
-	s += ETH_GSTRING_LEN;
-	sprintf(s, "tx_stop");
-	s += ETH_GSTRING_LEN;
-	sprintf(s, "tx_event_counter");
-	s += ETH_GSTRING_LEN;
+	for (i = 0; i < priv->rx_cfg.num_queues; i++) {
+		sprintf(s, "rx_desc_cnt[%u]", i);
+		s += ETH_GSTRING_LEN;
+		sprintf(s, "rx_desc_fill_cnt[%u]", i);
+		s += ETH_GSTRING_LEN;
+	}
+	for (i = 0; i < priv->tx_cfg.num_queues; i++) {
+		sprintf(s, "tx_req[%u]", i);
+		s += ETH_GSTRING_LEN;
+		sprintf(s, "tx_done[%u]", i);
+		s += ETH_GSTRING_LEN;
+		sprintf(s, "tx_wake[%u]", i);
+		s += ETH_GSTRING_LEN;
+		sprintf(s, "tx_stop[%u]", i);
+		s += ETH_GSTRING_LEN;
+		sprintf(s, "tx_event_counter[%u]", i);
+		s += ETH_GSTRING_LEN;
+	}
 }
 
 static int gve_get_sset_count(struct net_device *netdev, int sset)
@@ -101,7 +107,10 @@ static int gve_get_sset_count(struct net_device *netdev, int sset)
 
 	switch (sset) {
 	case ETH_SS_STATS:{
-		return GVE_MAIN_STATS_LEN + NUM_GVE_RX_CNTS + NUM_GVE_TX_CNTS;
+
+		return GVE_MAIN_STATS_LEN +
+		       (priv->rx_cfg.num_queues * NUM_GVE_RX_CNTS) +
+		       (priv->tx_cfg.num_queues * NUM_GVE_TX_CNTS);
 	}
 	default:
 		return -EOPNOTSUPP;
@@ -113,41 +122,105 @@ gve_get_ethtool_stats(struct net_device *netdev,
 		     struct ethtool_stats *stats, u64 *data)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
+	int ring;
 	int i;
+	u64 rx_pkts, rx_bytes, tx_pkts, tx_bytes;
 
 	ASSERT_RTNL();
 
 	if (!priv->is_up)
 		return;
 
+	for (rx_pkts = 0, rx_bytes = 0, ring = 0;
+	     ring < priv->rx_cfg.num_queues;
+	     ring++) {
+		rx_pkts += priv->rx[ring].rpackets;
+		rx_bytes += priv->rx[ring].rbytes;
+	}
+	for (tx_pkts = 0, tx_bytes = 0, ring = 0;
+	     ring < priv->tx_cfg.num_queues;
+	     ring++) {
+		tx_pkts += priv->tx[ring].pkt_done;
+		tx_bytes += priv->tx[ring].bytes_done;
+	}
 	memset(data, 0, GVE_MAIN_STATS_LEN * sizeof(*data));
 
 	i = 0;
-	data[i++] = priv->rx->rpackets;
-	data[i++] = priv->tx->pkt_done;
-	data[i++] = priv->rx->rbytes;
-	data[i++] = priv->tx->bytes_done;
-
+	data[i++] = rx_pkts;
+	data[i++] = tx_pkts;
+	data[i++] = rx_bytes;
+	data[i++] = tx_bytes;
 	i = GVE_MAIN_STATS_LEN;
-	data[i++] = priv->rx->desc.cnt;
-	data[i++] = priv->rx->desc.fill_cnt;
-	data[i++] = priv->tx->req;
-	data[i++] = priv->tx->done;
-	data[i++] = priv->tx->wake_queue;
-	data[i++] = priv->tx->stop_queue;
-	data[i++] = be32_to_cpu(gve_tx_load_event_counter(priv, priv->tx));
+
+	/* walk RX rings */
+	for (ring = 0; ring < priv->rx_cfg.num_queues; ring++) {
+		struct gve_rx_ring *rx = &priv->rx[ring];
+
+		data[i++] = rx->desc.cnt;
+		data[i++] = rx->desc.fill_cnt;
+	}
+	/* walk TX rings */
+	for (ring = 0; ring < priv->tx_cfg.num_queues; ring++) {
+		struct gve_tx_ring *tx = &priv->tx[ring];
+
+		data[i++] = tx->req;
+		data[i++] = tx->done;
+		data[i++] = tx->wake_queue;
+		data[i++] = tx->stop_queue;
+		data[i++] = be32_to_cpu(gve_tx_load_event_counter(priv, tx));
+	}
 }
 
 void gve_get_channels(struct net_device *netdev, struct ethtool_channels *cmd)
 {
-	cmd->max_rx = 1;
-	cmd->max_tx = 1;
+	struct gve_priv *priv = netdev_priv(netdev);
+
+	cmd->max_rx = priv->rx_cfg.max_queues;
+	cmd->max_tx = priv->tx_cfg.max_queues;
 	cmd->max_other = 0;
-	cmd->max_combined = 1;
-	cmd->rx_count = 1;
-	cmd->tx_count = 1;
+	cmd->max_combined = min_t(u32, priv->rx_cfg.max_queues,
+				  priv->tx_cfg.max_queues);
+	cmd->rx_count = priv->rx_cfg.num_queues;
+	cmd->tx_count = priv->tx_cfg.num_queues;
 	cmd->other_count = 0;
-	cmd->combined_count = 1;
+	cmd->combined_count = min_t(int, priv->rx_cfg.num_queues,
+				    priv->tx_cfg.num_queues);
+}
+
+int gve_set_channels(struct net_device *netdev, struct ethtool_channels *cmd)
+{
+	struct gve_priv *priv = netdev_priv(netdev);
+	struct gve_queue_config new_tx_cfg = priv->tx_cfg;
+	struct gve_queue_config new_rx_cfg = priv->rx_cfg;
+	struct ethtool_channels old_settings;
+	int new_tx = cmd->tx_count;
+	int new_rx = cmd->rx_count;
+
+	gve_get_channels(netdev, &old_settings);
+	if (cmd->combined_count != old_settings.combined_count) {
+		/* Changing combined at the same time as rx and tx isn't
+		 * allowed
+		 */
+		if (new_tx != priv->tx_cfg.num_queues ||
+		    new_rx != priv->rx_cfg.num_queues)
+			return -EINVAL;
+		new_rx = cmd->combined_count;
+		new_tx = cmd->combined_count;
+	}
+
+	if (!new_rx || !new_tx)
+		return -EINVAL;
+
+	if (!priv->is_up) {
+		priv->tx_cfg.num_queues = new_tx;
+		priv->rx_cfg.num_queues = new_rx;
+		return 0;
+	}
+
+	new_tx_cfg.num_queues = new_tx;
+	new_rx_cfg.num_queues = new_rx;
+
+	return gve_adjust_queues(priv, new_rx_cfg, new_tx_cfg);
 }
 
 void gve_get_ringparam(struct net_device *netdev,
@@ -183,6 +256,7 @@ const struct ethtool_ops gve_ethtool_ops = {
 	.get_ethtool_stats = gve_get_ethtool_stats,
 	.set_msglevel = gve_set_msglevel,
 	.get_msglevel = gve_get_msglevel,
+	.set_channels = gve_set_channels,
 	.get_channels = gve_get_channels,
 	.get_link = ethtool_op_get_link,
 	.get_ringparam = gve_get_ringparam,

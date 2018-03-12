@@ -96,8 +96,8 @@ struct gve_adminq_configure_device_resources {
 	__be64 counter_array;
 	__be64 irq_db_addr;
 	__be32 num_counters;
-	__be32 reserved1; /* reserved to 1 */
-	__be32 reserved2; /* reserved to 64 */
+	__be32 num_irq_dbs;
+	__be32 irq_db_stride;
 	__be32 ntfy_blk_msix_base_idx;
 };
 GVE_ASSERT_SIZE(struct, gve_adminq_configure_device_resources, 32);
@@ -126,7 +126,8 @@ GVE_ASSERT_SIZE(struct, gve_adminq_create_tx_queue, 32);
 
 struct gve_adminq_create_rx_queue {
 	__be32 queue_id;
-	__be32 reserved[2];
+	__be32 index;
+	__be32 reserved;
 	__be32 ntfy_id;
 	__be64 queue_resources_addr;
 	__be64 rx_desc_ring_addr;
@@ -185,12 +186,13 @@ int gve_adminq_describe_device(struct gve_priv *priv);
 int gve_adminq_configure_device_resources(struct gve_priv *priv,
 					  dma_addr_t counter_array_bus_addr,
 					  int num_counters,
-					  dma_addr_t db_array_bus_addr);
+					  dma_addr_t db_array_bus_addr,
+					  int num_ntfy_blks);
 int gve_adminq_deconfigure_device_resources(struct gve_priv *priv);
-int gve_adminq_create_tx_queue(struct gve_priv *priv);
-int gve_adminq_destroy_tx_queue(struct gve_priv *priv);
-int gve_adminq_create_rx_queue(struct gve_priv *priv);
-int gve_adminq_destroy_rx_queue(struct gve_priv *priv);
+int gve_adminq_create_tx_queue(struct gve_priv *priv, u32 queue_id);
+int gve_adminq_destroy_tx_queue(struct gve_priv *priv, u32 queue_id);
+int gve_adminq_create_rx_queue(struct gve_priv *priv, u32 queue_id);
+int gve_adminq_destroy_rx_queue(struct gve_priv *priv, u32 queue_id);
 int gve_adminq_register_page_list(struct gve_priv *priv,
 				  struct gve_queue_page_list *qpl);
 int gve_adminq_unregister_page_list(struct gve_priv *priv, u32 page_list_id);

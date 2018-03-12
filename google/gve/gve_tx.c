@@ -173,25 +173,26 @@ static void gve_tx_free_fifo(struct gve_tx_fifo *fifo, size_t bytes)
 	atomic_add(bytes, &fifo->available);
 }
 
-static void gve_tx_remove_from_block(struct gve_priv *priv)
+static void gve_tx_remove_from_block(struct gve_priv *priv, int queue_idx)
 {
-	struct gve_notify_block *block = priv->ntfy_block;
+	struct gve_notify_block *block =
+			&priv->ntfy_blocks[gve_tx_ntfy_idx(priv, queue_idx)];
 
 	block->tx = NULL;
 
 	/* If there are no more rings in this block disable napi */
-	if (!block->tx && !block->rx)
+	if (!block->rx)
 		gve_remove_napi(block);
 }
 
-void gve_tx_free_ring(struct gve_priv *priv)
+void gve_tx_free_ring(struct gve_priv *priv, int idx)
 {
 	struct device *hdev = &priv->pdev->dev;
-	struct gve_tx_ring *tx = priv->tx;
+	struct gve_tx_ring *tx = &priv->tx[idx];
 	size_t bytes;
 	int slots;
 
-	gve_tx_remove_from_block(priv);
+	gve_tx_remove_from_block(priv, idx);
 	slots = tx->mask + 1;
 	gve_clean_tx_done(priv, tx, tx->req);
 	netdev_tx_reset_queue(tx->netdev_txq);
@@ -201,6 +202,8 @@ void gve_tx_free_ring(struct gve_priv *priv)
 	tx->q_resources = NULL;
 
 	gve_tx_fifo_release(priv, &tx->tx_fifo);
+	gve_unassign_qpl(priv, tx->tx_fifo.qpl->id);
+	tx->tx_fifo.qpl = NULL;
 
 	bytes = sizeof(*tx->desc) * slots;
 	dma_free_coherent(hdev, bytes, tx->desc, tx->bus);
@@ -209,33 +212,32 @@ void gve_tx_free_ring(struct gve_priv *priv)
 	vfree(tx->info);
 	tx->info = NULL;
 
-	netdev_dbg(priv->dev, "freed tx queue\n");
+	netdev_dbg(priv->dev, "freed tx queue %d\n", idx);
 }
 
-static void gve_tx_add_to_block(struct gve_priv *priv)
+static void gve_tx_add_to_block(struct gve_priv *priv, int queue_idx)
 {
-	struct gve_notify_block *block = priv->ntfy_block;
-	struct gve_tx_ring *tx = priv->tx;
+	int ntfy_idx = gve_tx_ntfy_idx(priv, queue_idx);
+	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
+	struct gve_tx_ring *tx = &priv->tx[queue_idx];
 
-	BUG_ON(block->tx);
 	block->tx = tx;
-	tx->ntfy_id = 0;
+	tx->ntfy_id = ntfy_idx;
 
 	if (!block->napi_enabled)
 		gve_add_napi(priv, block);
 }
 
-int gve_tx_alloc_ring(struct gve_priv *priv)
+static int gve_tx_alloc_ring(struct gve_priv *priv, int idx)
 {
+	struct gve_tx_ring *tx = &priv->tx[idx];
 	struct device *hdev = &priv->pdev->dev;
 	int slots = priv->tx_desc_cnt;
-	struct gve_tx_ring *tx;
 	size_t bytes;
 
-	tx = priv->tx;
 	/* Make sure everything is zeroed to start */
 	memset(tx, 0, sizeof(*tx));
-	tx->q_num = GVE_TX_RING_ID;
+	tx->q_num = idx;
 
 	tx->mask = slots - 1;
 
@@ -250,7 +252,7 @@ int gve_tx_alloc_ring(struct gve_priv *priv)
 	if (!tx->desc)
 		goto abort_with_info;
 
-	tx->tx_fifo.qpl = &priv->qpls[GVE_TX_QPL_ID];
+	tx->tx_fifo.qpl = gve_assign_tx_qpl(priv);
 
 	/* map Tx FIFO */
 	if (gve_tx_fifo_init(priv, &tx->tx_fifo))
@@ -262,10 +264,10 @@ int gve_tx_alloc_ring(struct gve_priv *priv)
 	if (!tx->q_resources)
 		goto abort_with_fifo;
 
-	netif_dbg(priv, drv, priv->dev, "tx->bus=%lx\n",
+	netif_dbg(priv, drv, priv->dev, "tx[%d]->bus=%lx\n", idx,
 		  (unsigned long)tx->bus);
-	tx->netdev_txq = netdev_get_tx_queue(priv->dev, GVE_TX_RING_ID);
-	gve_tx_add_to_block(priv);
+	tx->netdev_txq = netdev_get_tx_queue(priv->dev, idx);
+	gve_tx_add_to_block(priv, idx);
 
 	return 0;
 
@@ -278,6 +280,37 @@ abort_with_info:
 	vfree(tx->info);
 	tx->info = NULL;
 	return -ENOMEM;
+}
+
+int gve_tx_alloc_rings(struct gve_priv *priv)
+{
+	int err = 0;
+	int i;
+
+	for (i = 0; i < priv->tx_cfg.num_queues; i++) {
+		err = gve_tx_alloc_ring(priv, i);
+		if (err) {
+			netdev_err(priv->dev, "alloc failed for tx ring=%d\n",
+				   i);
+			break;
+		}
+	}
+	/* Unallocate if there was an error */
+	if (err) {
+		int j;
+
+		for (j = 0; j < i; j++)
+			gve_tx_free_ring(priv, j);
+	}
+	return err;
+}
+
+void gve_tx_free_rings(struct gve_priv *priv)
+{
+	int i;
+
+	for (i = 0; i < priv->tx_cfg.num_queues; i++)
+		gve_tx_free_ring(priv, i);
 }
 
 /**
@@ -443,9 +476,8 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 	struct gve_tx_ring *tx;
 	int nsegs;
 
-	BUG_ON(skb_get_queue_mapping(skb) != GVE_TX_RING_ID);
-	tx = p->tx;
-
+	BUG_ON(skb_get_queue_mapping(skb) > p->tx_cfg.num_queues);
+	tx = &p->tx[skb_get_queue_mapping(skb)];
 	if (unlikely(gve_maybe_stop_tx(tx, skb))) {
 		/* We need to ring the txq doorbell -- we have stopped the Tx
 		 * queue for want of resources, but prior calls to gve_tx()
@@ -459,7 +491,6 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 		gve_tx_put_doorbell(p, tx->q_resources, cpu_to_be32(tx->req));
 		return NETDEV_TX_BUSY;
 	}
-
 	nsegs = gve_tx_add_skb(tx, skb);
 
 	netdev_tx_sent_queue(tx->netdev_txq, skb->len);

@@ -52,6 +52,8 @@
 #define GVE_REGISTER_BAR	0
 #define GVE_DOORBELL_BAR	2
 
+#define GVE_MAX_NUM_TX_QUEUES	1024
+#define GVE_MAX_NUM_RX_QUEUES	256
 #define GVE_TX_QPL_MAX_PAGES	512
 #define GVE_RX_QPL_MAX_PAGES	1024
 
@@ -158,8 +160,8 @@ struct gve_tx_ring {
 	dma_addr_t q_resources_bus;
 } ____cacheline_aligned;
 
-/* 1 for management, 1 for a notification block */
-#define GVE_NUM_MSIX 2
+/* 1 for management, 1 for rx, 1 for tx */
+#define GVE_MIN_MSIX 3
 
 struct gve_notify_block {
 	volatile __be32 irq_db_index; /* Set by device - must be first field */
@@ -173,15 +175,24 @@ struct gve_notify_block {
 
 #define GVE_MIN_MTU			(68)
 
+struct gve_queue_config {
+	int max_queues;
+	int num_queues;
+};
+
+struct gve_qpl_config {
+	int qpl_map_size;
+	unsigned long *qpl_id_map;
+};
+
 struct gve_priv {
 	struct net_device *dev;
-	struct gve_tx_ring *tx;
-	struct gve_rx_ring *rx;
-	struct gve_queue_page_list *qpls;
-	int num_qpls;
-	struct gve_notify_block *ntfy_block;
+	struct gve_tx_ring *tx; /* array of tx_cfg.num_queues */
+	struct gve_rx_ring *rx; /* array of rx_cfg.num_queues */
+	struct gve_queue_page_list *qpls; /* array of num qpls */
+	struct gve_notify_block *ntfy_blocks; /* array of num_ntfy_blks */
 	dma_addr_t ntfy_block_bus;
-	struct msix_entry *msix_vectors; /* array of num_ntfy_blocks + 1 */
+	struct msix_entry *msix_vectors; /* array of num_ntfy_blks + 1 */
 	char mgmt_msix_name[IFNAMSIZ + 16];
 	int mgmt_msix_idx;
 	int ntfy_blk_msix_base_idx;
@@ -198,6 +209,11 @@ struct gve_priv {
 	int num_registered_pages;
 	int rx_copybreak;
 	int max_mtu;
+
+	struct gve_queue_config tx_cfg;
+	struct gve_queue_config rx_cfg;
+	struct gve_qpl_config qpl_cfg;
+	int num_ntfy_blks;
 
 	void __iomem *reg_bar0;
 	__be32 __iomem *db_bar2; /* "array" of doorbells */
@@ -229,10 +245,80 @@ static inline __be32 __iomem *gve_irq_doorbell(struct gve_priv *priv,
 	return &priv->db_bar2[irq_db_index];
 }
 
-#define GVE_TX_RING_ID	0
-#define GVE_RX_RING_ID	0
-#define GVE_RX_QPL_ID	0
-#define GVE_TX_QPL_ID	1
+/**
+  * Returns the index into ntfy_blocks of the given rx ring's block
+ **/
+static inline u32 gve_tx_ntfy_idx(struct gve_priv *priv, u32 queue_idx)
+{
+	return queue_idx;
+}
+
+/**
+  * Returns the index into ntfy_blocks of the given rx ring's block
+ **/
+static inline u32 gve_rx_ntfy_idx(struct gve_priv *priv, u32 queue_idx)
+{
+	return priv->tx_cfg.max_queues + queue_idx;
+}
+
+/**
+  * Returns the number of tx queue page lists
+ **/
+static inline u32 gve_num_tx_qpls(struct gve_priv *priv)
+{
+	return priv->tx_cfg.num_queues;
+}
+
+/**
+  * Returns the number of rx queue page lists
+ **/
+static inline u32 gve_num_rx_qpls(struct gve_priv *priv)
+{
+	return priv->rx_cfg.num_queues;
+}
+
+/**
+ * Returns a pointer to the next available tx qpl in the list of qpls
+ **/
+static inline struct gve_queue_page_list *gve_assign_tx_qpl(
+							struct gve_priv *priv)
+{
+	int id = find_first_zero_bit(priv->qpl_cfg.qpl_id_map,
+				     priv->qpl_cfg.qpl_map_size);
+
+	/* we are out of tx qpls */
+	if (id >= gve_num_tx_qpls(priv))
+		return NULL;
+
+	set_bit(id, priv->qpl_cfg.qpl_id_map);
+	return &priv->qpls[id];
+}
+
+/**
+ * Returns a pointer to the next available rx qpl in the list of qpls
+ **/
+static inline struct gve_queue_page_list *gve_assign_rx_qpl(
+							struct gve_priv *priv)
+{
+	int id = find_next_zero_bit(priv->qpl_cfg.qpl_id_map,
+				    priv->qpl_cfg.qpl_map_size,
+				    gve_num_tx_qpls(priv));
+
+	/* we are out of rx qpls */
+	if (id == priv->qpl_cfg.qpl_map_size)
+		return NULL;
+
+	set_bit(id, priv->qpl_cfg.qpl_id_map);
+	return &priv->qpls[id];
+}
+
+/**
+ * Unassigns the qpl with the given id
+ **/
+static inline void gve_unassign_qpl(struct gve_priv *priv, int id)
+{
+	clear_bit(id, priv->qpl_cfg.qpl_id_map);
+}
 
 void gve_add_napi(struct gve_priv *priv, struct gve_notify_block *block);
 void gve_remove_napi(struct gve_notify_block *block);
@@ -241,20 +327,23 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev);
 int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
 		      u32 nic_done);
 bool gve_tx_poll(struct gve_notify_block *block, int budget);
-int gve_tx_alloc_ring(struct gve_priv *priv);
-void gve_tx_free_ring(struct gve_priv *priv);
+int gve_tx_alloc_rings(struct gve_priv *priv);
+void gve_tx_free_rings(struct gve_priv *priv);
 __be32 gve_tx_load_event_counter(struct gve_priv *priv,
 				 struct gve_tx_ring *tx);
 /* rx handling */
 void gve_rx_write_doorbell(struct gve_priv *priv, struct gve_rx_ring *rx);
 bool gve_rx_poll(struct gve_notify_block *block, int budget);
-int gve_rx_alloc_ring(struct gve_priv *priv);
-void gve_rx_free_ring(struct gve_priv *priv);
+int gve_rx_alloc_rings(struct gve_priv *priv);
+void gve_rx_free_rings(struct gve_priv *priv);
 bool gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 			      netdev_features_t feat);
 /* Resets */
 void gve_schedule_aq_reset(struct gve_priv *priv);
 void gve_schedule_pci_reset(struct gve_priv *priv);
+int gve_adjust_queues(struct gve_priv *priv,
+		      struct gve_queue_config new_rx_config,
+		      struct gve_queue_config new_tx_config);
 /* exported by ethtool.c */
 extern const struct ethtool_ops gve_ethtool_ops;
 /* needed by ethtool */
