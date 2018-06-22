@@ -90,7 +90,6 @@ static int gve_tx_alloc_fifo(struct gve_tx_fifo *fifo, size_t bytes,
 
 	nfrags++;
 
-	iov[0].iov_base = fifo->base + fifo->head;
 	iov[0].iov_offset = fifo->head;
 	iov[0].iov_len = bytes;
 	fifo->head += bytes;
@@ -102,7 +101,6 @@ static int gve_tx_alloc_fifo(struct gve_tx_fifo *fifo, size_t bytes,
 		nfrags++;
 		overflow = fifo->head - fifo->size;
 		iov[0].iov_len -= overflow;
-		iov[1].iov_base = fifo->base;
 		iov[1].iov_offset = 0;	/* Start of fifo*/
 		iov[1].iov_len = overflow;
 
@@ -403,7 +401,8 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 	pkt_desc->pkt.seg_addr =
 		cpu_to_be64(info->iov[hdr_nfrags - 1].iov_offset);
 
-	skb_copy_bits(skb, 0, info->iov[hdr_nfrags - 1].iov_base, hlen);
+	skb_copy_bits(skb, 0, tx->tx_fifo.base + info->iov[hdr_nfrags - 1].iov_offset,
+		      hlen);
 	copy_offset = hlen;
 
 	for (i = payload_iov; i < payload_nfrags + payload_iov; i++) {
@@ -422,7 +421,8 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 		seg_desc->seg.seg_addr =
 			cpu_to_be64(info->iov[i].iov_offset);
 
-		skb_copy_bits(skb, copy_offset, info->iov[i].iov_base,
+		skb_copy_bits(skb, copy_offset,
+			      tx->tx_fifo.base + info->iov[i].iov_offset,
 			      info->iov[i].iov_len);
 		copy_offset += info->iov[i].iov_len;
 	}

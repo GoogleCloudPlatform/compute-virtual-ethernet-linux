@@ -83,8 +83,6 @@ union gve_tx_desc {
 };
 
 struct gve_tx_iovec {
-	/* References coherent DMA memory */
-	void *iov_base;
 	/* Offset into this segment */
 	u32 iov_offset;
 	u32 iov_len;
