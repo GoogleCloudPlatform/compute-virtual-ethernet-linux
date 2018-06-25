@@ -101,12 +101,12 @@ if [ "$TARGET" == "oot" ]; then
   VERSION="${VERSION}-oot"
  fi
 elif [ "$TARGET" == "upstream" ]; then
- MAKEFILE="gve/Makefile"
+ MAKEFILE="google/gve/Makefile"
  if [ -z "$RELEASE" ]; then
   VERSION="${VERSION}-k"
  fi
 elif [ "$TARGET" == "cos" ]; then
- MAKEFILE="gve/Makefile"
+ MAKEFILE="google/gve/Makefile"
  if [ -z "$RELEASE" ]; then
   VERSION="${VERSION}-cos"
  fi
@@ -125,7 +125,6 @@ fi
 
 if [ "$COMPRESS" == "gz" ] || [ "$DEB" == "yes" ]; then
  DESTDIR="$MAINDIR"/gve-"$VERSION"
- TARDIR=gve-"$VERSION"
 else
  DESTDIR="$MAINDIR"/build
 fi
@@ -152,6 +151,7 @@ if [ "$TARGET" == "oot" ] || [ "$TARGET" == "cos" ]; then
   $SPATCH "$f" "$DESTDIR"/*.c --in-place;
   $SPATCH "$f" "$DESTDIR"/*.h --in-place;
  done
+ cp "$MAINDIR"/LICENSE "$DESTDIR"/LICENSE
 fi
 
 if [ "$TARGET" == "oot" ]; then
@@ -164,7 +164,12 @@ if [ -z "$RELEASE" ]; then
 fi
 
 if [ "$COMPRESS"  == "gz" ]; then
- tar -cvzf "$MAINDIR"/gve-"$VERSION".tar.gz -C "$MAINDIR" "$TARDIR"
+ # Using tar -C doesn't result in a flat tarball on some distros -- it still
+ # creates a directory inside the tarball. Because of this, we switch to
+ # $DESTDIR before running tar, then switch back after creating the tarball.
+ pushd "$DESTDIR"
+ tar -cvzf "$MAINDIR"/gve-"$VERSION".tar.gz *
+ popd
 fi
 
 if [ "$DEB" == "yes" ]; then
