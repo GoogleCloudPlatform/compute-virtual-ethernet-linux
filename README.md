@@ -25,7 +25,7 @@ Device Class  | `0x200`  | Ethernet
 
 ## GitHub
 
-If you downloaded the source from GitHub To install this driver on anything
+If you downloaded the source from GitHub: To install this driver on anything
 other than the current upstream kernel, you will need to download coccinelle,
 and untar it. It can be found here: http://coccinelle.lip6.fr/download.php
 
