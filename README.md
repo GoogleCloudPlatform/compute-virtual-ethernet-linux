@@ -36,7 +36,7 @@ To build the multi-kernel compatible driver source:
 
 ```bash
 export SPATCH='/path/to/coccinelle/spatch.opt'
-gve/build_src.sh --target=oot
+./build_src.sh --target=oot
 ```
 
 TIP: The spatch path may be omitted if it has been installed on the search path.
