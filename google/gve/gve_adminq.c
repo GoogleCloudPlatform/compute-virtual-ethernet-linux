@@ -264,11 +264,15 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	u16 mtu;
 
 	memset(&cmd, 0, sizeof(cmd));
-	descriptor = dma_zalloc_coherent(&priv->pdev->dev, sizeof(*descriptor),
+	descriptor = dma_zalloc_coherent(&priv->pdev->dev, PAGE_SIZE,
 					 &descriptor_bus, GFP_KERNEL);
 	cmd.opcode = cpu_to_be32(GVE_ADMINQ_DESCRIBE_DEVICE);
 	cmd.describe_device.device_descriptor_addr =
 						cpu_to_be64(descriptor_bus);
+	cmd.describe_device.device_descriptor_version =
+					cpu_to_be32(GVE_ADMINQ_DEVICE_DESCRIPTOR_VERSION);
+	cmd.describe_device.available_length = cpu_to_be32(PAGE_SIZE);
+
 	err = gve_execute_adminq_cmd(priv, &cmd);
 	if (err)
 		goto free_device_descriptor;
@@ -291,7 +295,7 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 		goto free_device_descriptor;
 	}
 	priv->max_registered_pages =
-				be16_to_cpu(descriptor->max_registered_pages);
+				be64_to_cpu(descriptor->max_registered_pages);
 	mtu = be16_to_cpu(descriptor->mtu);
 	if (mtu < GVE_MIN_MTU) {
 		dev_err(&priv->pdev->dev, "MTU %d below minimum MTU\n", mtu);
@@ -317,6 +321,7 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 			 priv->rx_pages_per_qpl, GVE_RX_QPL_MAX_PAGES);
 		priv->rx_pages_per_qpl = GVE_RX_QPL_MAX_PAGES;
 	}
+	priv->max_num_slices = be16_to_cpu(descriptor->max_num_slices);
 
 free_device_descriptor:
 	dma_free_coherent(&priv->pdev->dev, sizeof(*descriptor), descriptor,
