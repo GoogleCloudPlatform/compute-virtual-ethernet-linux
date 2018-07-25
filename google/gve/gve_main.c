@@ -722,6 +722,7 @@ static int gve_init_priv(struct gve_priv *priv, int max_rx_queues,
 			 int max_tx_queues)
 {
 	int num_ntfy;
+	int num_slices;
 	int err;
 
 	/* Set up the adminq */
@@ -729,7 +730,6 @@ static int gve_init_priv(struct gve_priv *priv, int max_rx_queues,
 	if (err)
 		return err;
 	/* Get the initial information we need from the device */
-	priv->rx_cfg.max_queues = max_rx_queues;
 	err = gve_adminq_describe_device(priv);
 	if (err) {
 		dev_err(&priv->pdev->dev,
@@ -755,8 +755,12 @@ static int gve_init_priv(struct gve_priv *priv, int max_rx_queues,
 	priv->mgmt_msix_idx = num_ntfy - 1;
 	priv->ntfy_blk_msix_base_idx = 0;
 
-	priv->tx_cfg.max_queues = min_t(u32, num_online_cpus(), max_tx_queues);
-	priv->rx_cfg.max_queues = min_t(u32, num_online_cpus(), max_rx_queues);
+	num_slices = num_online_cpus();
+	if (priv->max_num_slices != 0)
+		num_slices = min_t(u32, num_slices, priv->max_num_slices);
+
+	priv->tx_cfg.max_queues = min_t(u32, num_slices, max_tx_queues);
+	priv->rx_cfg.max_queues = min_t(u32, num_slices, max_rx_queues);
 
 	priv->tx_cfg.num_queues = priv->tx_cfg.max_queues;
 	priv->rx_cfg.num_queues = priv->rx_cfg.max_queues;

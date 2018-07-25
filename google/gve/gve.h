@@ -205,10 +205,11 @@ struct gve_priv {
 	int rx_desc_cnt;
 	int tx_pages_per_qpl;
 	int rx_pages_per_qpl;
-	int max_registered_pages;
-	int num_registered_pages;
+	u64 max_registered_pages;
+	u64 num_registered_pages;
 	int rx_copybreak;
 	int max_mtu;
+	int max_num_slices;
 
 	struct gve_queue_config tx_cfg;
 	struct gve_queue_config rx_cfg;

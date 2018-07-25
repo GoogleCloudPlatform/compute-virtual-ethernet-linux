@@ -70,27 +70,41 @@
 
 #define GVE_MAX_ADMINQ_EVENT_COUNTER_CHECK	100
 
+#define GVE_ADMINQ_DEVICE_DESCRIPTOR_VERSION 1
+
 /* All AdminQ command structs should be naturally packed. The GVE_ASSERT_SIZE
  * calls make sure this is the case at compile time.
  */
 
 struct gve_adminq_describe_device {
 	__be64 device_descriptor_addr;
+	__be32 device_descriptor_version;
+	__be32 available_length;
 };
-GVE_ASSERT_SIZE(struct, gve_adminq_describe_device, 8);
+GVE_ASSERT_SIZE(struct, gve_adminq_describe_device, 16);
 
 struct gve_device_descriptor {
-	__be16 reserved;
+	__be64 max_registered_pages;
+	__be16 reserved1;
 	__be16 tx_queue_entries;
 	__be16 rx_queue_entries;
-	__be16 max_registered_pages;
+	__be16 max_num_slices;
 	__be16 mtu;
 	__be16 counters;
 	__be16 tx_pages_per_qpl;
 	__be16 rx_pages_per_qpl;
 	u8  mac[ETH_ALEN];
+	__be16 num_device_options;
+	__be16 total_length;
+	u8  reserved2[6];
 };
-GVE_ASSERT_SIZE(struct, gve_device_descriptor, 22);
+GVE_ASSERT_SIZE(struct, gve_device_descriptor, 40);
+
+struct device_option {
+  __be32 option_id;
+  __be32 option_length;
+};
+GVE_ASSERT_SIZE(struct, device_option, 8);
 
 struct gve_adminq_configure_device_resources {
 	__be64 counter_array;
