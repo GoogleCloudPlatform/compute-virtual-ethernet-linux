@@ -47,6 +47,7 @@ install, and load `gve.ko`:
 
 ```bash
 make -C /lib/modules/`uname -r`/build M=$(pwd)/build modules modules_install
+depmod
 modprobe gve
 ```
 
