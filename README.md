@@ -19,13 +19,13 @@ Device Class  | `0x200`  | Ethernet
 
 # Supported Kernels
 
-4.16, 4.9, 4.6, 4.4, 4.2, 3.19, 3.16, 3.13, 3.10
+4.16, 4.14, 4.9, 4.6, 4.4, 4.2, 3.19, 3.16, 3.13, 3.10
 
 # Installation
 
 ## GitHub
 
-If you downloaded the source from GitHub To install this driver on anything
+If you downloaded the source from GitHub: To install this driver on anything
 other than the current upstream kernel, you will need to download coccinelle,
 and untar it. It can be found here: http://coccinelle.lip6.fr/download.php
 
@@ -36,7 +36,7 @@ To build the multi-kernel compatible driver source:
 
 ```bash
 export SPATCH='/path/to/coccinelle/spatch.opt'
-gve/build_src.sh --target=oot
+./build_src.sh --target=oot
 ```
 
 TIP: The spatch path may be omitted if it has been installed on the search path.
@@ -47,6 +47,7 @@ install, and load `gve.ko`:
 
 ```bash
 make -C /lib/modules/`uname -r`/build M=$(pwd)/build modules modules_install
+depmod
 modprobe gve
 ```
 
