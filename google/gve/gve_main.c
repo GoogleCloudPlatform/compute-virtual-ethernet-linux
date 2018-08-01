@@ -785,8 +785,10 @@ static void gve_reset_pci(struct gve_priv *priv)
 	dev_info(&priv->pdev->dev, "Performing pci reset\n");
 	clear_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->flags);
 	if (was_up) {
-		gve_turndown_queues(priv);
+		dev_deactivate(priv->dev);
+		netif_carrier_off(priv->dev);
 		priv->is_up = false;
+		gve_turndown_queues(priv);
 	}
 
 	/* Reset the device */
@@ -794,6 +796,7 @@ static void gve_reset_pci(struct gve_priv *priv)
 
 	/* Teardown all our device resources */
 	gve_free_rings(priv);
+	gve_free_qpls(priv);
 	gve_free_notify_blocks(priv);
 	gve_free_counter_array(priv);
 	gve_free_adminq(&priv->pdev->dev, priv);
@@ -811,6 +814,7 @@ static void gve_reset_pci(struct gve_priv *priv)
 	if (err)
 		goto err;
 	if (was_up) {
+		dev_activate(priv->dev);
 		err = gve_open(priv->dev);
 		if (err)
 			goto err;
