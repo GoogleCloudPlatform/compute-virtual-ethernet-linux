@@ -840,8 +840,10 @@ static void gve_reset_aq(struct gve_priv *priv)
 	dev_info(&priv->pdev->dev, "Perfmorming AQ reset\n");
 	clear_bit(GVE_PRIV_FLAGS_DO_AQ_RESET, &priv->flags);
 	if (was_up) {
-		gve_turndown_queues(priv);
+		dev_deactivate(priv->dev);
+		netif_carrier_off(priv->dev);
 		priv->is_up = false;
+		gve_turndown_queues(priv);
 	}
 
 	/* Reset the device by deallocating the AQ */
@@ -859,10 +861,15 @@ static void gve_reset_aq(struct gve_priv *priv)
 	if (err)
 		goto pci_reset;
 	if (was_up) {
+		err = gve_register_qpls(priv);
+		if (err)
+			goto pci_reset;
 		err = gve_create_rings(priv);
 		if (err)
 			goto pci_reset;
+		dev_activate(priv->dev);
 		gve_turnup_queues(priv);
+		netif_carrier_on(priv->dev);
 		priv->is_up = true;
 	}
 	return;
