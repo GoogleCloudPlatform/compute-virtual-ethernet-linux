@@ -230,13 +230,14 @@ struct gve_priv {
 
 	struct workqueue_struct *gve_wq;
 	struct work_struct service_task;
-	unsigned long flags;
+	unsigned long service_task_flags;
 };
 
 #define GVE_PRIV_FLAGS_IGNORE_FLOW_TABLE	BIT(0)
 #define GVE_PRIV_FLAGS_DO_AQ_RESET		BIT(1)
 #define GVE_PRIV_FLAGS_DO_PCI_RESET		BIT(2)
-#define GVE_PRIV_FLAGS_PROBE_IN_PROGRESS	BIT(5)
+#define GVE_PRIV_FLAGS_PROBE_IN_PROGRESS	BIT(3)
+#define GVE_PRIV_FLAGS_DEVICE_WAS_UP		BIT(4)
 
 static inline __be32 __iomem *gve_irq_doorbell(struct gve_priv *priv,
 					   struct gve_notify_block *block)
@@ -342,6 +343,7 @@ bool gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 /* Resets */
 void gve_schedule_aq_reset(struct gve_priv *priv);
 void gve_schedule_pci_reset(struct gve_priv *priv);
+void gve_handle_user_reset(struct gve_priv *priv);
 int gve_adjust_queues(struct gve_priv *priv,
 		      struct gve_queue_config new_rx_config,
 		      struct gve_queue_config new_tx_config);
