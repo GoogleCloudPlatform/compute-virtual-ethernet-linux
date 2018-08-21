@@ -236,13 +236,12 @@ void gve_get_ringparam(struct net_device *netdev,
 
 int gve_reset(struct net_device *netdev, u32 *flags)
 {
-	if (*flags == ETH_RESET_ALL) {
-		/* TODO(csully): look into a way to wait here until the reset
-		 * has actually completed instead of assuming it has and
-		 * everything was successful.
-		 */
-		gve_schedule_aq_reset(netdev_priv(netdev));
+	struct gve_priv *priv = netdev_priv(netdev);
+
+	if (*flags == ETH_RESET_ALL)
+	{
 		*flags = 0;
+		gve_handle_user_reset(priv);
 		return 0;
 	}
 

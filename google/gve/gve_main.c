@@ -588,13 +588,19 @@ static void gve_free_qpls(struct gve_priv *priv)
 
 void gve_schedule_aq_reset(struct gve_priv *priv)
 {
-	set_bit(GVE_PRIV_FLAGS_DO_AQ_RESET, &priv->flags);
+	if (priv->is_up)
+		set_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
+			&priv->service_task_flags);
+	set_bit(GVE_PRIV_FLAGS_DO_AQ_RESET, &priv->service_task_flags);
 	queue_work(priv->gve_wq, &priv->service_task);
 }
 
 void gve_schedule_pci_reset(struct gve_priv *priv)
 {
-	set_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->flags);
+	if (priv->is_up)
+		set_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
+			&priv->service_task_flags);
+	set_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->service_task_flags);
 	queue_work(priv->gve_wq, &priv->service_task);
 }
 
@@ -783,12 +789,14 @@ abort_with_adminq:
 static void gve_reset_pci(struct gve_priv *priv)
 {
 	int max_rx_queues, max_tx_queues;
-	bool was_up = priv->is_up;
 	int err;
+	bool was_up = test_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
+			       &priv->service_task_flags);
 
 	dev_info(&priv->pdev->dev, "Performing pci reset\n");
-	clear_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->flags);
-	if (was_up) {
+	clear_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->service_task_flags);
+	clear_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP, &priv->service_task_flags);
+	if (priv->is_up) {
 		dev_deactivate(priv->dev);
 		netif_carrier_off(priv->dev);
 		priv->is_up = false;
@@ -834,12 +842,13 @@ err:
 
 static void gve_reset_aq(struct gve_priv *priv)
 {
-	bool was_up = priv->is_up;
 	int err;
+	bool was_up = test_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
+			       &priv->service_task_flags);
 
 	dev_info(&priv->pdev->dev, "Perfmorming AQ reset\n");
-	clear_bit(GVE_PRIV_FLAGS_DO_AQ_RESET, &priv->flags);
-	if (was_up) {
+	clear_bit(GVE_PRIV_FLAGS_DO_AQ_RESET, &priv->service_task_flags);
+	if (priv->is_up) {
 		dev_deactivate(priv->dev);
 		netif_carrier_off(priv->dev);
 		priv->is_up = false;
@@ -871,20 +880,99 @@ static void gve_reset_aq(struct gve_priv *priv)
 		gve_turnup_queues(priv);
 		netif_carrier_on(priv->dev);
 		priv->is_up = true;
+		clear_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
+			  &priv->service_task_flags);
 	}
 	return;
 
 pci_reset:
 	dev_err(&priv->pdev->dev, "AQ reset failed, trying PCI reset\n");
-	set_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->flags);
+	set_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->service_task_flags);
 	queue_work(priv->gve_wq, &priv->service_task);
+}
+
+void gve_handle_user_reset(struct gve_priv *priv)
+{
+	bool was_up = priv->is_up;
+	int err;
+
+	dev_info(&priv->pdev->dev, "Performing user requested reset\n");
+	if (priv->is_up) {
+		dev_deactivate(priv->dev);
+		netif_carrier_off(priv->dev);
+		priv->is_up = false;
+		gve_turndown_queues(priv);
+	}
+
+	err = gve_destroy_rings(priv);
+	if (err)
+		goto aq_reset;
+	err = gve_unregister_qpls(priv);
+	if (err)
+		goto aq_reset;
+
+	/* Tell device its resources are being freed */
+	err = gve_adminq_deconfigure_device_resources(priv);
+	WARN(err, "GVE device resources not released\n");
+
+	/* Reset the device by deallocating the AQ */
+	gve_free_adminq(&priv->pdev->dev, priv);
+
+	/* Tell the AQ where everything is again */
+	err = gve_alloc_adminq(&priv->pdev->dev, priv);
+	if (err)
+		goto pci_reset;
+	err = gve_adminq_configure_device_resources(priv,
+						    priv->counter_array_bus,
+						    priv->num_event_counters,
+						    priv->ntfy_block_bus,
+						    priv->num_ntfy_blks);
+	if (err)
+		goto pci_reset;
+	if (was_up) {
+		err = gve_register_qpls(priv);
+		if (err)
+			goto pci_reset;
+		err = gve_create_rings(priv);
+		if (err)
+			goto pci_reset;
+		dev_activate(priv->dev);
+		gve_turnup_queues(priv);
+		netif_carrier_on(priv->dev);
+		priv->is_up = true;
+		clear_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
+			  &priv->service_task_flags);
+	}
+	return;
+
+aq_reset:
+	dev_err(&priv->pdev->dev, "User reset failed, trying AQ reset\n");
+	if (was_up)
+		set_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
+			&priv->service_task_flags);
+	set_bit(GVE_PRIV_FLAGS_DO_AQ_RESET, &priv->service_task_flags);
+	queue_work(priv->gve_wq, &priv->service_task);
+	return;
+
+pci_reset:
+	dev_err(&priv->pdev->dev, "User reset failed, trying PCI reset\n");
+	if (was_up)
+		set_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
+			&priv->service_task_flags);
+	set_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->service_task_flags);
+	queue_work(priv->gve_wq, &priv->service_task);
+	return;
 }
 
 static void gve_handle_status(struct gve_priv *priv, u32 status)
 {
 	if (GVE_DEVICE_STATUS_RESET_MASK & status) {
-		dev_info(&priv->pdev->dev, "Device requested request.\n");
-		set_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->flags);
+		dev_info(&priv->pdev->dev, "Device requested reset.\n");
+		if (priv->is_up)
+			set_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
+				&priv->service_task_flags);
+		set_bit(GVE_PRIV_FLAGS_DO_PCI_RESET,
+			&priv->service_task_flags);
 	}
 }
 
@@ -894,18 +982,20 @@ static void gve_handle_reset(struct gve_priv *priv)
 	 * resets that need to happen, and we don't want to reset until
 	 * probe is done.
 	 */
-	if (test_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS, &priv->flags))
+	if (test_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS,
+		     &priv->service_task_flags))
 		return;
 
-	if (test_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->flags)) {
+	if (test_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->service_task_flags)) {
 		/* PCI reset supercedes AQ reset */
-		clear_bit(GVE_PRIV_FLAGS_DO_AQ_RESET, &priv->flags);
+		clear_bit(GVE_PRIV_FLAGS_DO_AQ_RESET,
+			  &priv->service_task_flags);
 		rtnl_lock();
 		gve_reset_pci(priv);
 		rtnl_unlock();
 	}
 
-	if (test_bit(GVE_PRIV_FLAGS_DO_AQ_RESET, &priv->flags)) {
+	if (test_bit(GVE_PRIV_FLAGS_DO_AQ_RESET, &priv->service_task_flags)) {
 		rtnl_lock();
 		gve_reset_aq(priv);
 		rtnl_unlock();
@@ -1017,9 +1107,9 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	priv->msg_enable = DEFAULT_MSG_LEVEL;
 	priv->reg_bar0 = reg_bar;
 	priv->db_bar2 = db_bar;
-	priv->flags = 0x0;
+	priv->service_task_flags = 0x0;
 	priv->is_up = false;
-	set_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS, &priv->flags);
+	set_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS, &priv->service_task_flags);
 	priv->gve_wq = alloc_ordered_workqueue("gve", 0);
 	if (!priv->gve_wq) {
 		dev_err(&pdev->dev, "could not allocate workqueue");
@@ -1031,7 +1121,7 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto abort_with_wq;
 
 	dev_info(&pdev->dev, "GVE version %s\n", gve_version_str);
-	clear_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS, &priv->flags);
+	clear_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS, &priv->service_task_flags);
 	queue_work(priv->gve_wq, &priv->service_task);
 	return 0;
 
