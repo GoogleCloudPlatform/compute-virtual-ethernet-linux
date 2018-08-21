@@ -5,7 +5,7 @@
 config NET_VENDOR_GOOGLE
 	bool "Google Devices"
 	default y
-	---help---
+	help
 	  If you have a network (Ethernet) device belonging to this class, say Y.
 
 	  Note that the answer to this question doesn't directly affect the
@@ -18,7 +18,7 @@ if NET_VENDOR_GOOGLE
 config GVE
 	tristate "Google Virtual NIC (gVNIC) support"
 	depends on (PCI_MSI && X86)
-	---help---
+	help
 	  This driver supports Google Virtual NIC (gVNIC)"
 
 	  To compile this driver as a module, choose M here.

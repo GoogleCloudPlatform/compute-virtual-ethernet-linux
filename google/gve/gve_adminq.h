@@ -101,8 +101,8 @@ struct gve_device_descriptor {
 GVE_ASSERT_SIZE(struct, gve_device_descriptor, 40);
 
 struct device_option {
-  __be32 option_id;
-  __be32 option_length;
+	__be32 option_id;
+	__be32 option_length;
 };
 GVE_ASSERT_SIZE(struct, device_option, 8);
 
