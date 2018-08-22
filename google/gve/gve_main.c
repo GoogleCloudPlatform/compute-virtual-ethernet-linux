@@ -69,12 +69,10 @@ static void gve_get_stats(struct net_device *dev, struct rtnl_link_stats64 *s)
 			s->tx_bytes += priv->tx[ring].bytes_done;
 		}
 	}
-	/* TODO(csully): Start counting mcast, bcast, drops, etc? */
 }
 
 static int gve_alloc_counter_array(struct gve_priv *priv)
 {
-	/* TODO(csully): Figure out behavior of this on ARM/Power */
 	priv->counter_array = dma_zalloc_coherent(&priv->pdev->dev,
 		priv->num_event_counters * sizeof(__be32),
 		&priv->counter_array_bus, GFP_KERNEL);
@@ -97,10 +95,6 @@ static irqreturn_t gve_mgmnt_intr(int irq, void *arg)
 	struct gve_priv *priv = arg;
 
 	queue_work(priv->gve_wq, &priv->service_task);
-	/* TODO(venkateshs): We need to ack the interrupt here; can't do so
-	 * until vector 0's interrupt doorbell irq_state setup correctly in the
-	 * virtual device.
-	 */
 	return IRQ_HANDLED;
 }
 
