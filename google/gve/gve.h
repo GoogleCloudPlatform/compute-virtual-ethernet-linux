@@ -119,7 +119,6 @@ struct gve_tx_iovec {
 	u32 iov_padding;
 };
 
-/* TODO: Shrink this structure to <= 64b (cacheline) */
 struct gve_tx_buffer_state {
 	struct sk_buff *skb;
 	struct gve_tx_iovec iov[4];

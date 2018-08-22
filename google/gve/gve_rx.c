@@ -87,8 +87,6 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 
 	/* Allocate one page per Rx queue slot. Each page is split into two
 	 * packet buffers, when possible we "page flip" between the two.
-	 *
-	 * TODO(venkateshs): Respect Rx registered segment limit.
 	 */
 	slots = rx->data.mask + 1;
 	size = slots * PAGE_SIZE;
@@ -336,10 +334,6 @@ static int gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 		 */
 
 		/* Just fallback to copying for now */
-		/* TODO(venkateshs): Add page to list, scan list for
-		 * page_count == 1 pages to swap in here. Can we reuse page::lru
-		 * for our linkage?
-		 */
 		can_page_flip = false;
 	} else {
 		/* Pagecount should never be < 1 */
@@ -445,9 +439,6 @@ bool gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 	rx->desc.fill_cnt += work_done;
 
 	/* restock desc ring slots */
-	/* TODO(venkateshs): Do not write Rx doorbell every Rx burst; write
-	 * only when Rx ring has exhausted half or more of its space.
-	 */
 	dma_wmb();	/* Ensure descs are visible before ringing doorbell */
 	gve_rx_write_doorbell(priv, rx);
 	return gve_rx_work_pending(rx);
