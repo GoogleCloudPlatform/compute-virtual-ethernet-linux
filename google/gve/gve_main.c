@@ -722,7 +722,6 @@ static int gve_init_priv(struct gve_priv *priv, int max_rx_queues,
 			 int max_tx_queues)
 {
 	int num_ntfy;
-	int num_slices;
 	int err;
 
 	/* Set up the adminq */
@@ -755,15 +754,15 @@ static int gve_init_priv(struct gve_priv *priv, int max_rx_queues,
 	priv->mgmt_msix_idx = num_ntfy - 1;
 	priv->ntfy_blk_msix_base_idx = 0;
 
-	num_slices = num_online_cpus();
-	if (priv->max_num_slices != 0)
-		num_slices = min_t(u32, num_slices, priv->max_num_slices);
+	priv->tx_cfg.max_queues =
+		min_t(int, max_tx_queues, priv->num_ntfy_blks / 2);
+	priv->rx_cfg.max_queues =
+		min_t(int, max_rx_queues, priv->num_ntfy_blks / 2);
 
-	priv->tx_cfg.max_queues = min_t(u32, num_slices, max_tx_queues);
-	priv->rx_cfg.max_queues = min_t(u32, num_slices, max_rx_queues);
-
-	priv->tx_cfg.num_queues = priv->tx_cfg.max_queues;
-	priv->rx_cfg.num_queues = priv->rx_cfg.max_queues;
+	priv->tx_cfg.num_queues =
+		min_t(int, priv->default_num_queues, priv->tx_cfg.max_queues);
+	priv->rx_cfg.num_queues =
+		min_t(int, priv->default_num_queues, priv->rx_cfg.max_queues);
 
 	dev_info(&priv->pdev->dev, "TX queues %d, RX queues %d\n",
 		 priv->tx_cfg.num_queues, priv->rx_cfg.num_queues);
@@ -782,10 +781,10 @@ abort_with_adminq:
 
 static void gve_reset_pci(struct gve_priv *priv)
 {
-	int max_rx_queues, max_tx_queues;
-	int err;
 	bool was_up = test_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
 			       &priv->service_task_flags);
+	int max_rx_queues, max_tx_queues;
+	int err;
 
 	dev_info(&priv->pdev->dev, "Performing pci reset\n");
 	clear_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->service_task_flags);
@@ -836,9 +835,9 @@ err:
 
 static void gve_reset_aq(struct gve_priv *priv)
 {
-	int err;
 	bool was_up = test_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
 			       &priv->service_task_flags);
+	int err;
 
 	dev_info(&priv->pdev->dev, "Perfmorming AQ reset\n");
 	clear_bit(GVE_PRIV_FLAGS_DO_AQ_RESET, &priv->service_task_flags);

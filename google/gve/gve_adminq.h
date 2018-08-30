@@ -88,7 +88,7 @@ struct gve_device_descriptor {
 	__be16 reserved1;
 	__be16 tx_queue_entries;
 	__be16 rx_queue_entries;
-	__be16 max_num_slices;
+	__be16 default_num_queues;
 	__be16 mtu;
 	__be16 counters;
 	__be16 tx_pages_per_qpl;
