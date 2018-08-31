@@ -258,9 +258,11 @@ static int gve_tx_alloc_ring(struct gve_priv *priv, int idx)
 	if (gve_tx_fifo_init(priv, &tx->tx_fifo))
 		goto abort_with_desc;
 
-	tx->q_resources = dma_zalloc_coherent(hdev,
-		sizeof(struct gve_queue_resources), &tx->q_resources_bus,
-		GFP_KERNEL);
+	tx->q_resources =
+		dma_zalloc_coherent(hdev,
+				    sizeof(struct gve_queue_resources),
+				    &tx->q_resources_bus,
+				    GFP_KERNEL);
 	if (!tx->q_resources)
 		goto abort_with_fifo;
 

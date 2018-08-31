@@ -73,7 +73,7 @@ struct gve_tx_seg_desc {
 /* GVE Receive Packet Descriptor */
 /* The start of an ethernet packet comes 2 bytes into
  * the rx buffer.  This way, both the DMA and the L3/4 protocol
- * header acceess is aligned
+ * header access is aligned
  */
 #define GVE_RX_PAD 2
 
@@ -91,7 +91,7 @@ struct gve_rx_desc {
 GVE_ASSERT_SIZE(struct, gve_rx_desc, 64);
 
 struct gve_rx_data_slot {
-	/* byte offset into the rx registered segement of this slot */
+	/* byte offset into the rx registered segment of this slot */
 	__be64 qpl_offset;
 };
 
@@ -100,12 +100,12 @@ struct gve_rx_data_slot {
 #ifdef __LITTLE_ENDIAN
 #define GVE_SEQNO(x) ((((__force u16)x) >> 8) & 0x7)
 #else
-#define	GVE_SEQNO(x) ((__force u16)x & 0x7)
+#define	GVE_SEQNO(x) ((__force u16)(x) & 0x7)
 #endif
-#define	GVE_NEXT_SEQNO(seq) ((seq + 1) == 8 ? 1 : (seq + 1))
+#define	GVE_NEXT_SEQNO(seq) (((seq) + 1) == 8 ? 1 : ((seq) + 1))
 
 /* GVE Recive Packet Descriptor Flags */
-#define GVE_RXFLG(x)	cpu_to_be16(1 << (3 + x))
+#define GVE_RXFLG(x)	cpu_to_be16(1 << (3 + (x)))
 #define	GVE_RXF_FRAG	GVE_RXFLG(3)	/* IP Fragment			*/
 #define	GVE_RXF_IPV4	GVE_RXFLG(4)	/* IPv4				*/
 #define	GVE_RXF_IPV6	GVE_RXFLG(5)	/* IPv6				*/

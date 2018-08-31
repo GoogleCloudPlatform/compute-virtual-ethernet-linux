@@ -38,6 +38,6 @@
 	static void gve_assert_size_ ## type(void) __attribute__((used)); \
 	static inline void gve_assert_size_ ## type(void) \
 	{ \
-		BUILD_BUG_ON(sizeof(tag type) != size); \
+		BUILD_BUG_ON(sizeof(tag type) != (size)); \
 	}
 #endif /* _GVE_ASSERT_H_ */
