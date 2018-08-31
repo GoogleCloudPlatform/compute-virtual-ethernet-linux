@@ -73,9 +73,10 @@ static void gve_get_stats(struct net_device *dev, struct rtnl_link_stats64 *s)
 
 static int gve_alloc_counter_array(struct gve_priv *priv)
 {
-	priv->counter_array = dma_zalloc_coherent(&priv->pdev->dev,
-		priv->num_event_counters * sizeof(__be32),
-		&priv->counter_array_bus, GFP_KERNEL);
+	priv->counter_array =
+		dma_zalloc_coherent(&priv->pdev->dev,
+				    priv->num_event_counters * sizeof(__be32),
+				    &priv->counter_array_bus, GFP_KERNEL);
 	if (!priv->counter_array)
 		return -ENOMEM;
 
@@ -154,7 +155,7 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 	int err;
 
 	priv->msix_vectors = kcalloc(num_vecs_requested,
-				  sizeof(*priv->msix_vectors), GFP_KERNEL);
+				     sizeof(*priv->msix_vectors), GFP_KERNEL);
 	if (!priv->msix_vectors)
 		return -ENOMEM;
 	for (i = 0; i < num_vecs_requested; i++)
@@ -170,7 +171,7 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 	}
 	if (vecs_enabled != num_vecs_requested) {
 		int new_num_ntfy_blks = vecs_enabled - 1;
-		int vecs_per_type = (new_num_ntfy_blks)/2;
+		int vecs_per_type = (new_num_ntfy_blks) / 2;
 		int vecs_left = (new_num_ntfy_blks) % 2;
 
 		priv->num_ntfy_blks = new_num_ntfy_blks;
@@ -191,13 +192,14 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 	err = request_irq(priv->msix_vectors[priv->mgmt_msix_idx].vector,
 			  gve_mgmnt_intr, 0, priv->mgmt_msix_name, priv);
 	if (err) {
-		dev_err(hdev, "Did not receive managment vector.\n");
+		dev_err(hdev, "Did not receive management vector.\n");
 		goto abort_with_msix_enabled;
 	}
-	priv->ntfy_blocks = dma_zalloc_coherent(&priv->pdev->dev,
-					     priv->num_ntfy_blks *
-					     sizeof(*priv->ntfy_blocks),
-					     &priv->ntfy_block_bus, GFP_KERNEL);
+	priv->ntfy_blocks =
+		dma_zalloc_coherent(&priv->pdev->dev,
+				    priv->num_ntfy_blks *
+				    sizeof(*priv->ntfy_blocks),
+				    &priv->ntfy_block_bus, GFP_KERNEL);
 	if (!priv->ntfy_blocks) {
 		dev_err(hdev, "Failed to allocate notification blocks\n");
 		err = -ENOMEM;
@@ -386,7 +388,6 @@ static int gve_create_rings(struct gve_priv *priv)
 	}
 
 	return 0;
-
 }
 
 static int gve_alloc_rings(struct gve_priv *priv)
@@ -954,7 +955,6 @@ pci_reset:
 			&priv->service_task_flags);
 	set_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->service_task_flags);
 	queue_work(priv->gve_wq, &priv->service_task);
-	return;
 }
 
 static void gve_handle_status(struct gve_priv *priv, u32 status)

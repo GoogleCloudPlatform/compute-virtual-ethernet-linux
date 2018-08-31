@@ -169,10 +169,10 @@ int gve_adminq_configure_device_resources(struct gve_priv *priv,
 		.num_counters = cpu_to_be32(num_counters),
 		.irq_db_addr = cpu_to_be64(db_array_bus_addr),
 		.num_irq_dbs = cpu_to_be32(num_ntfy_blks),
-		.irq_db_stride = cpu_to_be32(L1_CACHE_ALIGN(sizeof(
-						priv->ntfy_blocks[0]))),
-		.ntfy_blk_msix_base_idx = cpu_to_be32(
-						priv->ntfy_blk_msix_base_idx),
+		.irq_db_stride = cpu_to_be32(
+			L1_CACHE_ALIGN(sizeof(priv->ntfy_blocks[0]))),
+		.ntfy_blk_msix_base_idx =
+			cpu_to_be32(priv->ntfy_blk_msix_base_idx),
 	};
 
 	return gve_execute_adminq_cmd(priv, &cmd);
@@ -270,7 +270,7 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	cmd.describe_device.device_descriptor_addr =
 						cpu_to_be64(descriptor_bus);
 	cmd.describe_device.device_descriptor_version =
-					cpu_to_be32(GVE_ADMINQ_DEVICE_DESCRIPTOR_VERSION);
+			cpu_to_be32(GVE_ADMINQ_DEVICE_DESCRIPTOR_VERSION);
 	cmd.describe_device.available_length = cpu_to_be32(PAGE_SIZE);
 
 	err = gve_execute_adminq_cmd(priv, &cmd);

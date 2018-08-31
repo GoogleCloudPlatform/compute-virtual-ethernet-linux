@@ -81,6 +81,7 @@ struct gve_adminq_describe_device {
 	__be32 device_descriptor_version;
 	__be32 available_length;
 };
+
 GVE_ASSERT_SIZE(struct, gve_adminq_describe_device, 16);
 
 struct gve_device_descriptor {
@@ -98,12 +99,14 @@ struct gve_device_descriptor {
 	__be16 total_length;
 	u8  reserved2[6];
 };
+
 GVE_ASSERT_SIZE(struct, gve_device_descriptor, 40);
 
 struct device_option {
 	__be32 option_id;
 	__be32 option_length;
 };
+
 GVE_ASSERT_SIZE(struct, device_option, 8);
 
 struct gve_adminq_configure_device_resources {
@@ -114,6 +117,7 @@ struct gve_adminq_configure_device_resources {
 	__be32 irq_db_stride;
 	__be32 ntfy_blk_msix_base_idx;
 };
+
 GVE_ASSERT_SIZE(struct, gve_adminq_configure_device_resources, 32);
 
 struct gve_adminq_register_page_list {
@@ -121,11 +125,13 @@ struct gve_adminq_register_page_list {
 	__be32 num_pages;
 	__be64 page_address_list_addr;
 };
+
 GVE_ASSERT_SIZE(struct, gve_adminq_register_page_list, 16);
 
 struct gve_adminq_unregister_page_list {
 	__be32 page_list_id;
 };
+
 GVE_ASSERT_SIZE(struct, gve_adminq_unregister_page_list, 4);
 
 struct gve_adminq_create_tx_queue {
@@ -136,6 +142,7 @@ struct gve_adminq_create_tx_queue {
 	__be32 queue_page_list_id;
 	__be32 ntfy_id;
 };
+
 GVE_ASSERT_SIZE(struct, gve_adminq_create_tx_queue, 32);
 
 struct gve_adminq_create_rx_queue {
@@ -148,6 +155,7 @@ struct gve_adminq_create_rx_queue {
 	__be64 rx_data_ring_addr;
 	__be32 queue_page_list_id;
 };
+
 GVE_ASSERT_SIZE(struct, gve_adminq_create_rx_queue, 48);
 
 /* Queue resources that are shared with the device */
@@ -160,16 +168,19 @@ struct gve_queue_resources {
 		u8 reserved[64];
 	};
 };
+
 GVE_ASSERT_SIZE(struct, gve_queue_resources, 64);
 
 struct gve_adminq_destroy_tx_queue {
 	__be32 queue_id;
 };
+
 GVE_ASSERT_SIZE(struct, gve_adminq_destroy_tx_queue, 4);
 
 struct gve_adminq_destroy_rx_queue {
 	__be32 queue_id;
 };
+
 GVE_ASSERT_SIZE(struct, gve_adminq_destroy_rx_queue, 4);
 
 union gve_adminq_command {
@@ -190,6 +201,7 @@ union gve_adminq_command {
 	};
 	u8 reserved[64];
 };
+
 GVE_ASSERT_SIZE(union, gve_adminq_command, 64);
 
 int gve_alloc_adminq(struct device *dev, struct gve_priv *priv);

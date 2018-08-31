@@ -62,6 +62,7 @@ static const char gve_gstrings_main_stats[][ETH_GSTRING_LEN] = {
 	"rx_packets", "tx_packets", "rx_bytes", "tx_bytes",
 	"rx_dropped", "tx_dropped",
 };
+
 #define GVE_MAIN_STATS_LEN  ARRAY_SIZE(gve_gstrings_main_stats)
 #define NUM_GVE_TX_CNTS	5
 #define NUM_GVE_RX_CNTS	2
@@ -107,7 +108,6 @@ static int gve_get_sset_count(struct net_device *netdev, int sset)
 
 	switch (sset) {
 	case ETH_SS_STATS:{
-
 		return GVE_MAIN_STATS_LEN +
 		       (priv->rx_cfg.num_queues * NUM_GVE_RX_CNTS) +
 		       (priv->tx_cfg.num_queues * NUM_GVE_TX_CNTS);
@@ -119,7 +119,7 @@ static int gve_get_sset_count(struct net_device *netdev, int sset)
 
 static void
 gve_get_ethtool_stats(struct net_device *netdev,
-		     struct ethtool_stats *stats, u64 *data)
+		      struct ethtool_stats *stats, u64 *data)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 	int ring;
@@ -238,8 +238,7 @@ int gve_reset(struct net_device *netdev, u32 *flags)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 
-	if (*flags == ETH_RESET_ALL)
-	{
+	if (*flags == ETH_RESET_ALL) {
 		*flags = 0;
 		gve_handle_user_reset(priv);
 		return 0;

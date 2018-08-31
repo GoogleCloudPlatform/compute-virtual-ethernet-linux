@@ -239,7 +239,7 @@ struct gve_priv {
 #define GVE_PRIV_FLAGS_DEVICE_WAS_UP		BIT(4)
 
 static inline __be32 __iomem *gve_irq_doorbell(struct gve_priv *priv,
-					   struct gve_notify_block *block)
+					       struct gve_notify_block *block)
 {
 	u32 irq_db_index = be32_to_cpu(smp_load_acquire(&block->irq_db_index));
 
@@ -247,7 +247,7 @@ static inline __be32 __iomem *gve_irq_doorbell(struct gve_priv *priv,
 }
 
 /**
-  * Returns the index into ntfy_blocks of the given rx ring's block
+ * Returns the index into ntfy_blocks of the given rx ring's block
  **/
 static inline u32 gve_tx_ntfy_idx(struct gve_priv *priv, u32 queue_idx)
 {
@@ -255,7 +255,7 @@ static inline u32 gve_tx_ntfy_idx(struct gve_priv *priv, u32 queue_idx)
 }
 
 /**
-  * Returns the index into ntfy_blocks of the given rx ring's block
+ * Returns the index into ntfy_blocks of the given rx ring's block
  **/
 static inline u32 gve_rx_ntfy_idx(struct gve_priv *priv, u32 queue_idx)
 {
@@ -263,7 +263,7 @@ static inline u32 gve_rx_ntfy_idx(struct gve_priv *priv, u32 queue_idx)
 }
 
 /**
-  * Returns the number of tx queue page lists
+ * Returns the number of tx queue page lists
  **/
 static inline u32 gve_num_tx_qpls(struct gve_priv *priv)
 {
@@ -271,7 +271,7 @@ static inline u32 gve_num_tx_qpls(struct gve_priv *priv)
 }
 
 /**
-  * Returns the number of rx queue page lists
+ * Returns the number of rx queue page lists
  **/
 static inline u32 gve_num_rx_qpls(struct gve_priv *priv)
 {
@@ -281,8 +281,8 @@ static inline u32 gve_num_rx_qpls(struct gve_priv *priv)
 /**
  * Returns a pointer to the next available tx qpl in the list of qpls
  **/
-static inline struct gve_queue_page_list *gve_assign_tx_qpl(
-							struct gve_priv *priv)
+static inline
+struct gve_queue_page_list *gve_assign_tx_qpl(struct gve_priv *priv)
 {
 	int id = find_first_zero_bit(priv->qpl_cfg.qpl_id_map,
 				     priv->qpl_cfg.qpl_map_size);
@@ -298,8 +298,8 @@ static inline struct gve_queue_page_list *gve_assign_tx_qpl(
 /**
  * Returns a pointer to the next available rx qpl in the list of qpls
  **/
-static inline struct gve_queue_page_list *gve_assign_rx_qpl(
-							struct gve_priv *priv)
+static inline
+struct gve_queue_page_list *gve_assign_rx_qpl(struct gve_priv *priv)
 {
 	int id = find_next_zero_bit(priv->qpl_cfg.qpl_id_map,
 				    priv->qpl_cfg.qpl_map_size,
@@ -338,7 +338,7 @@ bool gve_rx_poll(struct gve_notify_block *block, int budget);
 int gve_rx_alloc_rings(struct gve_priv *priv);
 void gve_rx_free_rings(struct gve_priv *priv);
 bool gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
-			      netdev_features_t feat);
+		       netdev_features_t feat);
 /* Resets */
 void gve_schedule_aq_reset(struct gve_priv *priv);
 void gve_schedule_pci_reset(struct gve_priv *priv);

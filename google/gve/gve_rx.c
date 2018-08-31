@@ -108,7 +108,6 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 	}
 
 	return slots;
-
 }
 
 static void gve_rx_add_to_block(struct gve_priv *priv, int queue_idx)
@@ -145,8 +144,8 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 	/* alloc rx data ring */
 	bytes = sizeof(*rx->data.data_ring) * slots;
 	rx->data.data_ring = dma_zalloc_coherent(hdev, bytes,
-						  &rx->data.data_bus,
-						  GFP_KERNEL);
+						 &rx->data.data_bus,
+						 GFP_KERNEL);
 	if (!rx->data.data_ring)
 		return -ENOMEM;
 	rx->desc.fill_cnt = gve_prefill_rx_pages(rx);
@@ -159,9 +158,11 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 	dma_wmb();
 
 	/* Alloc gve_queue_resources */
-	rx->q_resources = dma_zalloc_coherent(hdev,
-		sizeof(struct gve_queue_resources), &rx->q_resources_bus,
-		GFP_KERNEL);
+	rx->q_resources =
+		dma_zalloc_coherent(hdev,
+				    sizeof(struct gve_queue_resources),
+				    &rx->q_resources_bus,
+				    GFP_KERNEL);
 	if (!rx->q_resources) {
 		err = -ENOMEM;
 		goto abort_filled;
@@ -181,7 +182,7 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 	}
 
 	rx->desc.desc_ring = dma_zalloc_coherent(hdev, bytes, &rx->desc.bus,
-					    GFP_KERNEL);
+						 GFP_KERNEL);
 	if (!rx->desc.desc_ring) {
 		netdev_err(priv->dev, "alloc failed for rx[%d]->desc.desc_ring\n",
 			   idx);
@@ -345,7 +346,7 @@ static int gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 #endif
 
 copy:
-	if ((len <= priv->rx_copybreak) || !can_page_flip) {
+	if (len <= priv->rx_copybreak || !can_page_flip) {
 		skb = napi_alloc_skb(napi, len);
 		if (unlikely(!skb))
 			return 0;
@@ -402,7 +403,7 @@ static bool gve_rx_work_pending(struct gve_rx_ring *rx)
 }
 
 bool gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
-			      netdev_features_t feat)
+		       netdev_features_t feat)
 {
 	struct gve_priv *priv = rx->gve;
 	struct gve_rx_desc *desc;
