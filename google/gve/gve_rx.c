@@ -1,35 +1,7 @@
-/*
- * Google virtual Ethernet (gve) driver
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/* Google virtual Ethernet (gve) driver
  *
  * Copyright (C) 2015-2018 Google, Inc.
- *
- * This software is available to you under a choice of one of two licenses. You
- * may choose to be licensed under the terms of the GNU General Public License
- * version 2, as published by the Free Software Foundation, and may be copied,
- * distributed, and modified under those terms. See the GNU General Public
- * License for more details. Otherwise you may choose to be licensed under the
- * terms of the MIT license below.
- *
- * --------------------------------------------------------------------------
- *
- * MIT License
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to
- * deal in the Software without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  */
 
 #include "gve.h"
@@ -282,8 +254,8 @@ static int gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 	page_info = &rx->data.page_info[idx];
 
 	netif_info(priv, rx_status, priv->dev,
-		   "[%d] gve_rx: len=0x%x flags=0x%x data.cnt=%d\n",
-		   rx->q_num, len, rx_desc->flags_seq, rx->data.cnt);
+		   "[%d] %s: len=0x%x flags=0x%x data.cnt=%d\n",
+		   rx->q_num, __func__, len, rx_desc->flags_seq, rx->data.cnt);
 
 #if PAGE_SIZE == 4096
 	/* just copy small packets. */
@@ -337,8 +309,7 @@ static int gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 		/* Just fallback to copying for now */
 		can_page_flip = false;
 	} else {
-		/* Pagecount should never be < 1 */
-		BUG_ON(pagecount < 1);
+		WARN_ON(pagecount < 1, "Pagecount should never be < 1");
 		return 0;
 	}
 #else
@@ -427,7 +398,7 @@ bool gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 		cnt++;
 		idx = cnt & rx->desc.mask;
 		desc = rx->desc.desc_ring + idx;
-		rx->desc.seqno = GVE_NEXT_SEQNO(rx->desc.seqno);
+		rx->desc.seqno = gve_next_seqno(rx->desc.seqno);
 		work_done++;
 	}
 
