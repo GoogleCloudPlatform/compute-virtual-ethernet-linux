@@ -1,35 +1,7 @@
-/*
- * Google virtual Ethernet (gve) driver
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+/* Google virtual Ethernet (gve) driver
  *
  * Copyright (C) 2015-2018 Google, Inc.
- *
- * This software is available to you under a choice of one of two licenses. You
- * may choose to be licensed under the terms of the GNU General Public License
- * version 2, as published by the Free Software Foundation, and may be copied,
- * distributed, and modified under those terms. See the GNU General Public
- * License for more details. Otherwise you may choose to be licensed under the
- * terms of the MIT license below.
- *
- * --------------------------------------------------------------------------
- *
- * MIT License
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to
- * deal in the Software without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  */
 
 #include "gve.h"
@@ -84,7 +56,8 @@ static int gve_tx_fifo_init(struct gve_priv *priv, struct gve_tx_fifo *fifo)
 
 static void gve_tx_fifo_release(struct gve_priv *priv, struct gve_tx_fifo *fifo)
 {
-	BUG_ON(atomic_read(&fifo->available) != fifo->size);
+	WARN_ON(atomic_read(&fifo->available) != fifo->size,
+		"Releasing non-empty fifo");
 
 	vunmap(fifo->base);
 }
@@ -127,7 +100,9 @@ static int gve_tx_alloc_fifo(struct gve_tx_fifo *fifo, size_t bytes,
 	 * are aligned, so if there is space for the data, there is space for
 	 * the padding to the next alignment.
 	 */
-	BUG_ON(!gve_tx_fifo_can_alloc(fifo, bytes));
+	WARN_ON(!gve_tx_fifo_can_alloc(fifo, bytes),
+		"Reached %s when there's not enough space in the fifo",
+		__func__);
 
 	nfrags++;
 
@@ -420,8 +395,7 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 	pad_bytes = gve_tx_fifo_pad_alloc_one_frag(&tx->tx_fifo, hlen);
 	hdr_nfrags = gve_tx_alloc_fifo(&tx->tx_fifo, hlen + pad_bytes,
 				       &info->iov[0]);
-	/* hdr_nfrags should never be 0! */
-	BUG_ON(!hdr_nfrags);
+	WARN_ON(!hdr_nfrags, "hdr_nfrags should never be 0!");
 	payload_nfrags = gve_tx_alloc_fifo(&tx->tx_fifo, skb->len - hlen,
 					   &info->iov[payload_iov]);
 
@@ -478,7 +452,8 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 	struct gve_tx_ring *tx;
 	int nsegs;
 
-	BUG_ON(skb_get_queue_mapping(skb) > p->tx_cfg.num_queues);
+	WARN_ON(skb_get_queue_mapping(skb) > p->tx_cfg.num_queues,
+		"skb queue index out of range");
 	tx = &p->tx[skb_get_queue_mapping(skb)];
 	if (unlikely(gve_maybe_stop_tx(tx, skb))) {
 		/* We need to ring the txq doorbell -- we have stopped the Tx
@@ -500,8 +475,8 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 
 	/* give packets to NIC */
 	tx->req += nsegs;
-	netif_info(p, tx_queued, p->dev, "[%d] gve_tx: req=%u done=%u\n",
-		   tx->q_num, tx->req, tx->done);
+	netif_info(p, tx_queued, p->dev, "[%d] %s: req=%u done=%u\n",
+		   tx->q_num, __func__, tx->req, tx->done);
 	if (!skb->xmit_more || netif_xmit_stopped(tx->netdev_txq)) {
 		/* Ensure tx descs are visible before ringing doorbell */
 		dma_wmb();
@@ -522,8 +497,8 @@ int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx, u32 to_do)
 	for (j = 0; j < to_do; j++) {
 		idx = tx->done & tx->mask;
 		netif_info(priv, tx_done, priv->dev,
-			   "[%d] gve_clean_tx_done: idx=%d (req=%u done=%u)\n",
-			   tx->q_num, idx, tx->req, tx->done);
+			   "[%d] %s: idx=%d (req=%u done=%u)\n",
+			   tx->q_num, __func__, idx, tx->req, tx->done);
 		info = &tx->info[idx];
 		skb = info->skb;
 
