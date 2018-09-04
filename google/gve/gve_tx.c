@@ -56,8 +56,8 @@ static int gve_tx_fifo_init(struct gve_priv *priv, struct gve_tx_fifo *fifo)
 
 static void gve_tx_fifo_release(struct gve_priv *priv, struct gve_tx_fifo *fifo)
 {
-	WARN_ON(atomic_read(&fifo->available) != fifo->size,
-		"Releasing non-empty fifo");
+	WARN(atomic_read(&fifo->available) != fifo->size,
+	     "Releasing non-empty fifo");
 
 	vunmap(fifo->base);
 }
@@ -100,9 +100,9 @@ static int gve_tx_alloc_fifo(struct gve_tx_fifo *fifo, size_t bytes,
 	 * are aligned, so if there is space for the data, there is space for
 	 * the padding to the next alignment.
 	 */
-	WARN_ON(!gve_tx_fifo_can_alloc(fifo, bytes),
-		"Reached %s when there's not enough space in the fifo",
-		__func__);
+	WARN(!gve_tx_fifo_can_alloc(fifo, bytes),
+	     "Reached %s when there's not enough space in the fifo",
+	     __func__);
 
 	nfrags++;
 
@@ -395,7 +395,7 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 	pad_bytes = gve_tx_fifo_pad_alloc_one_frag(&tx->tx_fifo, hlen);
 	hdr_nfrags = gve_tx_alloc_fifo(&tx->tx_fifo, hlen + pad_bytes,
 				       &info->iov[0]);
-	WARN_ON(!hdr_nfrags, "hdr_nfrags should never be 0!");
+	WARN(!hdr_nfrags, "hdr_nfrags should never be 0!");
 	payload_nfrags = gve_tx_alloc_fifo(&tx->tx_fifo, skb->len - hlen,
 					   &info->iov[payload_iov]);
 
@@ -452,8 +452,8 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 	struct gve_tx_ring *tx;
 	int nsegs;
 
-	WARN_ON(skb_get_queue_mapping(skb) > p->tx_cfg.num_queues,
-		"skb queue index out of range");
+	WARN(skb_get_queue_mapping(skb) > p->tx_cfg.num_queues,
+	     "skb queue index out of range");
 	tx = &p->tx[skb_get_queue_mapping(skb)];
 	if (unlikely(gve_maybe_stop_tx(tx, skb))) {
 		/* We need to ring the txq doorbell -- we have stopped the Tx
