@@ -309,7 +309,7 @@ static int gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 		/* Just fallback to copying for now */
 		can_page_flip = false;
 	} else {
-		WARN_ON(pagecount < 1, "Pagecount should never be < 1");
+		WARN(pagecount < 1, "Pagecount should never be < 1");
 		return 0;
 	}
 #else
