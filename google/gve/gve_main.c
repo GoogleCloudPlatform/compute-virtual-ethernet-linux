@@ -307,8 +307,9 @@ static int gve_register_qpls(struct gve_priv *priv)
 	for (i = 0; i < num_qpls; i++) {
 		err = gve_adminq_register_page_list(priv, &priv->qpls[i]);
 		if (err) {
-			netdev_err(priv->dev, "failed to register queue page list %d\n",
-				   priv->qpls[i].id);
+			netif_err(priv, drv, priv->dev,
+				  "failed to register queue page list %d\n",
+				  priv->qpls[i].id);
 			return err;
 		}
 	}
@@ -337,17 +338,17 @@ static int gve_create_rings(struct gve_priv *priv)
 	for (i = 0; i < priv->tx_cfg.num_queues; i++) {
 		err = gve_adminq_create_tx_queue(priv, i);
 		if (err) {
-			netdev_err(priv->dev, "failed to create tx queue %d\n",
-				   i);
+			netif_err(priv, drv, priv->dev, "failed to create tx queue %d\n",
+				  i);
 			return err;
 		}
-		netdev_dbg(priv->dev, "created tx queue %d\n", i);
+		netif_dbg(priv, drv, priv->dev, "created tx queue %d\n", i);
 	}
 	for (i = 0; i < priv->rx_cfg.num_queues; i++) {
 		err = gve_adminq_create_rx_queue(priv, i);
 		if (err) {
-			netdev_err(priv->dev, "failed to create rx queue %d\n",
-				   i);
+			netif_err(priv, drv, priv->dev, "failed to create rx queue %d\n",
+				  i);
 			return err;
 		}
 		/* Rx data ring has been prefilled with packet buffers at
@@ -356,7 +357,7 @@ static int gve_create_rings(struct gve_priv *priv)
 		 * buffers to the NIC.
 		 */
 		gve_rx_write_doorbell(priv, &priv->rx[i]);
-		netdev_dbg(priv->dev, "created rx queue %d\n", i);
+		netif_dbg(priv, drv, priv->dev, "created rx queue %d\n", i);
 	}
 
 	return 0;
@@ -403,20 +404,22 @@ static int gve_destroy_rings(struct gve_priv *priv)
 	for (i = 0; i < priv->tx_cfg.num_queues; i++) {
 		err = gve_adminq_destroy_tx_queue(priv, i);
 		if (err) {
-			netdev_err(priv->dev, "failed to destroy tx queue %d\n",
-				   i);
+			netif_err(priv, drv, priv->dev,
+				  "failed to destroy tx queue %d\n",
+				  i);
 			return err;
 		}
-		netdev_dbg(priv->dev, "destroyed tx queue %d\n", i);
+		netif_dbg(priv, drv, priv->dev, "destroyed tx queue %d\n", i);
 	}
 	for (i = 0; i < priv->rx_cfg.num_queues; i++) {
 		err = gve_adminq_destroy_rx_queue(priv, i);
 		if (err) {
-			netdev_err(priv->dev, "failed to destroy rx queue %d\n",
-				   i);
+			netif_err(priv, drv, priv->dev,
+				  "failed to destroy rx queue %d\n",
+				  i);
 			return err;
 		}
-		netdev_dbg(priv->dev, "destroyed rx queue %d\n", i);
+		netif_dbg(priv, drv, priv->dev, "destroyed rx queue %d\n", i);
 	}
 	return 0;
 }
@@ -737,10 +740,10 @@ static int gve_init_priv(struct gve_priv *priv, int max_rx_queues,
 	priv->rx_cfg.num_queues =
 		min_t(int, priv->default_num_queues, priv->rx_cfg.max_queues);
 
-	dev_info(&priv->pdev->dev, "TX queues %d, RX queues %d\n",
-		 priv->tx_cfg.num_queues, priv->rx_cfg.num_queues);
-	dev_info(&priv->pdev->dev, "Max TX queues %d, Max RX queues %d\n",
-		 priv->tx_cfg.max_queues, priv->rx_cfg.max_queues);
+	netif_info(priv, drv, priv->dev, "TX queues %d, RX queues %d\n",
+		   priv->tx_cfg.num_queues, priv->rx_cfg.num_queues);
+	netif_info(priv, drv, priv->dev, "Max TX queues %d, Max RX queues %d\n",
+		   priv->tx_cfg.max_queues, priv->rx_cfg.max_queues);
 
 	err = gve_setup_device_resources(priv);
 	if (err)

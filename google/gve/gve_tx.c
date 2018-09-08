@@ -101,8 +101,7 @@ static int gve_tx_alloc_fifo(struct gve_tx_fifo *fifo, size_t bytes,
 	 * the padding to the next alignment.
 	 */
 	WARN(!gve_tx_fifo_can_alloc(fifo, bytes),
-	     "Reached %s when there's not enough space in the fifo",
-	     __func__);
+	     "Reached %s when there's not enough space in the fifo", __func__);
 
 	nfrags++;
 
@@ -187,7 +186,7 @@ void gve_tx_free_ring(struct gve_priv *priv, int idx)
 	vfree(tx->info);
 	tx->info = NULL;
 
-	netdev_dbg(priv->dev, "freed tx queue %d\n", idx);
+	netif_dbg(priv, drv, priv->dev, "freed tx queue %d\n", idx);
 }
 
 static void gve_tx_add_to_block(struct gve_priv *priv, int queue_idx)
