@@ -251,8 +251,8 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 
 	priv->tx_desc_cnt = be16_to_cpu(descriptor->tx_queue_entries);
 	if (priv->tx_desc_cnt * sizeof(priv->tx->desc[0]) < PAGE_SIZE) {
-		dev_err(&priv->pdev->dev, "Rx desc count %d too low\n",
-			priv->rx_desc_cnt);
+		netif_err(priv, drv, priv->dev, "Tx desc count %d too low\n",
+			  priv->tx_desc_cnt);
 		err = -EINVAL;
 		goto free_device_descriptor;
 	}
@@ -261,8 +261,8 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	    < PAGE_SIZE ||
 	    priv->rx_desc_cnt * sizeof(priv->rx->data.data_ring[0])
 	    < PAGE_SIZE) {
-		dev_err(&priv->pdev->dev, "Rx desc count %d too low\n",
-			priv->rx_desc_cnt);
+		netif_err(priv, drv, priv->dev, "Rx desc count %d too low\n",
+			  priv->rx_desc_cnt);
 		err = -EINVAL;
 		goto free_device_descriptor;
 	}
@@ -270,7 +270,8 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 				be64_to_cpu(descriptor->max_registered_pages);
 	mtu = be16_to_cpu(descriptor->mtu);
 	if (mtu < GVE_MIN_MTU) {
-		dev_err(&priv->pdev->dev, "MTU %d below minimum MTU\n", mtu);
+		netif_err(priv, drv, priv->dev, "MTU %d below minimum MTU\n",
+			  mtu);
 		err = -EINVAL;
 		goto free_device_descriptor;
 	}
@@ -279,18 +280,21 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	priv->num_event_counters = be16_to_cpu(descriptor->counters);
 	ether_addr_copy(priv->dev->dev_addr, descriptor->mac);
 	mac = descriptor->mac;
-	dev_info(&priv->pdev->dev, "MAC addr: %02x:%02x:%02x:%02x:%02x:%02x\n",
-		 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+	netif_info(priv, drv, priv->dev,
+		   "MAC addr: %02x:%02x:%02x:%02x:%02x:%02x\n",
+		   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 	priv->tx_pages_per_qpl = be16_to_cpu(descriptor->tx_pages_per_qpl);
 	if (priv->tx_pages_per_qpl > GVE_TX_QPL_MAX_PAGES) {
-		dev_info(&priv->pdev->dev, "TX pages per qpl %d more than maximum %d, defaulting to the maximum instead.\n",
-			 priv->tx_pages_per_qpl, GVE_TX_QPL_MAX_PAGES);
+		netif_info(priv, drv, priv->dev,
+			   "TX pages per qpl %d more than maximum %d, defaulting to the maximum instead.\n",
+			   priv->tx_pages_per_qpl, GVE_TX_QPL_MAX_PAGES);
 		priv->tx_pages_per_qpl = GVE_TX_QPL_MAX_PAGES;
 	}
 	priv->rx_pages_per_qpl = be16_to_cpu(descriptor->rx_pages_per_qpl);
 	if (priv->rx_pages_per_qpl > GVE_RX_QPL_MAX_PAGES) {
-		dev_info(&priv->pdev->dev, "RX pages per qpl %d more than maximum %d, defaulting to the maximum instead.\n",
-			 priv->rx_pages_per_qpl, GVE_RX_QPL_MAX_PAGES);
+		netif_info(priv, drv, priv->dev,
+			   "RX pages per qpl %d more than maximum %d, defaulting to the maximum instead.\n",
+			   priv->rx_pages_per_qpl, GVE_RX_QPL_MAX_PAGES);
 		priv->rx_pages_per_qpl = GVE_RX_QPL_MAX_PAGES;
 	}
 	priv->default_num_queues = be16_to_cpu(descriptor->default_num_queues);

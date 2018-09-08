@@ -47,7 +47,7 @@ static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 	dma_free_coherent(hdev, bytes, rx->data.data_ring,
 			  rx->data.data_bus);
 	rx->data.data_ring = NULL;
-	netdev_dbg(priv->dev, "freed rx ring %d\n", idx);
+	netif_dbg(priv, drv, priv->dev, "freed rx ring %d\n", idx);
 }
 
 static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
@@ -147,8 +147,9 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 	bytes = sizeof(struct gve_rx_desc) * priv->rx_desc_cnt;
 	npages = bytes / PAGE_SIZE;
 	if (npages * PAGE_SIZE != bytes) {
-		netdev_err(priv->dev, "rx[%d]->desc.desc_ring size=%lu illegal\n",
-			   idx, bytes);
+		netif_err(priv, drv, priv->dev,
+			  "rx[%d]->desc.desc_ring size must be a multiple of PAGE_SIZE. Actual size: %lu\n",
+			  idx, bytes);
 		err = -EIO;
 		goto abort_with_q_resources;
 	}
@@ -156,8 +157,8 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 	rx->desc.desc_ring = dma_zalloc_coherent(hdev, bytes, &rx->desc.bus,
 						 GFP_KERNEL);
 	if (!rx->desc.desc_ring) {
-		netdev_err(priv->dev, "alloc failed for rx[%d]->desc.desc_ring\n",
-			   idx);
+		netif_err(priv, drv, priv->dev,
+			  "alloc failed for rx[%d]->desc.desc_ring\n", idx);
 		err = -ENOMEM;
 		goto abort_with_q_resources;
 	}

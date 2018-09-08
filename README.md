@@ -1,7 +1,7 @@
-# Linux kernel driver for Compute Engine Virtual Ethernet (gve)
+# Linux kernel driver for Compute Engine Virtual Ethernet
 
 This repository contains the source for building an out-of-tree Linux kernel
-module for the Compute Engine Virtual Ethernet device named `gve.ko`.
+module for the Compute Engine Virtual Ethernet device.
 
 # Supported Hardware
 
@@ -71,8 +71,5 @@ those maximums.
 ethtool --set-channels devname [rx N] [tx N] [combined N]
 ```
 
--   `combined`: attempts to set both rx and tx queues to N
-
--   `rx`: attempts to set rx queues to N
-
--   `tx`: attempts to set tx queues to N
+combined: attempts to set both rx and tx queues to N rx: attempts to set rx
+queues to N tx: attempts to set tx queues to N
