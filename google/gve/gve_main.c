@@ -642,16 +642,25 @@ int gve_adjust_queues(struct gve_priv *priv,
 		      struct gve_queue_config new_rx_config,
 		      struct gve_queue_config new_tx_config)
 {
-	/* To make this process as simple as possible we teardown the device,
-	 * set the new configuration, and then bring the device up again.
-	 */
-	dev_deactivate(priv->dev);
-	gve_close(priv->dev);
-	priv->tx_cfg = new_tx_config;
-	priv->rx_cfg = new_rx_config;
-	dev_activate(priv->dev);
+	if (priv->is_up) {
+		/* To make this process as simple as possible we teardown the
+		 * device, set the new configuration, and then bring the device
+		 * up again.
+		 */
+		dev_deactivate(priv->dev);
+		gve_close(priv->dev);
+		priv->tx_cfg = new_tx_config;
+		priv->rx_cfg = new_rx_config;
+		dev_activate(priv->dev);
 
-	return gve_open(priv->dev);
+		return gve_open(priv->dev);
+	} else {
+		/* Set the config for the next up. */
+		priv->tx_cfg = new_tx_config;
+		priv->rx_cfg = new_rx_config;
+
+		return 0;
+	}
 }
 
 static void gve_turndown_queues(struct gve_priv *priv)
