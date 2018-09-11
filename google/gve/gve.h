@@ -29,6 +29,8 @@
 #define GVE_TX_QPL_MAX_PAGES	512
 #define GVE_RX_QPL_MAX_PAGES	1024
 
+#define GVE_MIN_MTU			(68)
+
 struct gve_rx_desc_queue {
 	struct gve_rx_desc *desc_ring;
 	dma_addr_t bus;
@@ -143,8 +145,6 @@ struct gve_notify_block {
 	struct gve_tx_ring *tx;
 	struct gve_rx_ring *rx;
 } ____cacheline_aligned;
-
-#define GVE_MIN_MTU			(68)
 
 struct gve_queue_config {
 	int max_queues;
