@@ -23,12 +23,11 @@ void gve_rx_remove_from_block(struct gve_priv *priv, int queue_idx)
 static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 {
 	struct gve_rx_ring *rx = &priv->rx[idx];
-	struct device *hdev;
+	struct device *hdev = &priv->pdev->dev;
 	size_t bytes;
 	int slots;
 
 	gve_rx_remove_from_block(priv, idx);
-	hdev = &priv->pdev->dev;
 
 	bytes = sizeof(struct gve_rx_desc) * priv->rx_desc_cnt;
 	dma_free_coherent(hdev, bytes, rx->desc.desc_ring, rx->desc.bus);
