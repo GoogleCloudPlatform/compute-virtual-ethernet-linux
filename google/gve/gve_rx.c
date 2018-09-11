@@ -216,10 +216,7 @@ void gve_rx_free_rings(struct gve_priv *priv)
 
 void gve_rx_write_doorbell(struct gve_priv *priv, struct gve_rx_ring *rx)
 {
-	/* The device might have changed the db index so make sure we get the
-	 * latest copy.
-	 */
-	u32 db_idx = be32_to_cpu(smp_load_acquire(&rx->q_resources->db_index));
+	u32 db_idx = be32_to_cpu(rx->q_resources->db_index);
 
 	writel(cpu_to_be32(rx->desc.fill_cnt), &priv->db_bar2[db_idx]);
 }
