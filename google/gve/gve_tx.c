@@ -432,13 +432,13 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 
 netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 {
-	struct gve_priv *p = netdev_priv(dev);
+	struct gve_priv *priv = netdev_priv(dev);
 	struct gve_tx_ring *tx;
 	int nsegs;
 
-	WARN(skb_get_queue_mapping(skb) > p->tx_cfg.num_queues,
+	WARN(skb_get_queue_mapping(skb) > priv->tx_cfg.num_queues,
 	     "skb queue index out of range");
-	tx = &p->tx[skb_get_queue_mapping(skb)];
+	tx = &priv->tx[skb_get_queue_mapping(skb)];
 	if (unlikely(gve_maybe_stop_tx(tx, skb))) {
 		/* We need to ring the txq doorbell -- we have stopped the Tx
 		 * queue for want of resources, but prior calls to gve_tx()
@@ -449,7 +449,7 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 		 * ringing doorbell.
 		 */
 		dma_wmb();
-		gve_tx_put_doorbell(p, tx->q_resources, cpu_to_be32(tx->req));
+		gve_tx_put_doorbell(priv, tx->q_resources, cpu_to_be32(tx->req));
 		return NETDEV_TX_BUSY;
 	}
 	nsegs = gve_tx_add_skb(tx, skb);
@@ -459,12 +459,12 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 
 	/* give packets to NIC */
 	tx->req += nsegs;
-	netif_info(p, tx_queued, p->dev, "[%d] %s: req=%u done=%u\n",
+	netif_info(priv, tx_queued, priv->dev, "[%d] %s: req=%u done=%u\n",
 		   tx->q_num, __func__, tx->req, tx->done);
 	if (!skb->xmit_more || netif_xmit_stopped(tx->netdev_txq)) {
 		/* Ensure tx descs are visible before ringing doorbell */
 		dma_wmb();
-		gve_tx_put_doorbell(p, tx->q_resources, cpu_to_be32(tx->req));
+		gve_tx_put_doorbell(priv, tx->q_resources, cpu_to_be32(tx->req));
 	}
 	return NETDEV_TX_OK;
 }
