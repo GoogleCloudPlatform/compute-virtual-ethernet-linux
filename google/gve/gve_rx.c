@@ -240,7 +240,6 @@ static int gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 	struct sk_buff *skb;
 	int pagecount;
 	u64 qpl_offset;
-	u64 dma_addr;
 	void *va;
 	u16 len;
 	int idx;
@@ -321,7 +320,6 @@ copy:
 
 		va = page_info->page_address + page_info->page_offset +
 		     GVE_RX_PAD;
-		dma_addr = rx->data.qpl->page_buses[idx];
 
 		__skb_put(skb, len);
 
