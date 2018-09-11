@@ -146,8 +146,8 @@ static void gve_tx_remove_from_block(struct gve_priv *priv, int queue_idx)
 
 void gve_tx_free_ring(struct gve_priv *priv, int idx)
 {
-	struct device *hdev = &priv->pdev->dev;
 	struct gve_tx_ring *tx = &priv->tx[idx];
+	struct device *hdev = &priv->pdev->dev;
 	size_t bytes;
 	int slots;
 
@@ -532,6 +532,7 @@ __be32 gve_tx_load_event_counter(struct gve_priv *priv,
 
 bool gve_tx_poll(struct gve_notify_block *block, int budget)
 {
+	struct gve_priv *priv = block->priv;
 	struct gve_tx_ring *tx = block->tx;
 	bool repoll = false;
 	u32 nic_done;
@@ -542,14 +543,14 @@ bool gve_tx_poll(struct gve_notify_block *block, int budget)
 		budget = INT_MAX;
 
 	/* Find out how much work there is to be done */
-	tx->last_nic_done = gve_tx_load_event_counter(block->priv, tx);
+	tx->last_nic_done = gve_tx_load_event_counter(priv, tx);
 	nic_done = be32_to_cpu(tx->last_nic_done);
 	if (budget > 0) {
 		/* Do as much work as we have that the budget will
 		 * allow
 		 */
 		to_do = min_t(u32, (nic_done - tx->done), budget);
-		gve_clean_tx_done(block->priv, tx, to_do);
+		gve_clean_tx_done(priv, tx, to_do);
 	}
 	/* If we still have work we want to repoll */
 	repoll |= (nic_done != tx->done);

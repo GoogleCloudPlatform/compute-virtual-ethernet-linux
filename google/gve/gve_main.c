@@ -86,7 +86,7 @@ int gve_napi_poll(struct napi_struct *napi, int budget)
 {
 	struct gve_notify_block *block;
 	__be32 __iomem *irq_doorbell;
-	int reschedule = false;
+	bool reschedule = false;
 	struct gve_priv *priv;
 
 	block = container_of(napi, struct gve_notify_block, napi);

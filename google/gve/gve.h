@@ -217,7 +217,7 @@ static inline __be32 __iomem *gve_irq_doorbell(struct gve_priv *priv,
 }
 
 /**
- * Returns the index into ntfy_blocks of the given rx ring's block
+ * Returns the index into ntfy_blocks of the given tx ring's block
  **/
 static inline u32 gve_tx_ntfy_idx(struct gve_priv *priv, u32 queue_idx)
 {
