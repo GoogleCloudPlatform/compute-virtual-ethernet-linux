@@ -135,7 +135,7 @@ struct gve_tx_ring {
 #define GVE_MIN_MSIX 3
 
 struct gve_notify_block {
-	volatile __be32 irq_db_index; /* Set by device - must be first field */
+	__be32 irq_db_index; /* Set by device - must be first field */
 	char name[IFNAMSIZ + 16];
 	struct napi_struct napi;
 	int napi_enabled;
@@ -213,12 +213,7 @@ struct gve_priv {
 static inline __be32 __iomem *gve_irq_doorbell(struct gve_priv *priv,
 					       struct gve_notify_block *block)
 {
-	/* The device might have changed the db index so make sure we get the
-	 * latest copy.
-	 */
-	u32 irq_db_index = be32_to_cpu(smp_load_acquire(&block->irq_db_index));
-
-	return &priv->db_bar2[irq_db_index];
+	return &priv->db_bar2[be32_to_cpu(block->irq_db_index)];
 }
 
 /**

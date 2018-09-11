@@ -15,22 +15,7 @@ static inline void gve_tx_put_doorbell(struct gve_priv *priv,
 				       struct gve_queue_resources *q_resources,
 				       __be32 val)
 {
-	u32 db_idx, new_db_idx;
-
-	/* Read queue_resources::db_index to find up-to-date location of Tx
-	 * queue doorbell. smp_load_acquire synchronizes-with release store
-	 * of db_index from the device.
-	 */
-	db_idx = be32_to_cpu(smp_load_acquire(&q_resources->db_index));
-	writel(val, &priv->db_bar2[db_idx]);
-
-	/* Re-read queue_resources::db_index; if doorbell location has changed,
-	 * write doorbell value to new location. smp_load_acquire synchronizes
-	 * with concurrent update to db_index from the device.
-	 */
-	new_db_idx = be32_to_cpu(smp_load_acquire(&q_resources->db_index));
-	if (unlikely(db_idx != new_db_idx))
-		writel(val, &priv->db_bar2[new_db_idx]);
+	writel(val, &priv->db_bar2[be32_to_cpu(q_resources->db_index)]);
 }
 
 /* gvnic can only transmit from a per-queue Registered Segment.
@@ -540,13 +525,9 @@ int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx, u32 to_do)
 __be32 gve_tx_load_event_counter(struct gve_priv *priv,
 				 struct gve_tx_ring *tx)
 {
-	__be32 counter_index;
+	u32 counter_index = be32_to_cpu((tx->q_resources->counter_index));
 
-	/* queue_resources::counter_index may be dynamically updated by the
-	 * device. Use READ_ONCE to ensure we do not cache counter_index.
-	 */
-	counter_index = READ_ONCE(tx->q_resources->counter_index);
-	return READ_ONCE(priv->counter_array[be32_to_cpu(counter_index)]);
+	return READ_ONCE(priv->counter_array[counter_index]);
 }
 
 bool gve_tx_poll(struct gve_notify_block *block, int budget)

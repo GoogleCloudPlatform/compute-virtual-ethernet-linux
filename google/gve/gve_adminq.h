@@ -134,8 +134,8 @@ GVE_ASSERT_SIZE(struct, gve_adminq_create_rx_queue, 48);
 struct gve_queue_resources {
 	union {
 		struct {
-			volatile __be32 db_index;	/* Device -> Guest */
-			volatile __be32 counter_index;	/* Device -> Guest */
+			__be32 db_index;	/* Device -> Guest */
+			__be32 counter_index;	/* Device -> Guest */
 		};
 		u8 reserved[64];
 	};
