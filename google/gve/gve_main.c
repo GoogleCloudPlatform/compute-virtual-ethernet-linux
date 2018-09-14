@@ -133,8 +133,7 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 	for (i = 0; i < num_vecs_requested; i++)
 		priv->msix_vectors[i].entry = i;
 	vecs_enabled = pci_enable_msix_range(priv->pdev, priv->msix_vectors,
-					     GVE_MIN_MSIX,
-					     num_vecs_requested);
+					     GVE_MIN_MSIX, num_vecs_requested);
 	if (vecs_enabled < 0) {
 		dev_err(hdev, "Could not enable min msix %d/%d\n",
 			GVE_MIN_MSIX, vecs_enabled);
@@ -143,8 +142,8 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 	}
 	if (vecs_enabled != num_vecs_requested) {
 		int new_num_ntfy_blks = vecs_enabled - 1;
-		int vecs_per_type = (new_num_ntfy_blks) / 2;
-		int vecs_left = (new_num_ntfy_blks) % 2;
+		int vecs_per_type = new_num_ntfy_blks / 2;
+		int vecs_left = new_num_ntfy_blks % 2;
 
 		priv->num_ntfy_blks = new_num_ntfy_blks;
 		priv->tx_cfg.max_queues = vecs_per_type;
@@ -367,6 +366,7 @@ static int gve_alloc_rings(struct gve_priv *priv)
 {
 	int err;
 
+	/* Setup tx rings */
 	priv->tx = kcalloc(priv->tx_cfg.num_queues, sizeof(*priv->tx),
 			   GFP_KERNEL);
 	if (!priv->tx)
