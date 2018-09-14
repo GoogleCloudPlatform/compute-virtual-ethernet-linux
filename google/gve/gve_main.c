@@ -694,8 +694,7 @@ static void gve_turnup_queues(struct gve_priv *priv)
 	}
 }
 
-static int gve_init_priv(struct gve_priv *priv, int max_rx_queues,
-			 int max_tx_queues)
+static int gve_init_priv(struct gve_priv *priv)
 {
 	int num_ntfy;
 	int err;
@@ -711,7 +710,6 @@ static int gve_init_priv(struct gve_priv *priv, int max_rx_queues,
 			"Could not get device information: err=%d\n", err);
 		goto abort_with_adminq;
 	}
-	/* gvnic has one Notification Block per MSI-x vector */
 	num_ntfy = pci_msix_vec_count(priv->pdev);
 	if (num_ntfy <= 0) {
 		dev_err(&priv->pdev->dev, "could not count MSI-x vectors\n");
@@ -726,14 +724,17 @@ static int gve_init_priv(struct gve_priv *priv, int max_rx_queues,
 
 	priv->num_registered_pages = 0;
 	priv->rx_copybreak = GVE_DEFAULT_RX_COPYBREAK;
+	/* gvnic has one Notification Block per MSI-x vector, except for the
+	 * management vector
+	 */
 	priv->num_ntfy_blks = num_ntfy - 1;
 	priv->mgmt_msix_idx = num_ntfy - 1;
 	priv->ntfy_blk_msix_base_idx = 0;
 
 	priv->tx_cfg.max_queues =
-		min_t(int, max_tx_queues, priv->num_ntfy_blks / 2);
+		min_t(int, priv->tx_cfg.max_queues, priv->num_ntfy_blks / 2);
 	priv->rx_cfg.max_queues =
-		min_t(int, max_rx_queues, priv->num_ntfy_blks / 2);
+		min_t(int, priv->rx_cfg.max_queues, priv->num_ntfy_blks / 2);
 
 	priv->tx_cfg.num_queues =
 		min_t(int, priv->default_num_queues, priv->tx_cfg.max_queues);
@@ -759,7 +760,6 @@ static void gve_reset_pci(struct gve_priv *priv)
 {
 	bool was_up = test_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
 			       &priv->service_task_flags);
-	int max_rx_queues, max_tx_queues;
 	int err;
 
 	dev_info(&priv->pdev->dev, "Performing pci reset\n");
@@ -783,15 +783,13 @@ static void gve_reset_pci(struct gve_priv *priv)
 	gve_free_adminq(&priv->pdev->dev, priv);
 
 	/* Set it all back up */
-	max_rx_queues = min_t(u32,
-			      be32_to_cpu(readl(priv->reg_bar0 +
-						GVE_DEVICE_MAX_RX_QUEUES)),
-			      GVE_MAX_NUM_RX_QUEUES);
-	max_tx_queues = min_t(u32,
-			      be32_to_cpu(readl(priv->reg_bar0 +
-						GVE_DEVICE_MAX_TX_QUEUES)),
-			      GVE_MAX_NUM_TX_QUEUES);
-	err = gve_init_priv(priv, max_rx_queues, max_tx_queues);
+	priv->rx_cfg.max_queues = min_t(u32, be32_to_cpu(readl(priv->reg_bar0 +
+					GVE_DEVICE_MAX_RX_QUEUES)),
+					GVE_MAX_NUM_RX_QUEUES);
+	priv->tx_cfg.max_queues = min_t(u32, be32_to_cpu(readl(priv->reg_bar0 +
+					GVE_DEVICE_MAX_TX_QUEUES)),
+					GVE_MAX_NUM_TX_QUEUES);
+	err = gve_init_priv(priv);
 	if (err)
 		goto err;
 	if (was_up) {
@@ -1084,7 +1082,10 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto abort_while_registered;
 	}
 	INIT_WORK(&priv->service_task, gve_service_task);
-	err = gve_init_priv(priv, max_rx_queues, max_tx_queues);
+
+	priv->tx_cfg.max_queues = max_tx_queues;
+	priv->rx_cfg.max_queues = max_rx_queues;
+	err = gve_init_priv(priv);
 	if (err)
 		goto abort_with_wq;
 
