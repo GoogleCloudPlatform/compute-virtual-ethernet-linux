@@ -331,7 +331,7 @@ static int gve_unregister_qpls(struct gve_priv *priv)
 
 static int gve_create_rings(struct gve_priv *priv)
 {
-	int err = 0;
+	int err;
 	int i;
 
 	for (i = 0; i < priv->tx_cfg.num_queues; i++) {

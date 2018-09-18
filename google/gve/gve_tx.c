@@ -475,8 +475,8 @@ int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx, u32 to_do)
 	u64 pkts = 0, bytes = 0;
 	size_t space_freed = 0;
 	struct sk_buff *skb;
-	int idx = 0;
 	int i, j;
+	int idx;
 
 	for (j = 0; j < to_do; j++) {
 		idx = tx->done & tx->mask;
