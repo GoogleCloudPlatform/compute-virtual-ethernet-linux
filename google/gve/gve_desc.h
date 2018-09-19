@@ -11,14 +11,24 @@
 
 #include "gve_size_assert.h"
 
+/* A note on seg_addrs
+ *
+ * Base addresses encoded in seg_addr are not assumed to be physical
+ * addresses. The ring format assumes these come from some linear address
+ * space. This could be physical memory, kernel virtual memory, user virtual
+ * memory. gVNIC uses lists of registered pages. Each queue is assumed
+ * to be associated with a single such linear address space to ensure a
+ * consistent meaning for seg_addrs posted to its rings.
+ */
+
 struct gve_tx_pkt_desc {
-	u8	type_flags;
-	u8	checksum_offset;
-	u8	l4_offset;
-	u8	seg_cnt;
-	__be16	len;
-	__be16	seg_len;
-	__be64	seg_addr;
+	u8	type_flags;  /* desc type is lower 4 bits, flags upper */
+	u8	checksum_offset;  /* relative offset of L4 csum word */
+	u8	l4_offset;  /* Offset of start of L4 headers within packet */
+	u8	seg_cnt;  /* Total descriptors for this packet */
+	__be16	len;  /* Total length of this packet (in bytes) */
+	__be16	seg_len;  /* Length of this descriptor's segment */
+	__be64	seg_addr;  /* Base address (see note) of this segment */
 } __packed;
 
 struct gve_tx_seg_desc {
@@ -51,16 +61,20 @@ struct gve_tx_seg_desc {
 
 struct gve_rx_desc {
 	u8	padding[48];
-	__be32	rss_hash;
+	__be32	rss_hash;  /* Receive-side scaling hash (Toeplitz for gVNIC) */
 	__be16	mss;
-	__be16	reserved;
-	u8	hdr_len;
-	u8	hdr_off;
-	__be16	csum;
-	__be16	len;
-	__be16	flags_seq;
+	__be16	reserved;  /* Reserved to zero */
+	u8	hdr_len;  /* Header length (L2-L4) including padding */
+	u8	hdr_off;  /* 64-byte-scaled offset into RX_DATA entry */
+	__be16	csum;  /* 1's-complement partial checksum of L3+ bytes */
+	__be16	len;  /* Length of the received packet */
+	__be16	flags_seq;  /* Flags [15:3] and sequence number [2:0] (1-7) */
 } __packed;
 GVE_ASSERT_SIZE(struct, gve_rx_desc, 64);
+
+/* As with the Tx ring format, the qpl_offset entries below are offsets into an
+ * ordered list of registered pages.
+ */
 
 struct gve_rx_data_slot {
 	/* byte offset into the rx registered segment of this slot */

@@ -135,12 +135,19 @@ struct gve_tx_ring {
 #define GVE_MIN_MSIX 3
 
 struct gve_notify_block {
+	/* the irq_db_index is the index into db_bar2 where this block's irq
+	 * db can be found
+	 */
 	__be32 irq_db_index; /* Set by device - must be first field */
+	/* the name registered with the kernel for this irq */
 	char name[IFNAMSIZ + 16];
+	/* the kernel napi struct for this block */
 	struct napi_struct napi;
 	int napi_enabled;
 	struct gve_priv *priv;
+	/* the tx rings on this notification block */
 	struct gve_tx_ring *tx;
+	/* the rx rings on this notification block */
 	struct gve_rx_ring *rx;
 } ____cacheline_aligned;
 
