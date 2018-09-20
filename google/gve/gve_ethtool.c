@@ -104,14 +104,12 @@ gve_get_ethtool_stats(struct net_device *netdev,
 		return;
 
 	for (rx_pkts = 0, rx_bytes = 0, ring = 0;
-	     ring < priv->rx_cfg.num_queues;
-	     ring++) {
+	     ring < priv->rx_cfg.num_queues; ring++) {
 		rx_pkts += priv->rx[ring].rpackets;
 		rx_bytes += priv->rx[ring].rbytes;
 	}
 	for (tx_pkts = 0, tx_bytes = 0, ring = 0;
-	     ring < priv->tx_cfg.num_queues;
-	     ring++) {
+	     ring < priv->tx_cfg.num_queues; ring++) {
 		tx_pkts += priv->tx[ring].pkt_done;
 		tx_bytes += priv->tx[ring].bytes_done;
 	}
