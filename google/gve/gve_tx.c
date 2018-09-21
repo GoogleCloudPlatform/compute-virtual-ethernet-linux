@@ -353,21 +353,21 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 	bool is_gso = skb_is_gso(skb);
 	int idx = tx->req & tx->mask;
 	int payload_iov = 2;
+	int l4_hdr_offset;
 	int copy_offset;
-	int l4_offset;
 	int next_idx;
 	int i;
 
 	info = &tx->info[idx];
 	pkt_desc = &tx->desc[idx];
 
-	l4_offset = skb_checksum_start_offset(skb);
+	l4_hdr_offset = skb_checksum_start_offset(skb);
 	/* If the skb is gso, then we want the tcp header in the first segment
 	 * otherwise we want the linear portion of the skb (which will contain
 	 * the checksum because skb->csum_start and skb->csum_offset are given
 	 * relative to skb->head) in the first segment.
 	 */
-	hlen = is_gso ? l4_offset + tcp_hdrlen(skb) :
+	hlen = is_gso ? l4_hdr_offset + tcp_hdrlen(skb) :
 			skb_headlen(skb);
 
 	info->skb =  skb;
@@ -381,21 +381,21 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 	payload_nfrags = gve_tx_alloc_fifo(&tx->tx_fifo, skb->len - hlen,
 					   &info->iov[payload_iov]);
 
-	/* l4_offset and csum_offset are in units of 16-bit words */
+	/* l4_hdr_offset and csum_offset are in units of 16-bit words */
 	if (is_gso) {
 		pkt_desc->pkt.type_flags = GVE_TXD_TSO | GVE_TXF_L4CSUM;
-		pkt_desc->pkt.checksum_offset = skb->csum_offset >> 1;
-		pkt_desc->pkt.l4_offset = l4_offset >> 1;
+		pkt_desc->pkt.l4_csum_offset = skb->csum_offset >> 1;
+		pkt_desc->pkt.l4_hdr_offset = l4_hdr_offset >> 1;
 	} else if (likely(skb->ip_summed == CHECKSUM_PARTIAL)) {
 		pkt_desc->pkt.type_flags = GVE_TXD_STD | GVE_TXF_L4CSUM;
-		pkt_desc->pkt.checksum_offset = skb->csum_offset >> 1;
-		pkt_desc->pkt.l4_offset = l4_offset >> 1;
+		pkt_desc->pkt.l4_csum_offset = skb->csum_offset >> 1;
+		pkt_desc->pkt.l4_hdr_offset = l4_hdr_offset >> 1;
 	} else {
 		pkt_desc->pkt.type_flags = GVE_TXD_STD;
-		pkt_desc->pkt.checksum_offset = 0;
-		pkt_desc->pkt.l4_offset = 0;
+		pkt_desc->pkt.l4_csum_offset = 0;
+		pkt_desc->pkt.l4_hdr_offset = 0;
 	}
-	pkt_desc->pkt.seg_cnt = 1 + payload_nfrags;
+	pkt_desc->pkt.desc_cnt = 1 + payload_nfrags;
 	pkt_desc->pkt.len = cpu_to_be16(skb->len);
 	pkt_desc->pkt.seg_len = cpu_to_be16(hlen);
 	pkt_desc->pkt.seg_addr =
