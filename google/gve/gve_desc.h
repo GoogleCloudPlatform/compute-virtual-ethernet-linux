@@ -23,9 +23,9 @@
 
 struct gve_tx_pkt_desc {
 	u8	type_flags;  /* desc type is lower 4 bits, flags upper */
-	u8	checksum_offset;  /* relative offset of L4 csum word */
-	u8	l4_offset;  /* Offset of start of L4 headers within packet */
-	u8	seg_cnt;  /* Total descriptors for this packet */
+	u8	l4_csum_offset;  /* relative offset of L4 csum word */
+	u8	l4_hdr_offset;  /* Offset of start of L4 headers within packet */
+	u8	desc_cnt;  /* Total descriptors for this packet */
 	__be16	len;  /* Total length of this packet (in bytes) */
 	__be16	seg_len;  /* Length of this descriptor's segment */
 	__be64	seg_addr;  /* Base address (see note) of this segment */
