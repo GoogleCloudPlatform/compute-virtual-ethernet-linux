@@ -58,8 +58,6 @@ struct gve_rx_data_queue {
 	struct gve_rx_data_slot *data_ring;
 	dma_addr_t data_bus; /* dma mapping of the slots */
 	struct gve_rx_slot_page_info *page_info;
-	/* Recycling is picked up on Fridays. */
-	/*void *recycle_pages; */
 	struct gve_queue_page_list *qpl;
 	int mask;
 	int cnt;
