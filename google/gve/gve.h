@@ -121,7 +121,7 @@ struct gve_tx_ring {
 	u32 mask;
 
 	/* Slow-path fields */
-	int q_num;
+	int q_num ____cacheline_aligned;
 	int stop_queue;
 	int wake_queue;
 	u32 ntfy_id;
