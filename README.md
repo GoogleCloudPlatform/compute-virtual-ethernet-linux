@@ -25,12 +25,17 @@ Device Class  | `0x200`  | Ethernet
 
 ## GitHub
 
+If you downloaded a release tarball from GitHub: This source code should
+already be multi-kernel compatible. You can skip down to Compiling the Driver.
+
+### Building the multi-kernel compatible driver source
+
 If you downloaded the source from GitHub: To install this driver on anything
 other than the current upstream kernel, you will need to download coccinelle,
 and untar it. It can be found here: http://coccinelle.lip6.fr/download.php
 
 NOTE: Most distros will include a version of coccinelle in their package manager
-but we recommend using the version 1.0.6 or newer from the official website.
+but we require version 1.0.6 or newer, available from the official website.
 
 To build the multi-kernel compatible driver source:
 
@@ -40,6 +45,8 @@ export SPATCH='/path/to/coccinelle/spatch.opt'
 ```
 
 TIP: The spatch path may be omitted if it has been installed on the search path.
+
+### Compiling the driver
 
 Building and installing this driver requires that you have the headers installed
 for your current kernel version. Ensure the drivers are installed, then build,
