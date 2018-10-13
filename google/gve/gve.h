@@ -207,7 +207,6 @@ struct gve_priv {
 	unsigned long service_task_flags;
 };
 
-#define GVE_PRIV_FLAGS_IGNORE_FLOW_TABLE	BIT(0)
 #define GVE_PRIV_FLAGS_DO_AQ_RESET		BIT(1)
 #define GVE_PRIV_FLAGS_DO_PCI_RESET		BIT(2)
 #define GVE_PRIV_FLAGS_PROBE_IN_PROGRESS	BIT(3)
