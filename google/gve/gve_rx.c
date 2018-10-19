@@ -33,7 +33,7 @@ static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 	dma_free_coherent(hdev, bytes, rx->desc.desc_ring, rx->desc.bus);
 	rx->desc.desc_ring = NULL;
 
-	dma_free_coherent(hdev, sizeof(struct gve_queue_resources),
+	dma_free_coherent(hdev, sizeof(*rx->q_resources),
 			  rx->q_resources, rx->q_resources_bus);
 	rx->q_resources = NULL;
 
@@ -63,7 +63,7 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 	size = slots * PAGE_SIZE;
 
 	rx->data.page_info = kcalloc(slots,
-				     sizeof(struct gve_rx_slot_page_info),
+				     sizeof(*rx->data.page_info),
 				     GFP_KERNEL);
 	if (!rx->data.page_info)
 		return -ENOMEM;
@@ -131,7 +131,7 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 	/* Alloc gve_queue_resources */
 	rx->q_resources =
 		dma_zalloc_coherent(hdev,
-				    sizeof(struct gve_queue_resources),
+				    sizeof(*rx->q_resources),
 				    &rx->q_resources_bus,
 				    GFP_KERNEL);
 	if (!rx->q_resources) {
@@ -169,7 +169,7 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 	return 0;
 
 abort_with_q_resources:
-	dma_free_coherent(hdev, sizeof(struct gve_queue_resources),
+	dma_free_coherent(hdev, sizeof(*rx->q_resources),
 			  rx->q_resources, rx->q_resources_bus);
 	rx->q_resources = NULL;
 abort_filled:
