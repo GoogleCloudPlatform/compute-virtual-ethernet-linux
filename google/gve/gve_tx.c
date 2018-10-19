@@ -154,7 +154,7 @@ void gve_tx_free_ring(struct gve_priv *priv, int idx)
 	gve_clean_tx_done(priv, tx, tx->req);
 	netdev_tx_reset_queue(tx->netdev_txq);
 
-	dma_free_coherent(hdev, sizeof(struct gve_queue_resources),
+	dma_free_coherent(hdev, sizeof(*tx->q_resources),
 			  tx->q_resources, tx->q_resources_bus);
 	tx->q_resources = NULL;
 
@@ -217,7 +217,7 @@ static int gve_tx_alloc_ring(struct gve_priv *priv, int idx)
 
 	tx->q_resources =
 		dma_zalloc_coherent(hdev,
-				    sizeof(struct gve_queue_resources),
+				    sizeof(*tx->q_resources),
 				    &tx->q_resources_bus,
 				    GFP_KERNEL);
 	if (!tx->q_resources)

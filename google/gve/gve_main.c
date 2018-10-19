@@ -47,7 +47,8 @@ static int gve_alloc_counter_array(struct gve_priv *priv)
 {
 	priv->counter_array =
 		dma_zalloc_coherent(&priv->pdev->dev,
-				    priv->num_event_counters * sizeof(__be32),
+				    priv->num_event_counters *
+				    sizeof(*priv->counter_array),
 				    &priv->counter_array_bus, GFP_KERNEL);
 	if (!priv->counter_array)
 		return -ENOMEM;
@@ -58,7 +59,8 @@ static int gve_alloc_counter_array(struct gve_priv *priv)
 static void gve_free_counter_array(struct gve_priv *priv)
 {
 	dma_free_coherent(&priv->pdev->dev,
-			  priv->num_event_counters * sizeof(__be32),
+			  priv->num_event_counters *
+			  sizeof(*priv->counter_array),
 			  priv->counter_array, priv->counter_array_bus);
 	priv->counter_array = NULL;
 }
