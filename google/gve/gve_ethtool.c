@@ -52,21 +52,21 @@ static void gve_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 	       sizeof(gve_gstrings_main_stats));
 	s += sizeof(gve_gstrings_main_stats);
 	for (i = 0; i < priv->rx_cfg.num_queues; i++) {
-		sprintf(s, "rx_desc_cnt[%u]", i);
+		snprintf(s, ETH_GSTRING_LEN, "rx_desc_cnt[%u]", i);
 		s += ETH_GSTRING_LEN;
-		sprintf(s, "rx_desc_fill_cnt[%u]", i);
+		snprintf(s, ETH_GSTRING_LEN, "rx_desc_fill_cnt[%u]", i);
 		s += ETH_GSTRING_LEN;
 	}
 	for (i = 0; i < priv->tx_cfg.num_queues; i++) {
-		sprintf(s, "tx_req[%u]", i);
+		snprintf(s, ETH_GSTRING_LEN, "tx_req[%u]", i);
 		s += ETH_GSTRING_LEN;
-		sprintf(s, "tx_done[%u]", i);
+		snprintf(s, ETH_GSTRING_LEN, "tx_done[%u]", i);
 		s += ETH_GSTRING_LEN;
-		sprintf(s, "tx_wake[%u]", i);
+		snprintf(s, ETH_GSTRING_LEN, "tx_wake[%u]", i);
 		s += ETH_GSTRING_LEN;
-		sprintf(s, "tx_stop[%u]", i);
+		snprintf(s, ETH_GSTRING_LEN, "tx_stop[%u]", i);
 		s += ETH_GSTRING_LEN;
-		sprintf(s, "tx_event_counter[%u]", i);
+		snprintf(s, ETH_GSTRING_LEN, "tx_event_counter[%u]", i);
 		s += ETH_GSTRING_LEN;
 	}
 }
