@@ -601,8 +601,16 @@ static int gve_open(struct net_device *dev)
 		return err;
 	}
 
-	netif_set_real_num_tx_queues(dev, priv->tx_cfg.num_queues);
-	netif_set_real_num_rx_queues(dev, priv->rx_cfg.num_queues);
+	err = netif_set_real_num_tx_queues(dev, priv->tx_cfg.num_queues);
+	if (err) {
+		gve_free_qpls(priv);
+		return err;
+	}
+	err = netif_set_real_num_rx_queues(dev, priv->rx_cfg.num_queues);
+	if (err) {
+		gve_free_qpls(priv);
+		return err;
+	}
 
 	err = gve_register_qpls(priv);
 	if (err) {
