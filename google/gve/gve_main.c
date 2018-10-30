@@ -148,8 +148,10 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 		int vecs_left = new_num_ntfy_blks % 2;
 
 		priv->num_ntfy_blks = new_num_ntfy_blks;
-		priv->tx_cfg.max_queues = vecs_per_type;
-		priv->rx_cfg.max_queues = vecs_per_type + vecs_left;
+		priv->tx_cfg.max_queues = min_t(int, priv->tx_cfg.max_queues,
+                                                vecs_per_type);
+		priv->rx_cfg.max_queues = min_t(int, priv->rx_cfg.max_queues,
+                                                vecs_per_type + vecs_left);
 		dev_info(hdev, "Could not enable desired msix, only enabled %d, adjusting tx max queues to %d, and rx max queues to %d\n",
 			 vecs_enabled, priv->tx_cfg.max_queues,
 			 priv->rx_cfg.max_queues);
