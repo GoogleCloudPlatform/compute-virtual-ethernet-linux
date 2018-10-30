@@ -723,7 +723,8 @@ static int gve_init_priv(struct gve_priv *priv)
 	}
 	num_ntfy = pci_msix_vec_count(priv->pdev);
 	if (num_ntfy <= 0) {
-		dev_err(&priv->pdev->dev, "could not count MSI-x vectors\n");
+		dev_err(&priv->pdev->dev,
+			"could not count MSI-x vectors: err=%d\n", num_ntfy);
 		err = num_ntfy;
 		goto abort_with_adminq;
 	} else if (num_ntfy < GVE_MIN_MSIX) {
