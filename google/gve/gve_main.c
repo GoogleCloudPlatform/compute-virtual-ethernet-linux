@@ -1047,8 +1047,17 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		dev_err(&pdev->dev, "Failed to map doorbell bar!\n");
 		goto abort_with_reg_bar;
 	}
-	pci_set_dma_mask(pdev, DMA_BIT_MASK(64));
-	pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(64));
+	err = pci_set_dma_mask(pdev, DMA_BIT_MASK(64));
+	if (err) {
+		dev_err(&pdev->dev, "Failed to set dma mask: err= %d\n", err);
+		goto abort_with_db_bar;
+	}
+	err = pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(64));
+	if (err) {
+		dev_err(&pdev->dev,
+			"Failed to set consistent dma mask: err= %d\n", err);
+		goto abort_with_db_bar;
+	}
 
 	gve_write_version(reg_bar);
 
