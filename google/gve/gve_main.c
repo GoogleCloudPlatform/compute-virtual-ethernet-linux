@@ -20,9 +20,11 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		"0.1.0"
+#define GVE_VERSION		"0.0.0"
+#define GVE_VERSION_PREFIX	"GVE-"
 
 const char gve_version_str[] = GVE_VERSION;
+const char gve_version_prefix[] = GVE_VERSION_PREFIX;
 
 static void gve_get_stats(struct net_device *dev, struct rtnl_link_stats64 *s)
 {
@@ -1014,8 +1016,13 @@ static const struct net_device_ops gve_netdev_ops = {
 
 static void gve_write_version(void __iomem *reg_bar)
 {
-	const char *c = gve_version_str;
+	const char *c = gve_version_prefix;
+	while (*c) {
+		writeb(*c, reg_bar + GVE_DRIVER_VERSION);
+		c++;
+	}
 
+	c = gve_version_str;
 	while (*c) {
 		writeb(*c, reg_bar + GVE_DRIVER_VERSION);
 		c++;
