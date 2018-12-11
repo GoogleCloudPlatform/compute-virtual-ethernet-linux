@@ -23,18 +23,45 @@ int gve_alloc_adminq(struct device *dev, struct gve_priv *priv)
 	priv->adminq_prod_cnt = 0;
 
 	/* Setup Admin queue with the device */
-	writeq(cpu_to_be32(priv->adminq_bus_addr / PAGE_SIZE),
+	writel(cpu_to_be32(priv->adminq_bus_addr / PAGE_SIZE),
 	       priv->reg_bar0 + GVE_ADMIN_QUEUE_PFN);
 
+	set_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags);
 	return 0;
+}
+
+void gve_release_adminq(struct gve_priv *priv)
+{
+	int i;
+	/* Tell the device the adminq is leaving */
+	writel(0x0, priv->reg_bar0 + GVE_ADMIN_QUEUE_PFN);
+	for (i = 0; i < GVE_MAX_ADMINQ_RELEASE_CHECK; i++) {
+		if(!readl(priv->reg_bar0 + GVE_ADMIN_QUEUE_PFN)) {
+			clear_bit(GVE_PRIV_FLAGS_DEVICE_RINGS_OK,
+				  &priv->state_flags);
+			clear_bit(GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK,
+				  &priv->state_flags);
+			clear_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK,
+				  &priv->state_flags);
+			return;
+		}
+		msleep(20);
+	}
+	/* If this is reached the device is unrecoverable and still holding
+	 * memory. Anything other than a BUG risks memory corruption.
+	 */
+	WARN(1, "Unrecoverable platform error!");
+	BUG();
+
 }
 
 void gve_free_adminq(struct device *dev, struct gve_priv *priv)
 {
-	/* Tell the device the adminq is leaving */
-	writeq(0x0, priv->reg_bar0 + GVE_ADMIN_QUEUE_PFN);
-
+	if (test_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags)) {
+		gve_release_adminq(priv);
+	}
 	dma_free_coherent(dev, PAGE_SIZE, priv->adminq, priv->adminq_bus_addr);
+	clear_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags);
 }
 
 static int gve_adminq_kick_cmd(struct gve_priv *priv)

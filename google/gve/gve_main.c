@@ -78,10 +78,8 @@ static irqreturn_t gve_mgmnt_intr(int irq, void *arg)
 static irqreturn_t gve_intr(int irq, void *arg)
 {
 	struct gve_notify_block *block = arg;
-
-	if (!block->napi_enabled)
-		return IRQ_HANDLED;
-
+	struct gve_priv *priv = block->priv;
+	writel(cpu_to_be32(GVE_IRQ_MASK), gve_irq_doorbell(priv, block));
 	napi_schedule_irqoff(&block->napi);
 	return IRQ_HANDLED;
 }
@@ -116,7 +114,7 @@ int gve_napi_poll(struct napi_struct *napi, int budget)
 	if (block->rx)
 		reschedule |= gve_rx_poll(block, -1);
 	if (reschedule && napi_reschedule(napi))
-		__raw_writel(cpu_to_be32(GVE_IRQ_MASK), irq_doorbell);
+		writel(cpu_to_be32(GVE_IRQ_MASK), irq_doorbell);
 
 	return 0;
 }
@@ -267,6 +265,7 @@ static int gve_setup_device_resources(struct gve_priv *priv)
 		err = -ENXIO;
 		goto abort_with_ntfy_blocks;
 	}
+	set_bit(GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK, &priv->state_flags);
 	return 0;
 abort_with_ntfy_blocks:
 	gve_free_notify_blocks(priv);
@@ -275,32 +274,32 @@ abort_with_counter:
 	return err;
 }
 
+static void gve_trigger_reset(struct gve_priv *priv);
+
 static void gve_teardown_device_resources(struct gve_priv *priv)
 {
 	int err;
 
 	/* Tell device its resources are being freed */
-	err = gve_adminq_deconfigure_device_resources(priv);
-	WARN(err, "GVE device resources not released\n");
+	if (test_bit(GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK, &priv->state_flags)) {
+		err = gve_adminq_deconfigure_device_resources(priv);
+		if (err)
+			gve_trigger_reset(priv);
+	}
 	gve_free_counter_array(priv);
 	gve_free_notify_blocks(priv);
+	clear_bit(GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK, &priv->state_flags);
 }
 
 void gve_add_napi(struct gve_priv *priv, struct gve_notify_block *block)
 {
 	netif_napi_add(priv->dev, &block->napi, gve_napi_poll,
 		       NAPI_POLL_WEIGHT);
-	napi_enable(&block->napi);
-	block->napi_enabled = 1;
 }
 
 void gve_remove_napi(struct gve_notify_block *block)
 {
-	if (block->napi_enabled) {
-		napi_disable(&block->napi);
-		block->napi_enabled = 0;
-		netif_napi_del(&block->napi);
-	}
+	netif_napi_del(&block->napi);
 }
 
 static int gve_register_qpls(struct gve_priv *priv)
@@ -562,21 +561,9 @@ static void gve_free_qpls(struct gve_priv *priv)
 	kfree(priv->qpls);
 }
 
-void gve_schedule_aq_reset(struct gve_priv *priv)
+void gve_schedule_reset(struct gve_priv *priv)
 {
-	if (priv->is_up)
-		set_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
-			&priv->service_task_flags);
-	set_bit(GVE_PRIV_FLAGS_DO_AQ_RESET, &priv->service_task_flags);
-	queue_work(priv->gve_wq, &priv->service_task);
-}
-
-void gve_schedule_pci_reset(struct gve_priv *priv)
-{
-	if (priv->is_up)
-		set_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
-			&priv->service_task_flags);
-	set_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->service_task_flags);
+	set_bit(GVE_PRIV_FLAGS_DO_RESET, &priv->service_task_flags);
 	queue_work(priv->gve_wq, &priv->service_task);
 }
 
@@ -591,10 +578,15 @@ static int gve_change_mtu(struct net_device *dev, int new_mtu)
 	return 0;
 }
 
+static void gve_reset_and_teardown(struct gve_priv *priv, bool was_up);
+static int gve_reset_recovery(struct gve_priv *priv, bool was_up);
+static void gve_turndown(struct gve_priv *priv);
+static void gve_turnup(struct gve_priv *priv);
+
 static int gve_open(struct net_device *dev)
 {
 	struct gve_priv *priv = netdev_priv(dev);
-	int err = 0;
+	int err;
 
 	err = gve_alloc_qpls(priv);
 	if (err)
@@ -620,18 +612,18 @@ static int gve_open(struct net_device *dev)
 
 	err = gve_register_qpls(priv);
 	if (err) {
-		gve_schedule_aq_reset(priv);
+		gve_schedule_reset(priv);
 		return err;
 	}
 	err = gve_create_rings(priv);
 	if (err) {
-		gve_schedule_aq_reset(priv);
+		gve_schedule_reset(priv);
 		return err;
 	}
+	set_bit(GVE_PRIV_FLAGS_DEVICE_RINGS_OK, &priv->state_flags);
 
+	gve_turnup(priv);
 	netif_carrier_on(dev);
-	priv->is_up = true;
-
 	return 0;
 }
 
@@ -640,36 +632,60 @@ static int gve_close(struct net_device *dev)
 	struct gve_priv *priv = netdev_priv(dev);
 	int err;
 
-	netif_carrier_off(dev);
-	priv->is_up = false;
-	err = gve_destroy_rings(priv);
-	if (err)
-		gve_schedule_aq_reset(priv);
-	err = gve_unregister_qpls(priv);
-	if (err)
-		gve_schedule_aq_reset(priv);
+	netif_carrier_off(priv->dev);
+	if (test_bit(GVE_PRIV_FLAGS_DEVICE_RINGS_OK, &priv->state_flags)) {
+		gve_turndown(priv);
+		err = gve_destroy_rings(priv);
+		if (err)
+			goto err;
+		err = gve_unregister_qpls(priv);
+		if (err)
+			goto err;
+		clear_bit(GVE_PRIV_FLAGS_DEVICE_RINGS_OK, &priv->state_flags);
+	}
+
 	gve_free_rings(priv);
 	gve_free_qpls(priv);
-
 	return 0;
+err:
+	if (test_bit(GVE_PRIV_FLAGS_RESET_IN_PROGRESS,
+		     &priv->service_task_flags)) {
+		/* If we already have a reset going, just return the error */
+		return err;
+	} else {
+		/* Otherwise do a reset */
+		gve_reset_and_teardown(priv, true);
+		return(gve_reset_recovery(priv, false));
+	}
 }
 
 int gve_adjust_queues(struct gve_priv *priv,
 		      struct gve_queue_config new_rx_config,
 		      struct gve_queue_config new_tx_config)
 {
-	if (priv->is_up) {
+	int err;
+
+	if (netif_carrier_ok(priv->dev)) {
 		/* To make this process as simple as possible we teardown the
 		 * device, set the new configuration, and then bring the device
 		 * up again.
 		 */
 		dev_deactivate(priv->dev);
-		gve_close(priv->dev);
+		err = gve_close(priv->dev);
+		if (err) {
+			/* we have already tried to reset in close,
+			 * just fail at this point
+			 */
+			 return err;
+		}
 		priv->tx_cfg = new_tx_config;
 		priv->rx_cfg = new_rx_config;
-		dev_activate(priv->dev);
 
-		return gve_open(priv->dev);
+		err = gve_open(priv->dev);
+		if (err)
+			goto err;
+		dev_activate(priv->dev);
+		return 0;
 	} else {
 		/* Set the config for the next up. */
 		priv->tx_cfg = new_tx_config;
@@ -677,46 +693,116 @@ int gve_adjust_queues(struct gve_priv *priv,
 
 		return 0;
 	}
+err:
+	dev_err(&priv->pdev->dev,
+		"Adjust queues failed! !!! DISABLING ALL QUEUES !!!\n");
+	gve_turndown(priv);
+	return err;
 }
 
-static void gve_turndown_queues(struct gve_priv *priv)
+static void gve_turndown(struct gve_priv *priv)
 {
-	int n, tx, rx;
+	int idx;
 
-	/* Turn off napi so no new work comes in */
-	for (n = 0; n < priv->num_ntfy_blks; n++)
-		gve_remove_napi(&priv->ntfy_blocks[n]);
-
-	/* Clean up the work already there */
-	for (tx = 0; tx < priv->tx_cfg.num_queues; tx++) {
-		struct gve_tx_ring *tx_ring = &priv->tx[tx];
-
-		gve_clean_tx_done(priv, tx_ring, tx_ring->req);
-		tx_ring->done = 0;
-		tx_ring->req = 0;
-		netdev_tx_reset_queue(tx_ring->netdev_txq);
+	if (netif_carrier_ok(priv->dev)) {
+		netif_carrier_off(priv->dev);
+		dev_deactivate(priv->dev);
 	}
 
-	for (rx = 0; rx < priv->rx_cfg.num_queues; rx++) {
-		struct gve_rx_ring *rx_ring = &priv->rx[rx];
-		struct gve_notify_block *block =
-			&priv->ntfy_blocks[gve_rx_ntfy_idx(priv, rx)];
+	if (!test_bit(GVE_PRIV_FLAGS_NAPI_ENABLED, &priv->state_flags))
+		return;
 
-		gve_clean_rx_done(rx_ring, 0, block->napi.dev->features);
+	/* Disable napi to prevent more work from coming in */
+	for (idx = 0; idx < priv->tx_cfg.num_queues; idx++) {
+		int ntfy_idx = gve_tx_ntfy_idx(priv, idx);
+		struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
+		napi_disable(&block->napi);
+	}
+	for (idx = 0; idx < priv->rx_cfg.num_queues; idx++) {
+		int ntfy_idx = gve_rx_ntfy_idx(priv, idx);
+		struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
+		napi_disable(&block->napi);
+	}
+
+	clear_bit(GVE_PRIV_FLAGS_NAPI_ENABLED, &priv->state_flags);
+}
+
+static void gve_turnup(struct gve_priv *priv)
+{
+	int idx;
+
+	/* Enable napi and unmask interupts for all queues */
+	for (idx = 0; idx < priv->tx_cfg.num_queues; idx++) {
+		int ntfy_idx = gve_tx_ntfy_idx(priv, idx);
+		struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
+		napi_enable(&block->napi);
+		writel(cpu_to_be32(0), gve_irq_doorbell(priv, block));
+	}
+	for (idx = 0; idx < priv->rx_cfg.num_queues; idx++) {
+		int ntfy_idx = gve_rx_ntfy_idx(priv, idx);
+		struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
+		napi_enable(&block->napi);
+		writel(cpu_to_be32(0), gve_irq_doorbell(priv, block));
+	}
+
+	set_bit(GVE_PRIV_FLAGS_NAPI_ENABLED, &priv->state_flags);
+}
+
+static const struct net_device_ops gve_netdev_ops = {
+	.ndo_start_xmit		=	gve_tx,
+	.ndo_open		=	gve_open,
+	.ndo_stop		=	gve_close,
+	.ndo_get_stats64	=	gve_get_stats,
+	.ndo_change_mtu		=	gve_change_mtu,
+};
+
+static void gve_write_version(void __iomem *reg_bar)
+{
+	const char *c = gve_version_str;
+
+	while (*c) {
+		writeb(*c, reg_bar + GVE_DRIVER_VERSION);
+		c++;
+	}
+	writeb('\n', reg_bar + GVE_DRIVER_VERSION);
+}
+
+static void gve_handle_status(struct gve_priv *priv, u32 status)
+{
+	if (GVE_DEVICE_STATUS_RESET_MASK & status) {
+		dev_info(&priv->pdev->dev, "Device requested reset.\n");
+		set_bit(GVE_PRIV_FLAGS_DO_RESET,
+			&priv->service_task_flags);
 	}
 }
 
-static void gve_turnup_queues(struct gve_priv *priv)
+static void gve_handle_reset(struct gve_priv *priv)
 {
-	int n;
+	/* A service task will be scheduled at the end of probe to catch any
+	 * resets that need to happen, and we don't want to reset until
+	 * probe is done.
+	 */
+	if (test_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS,
+		     &priv->service_task_flags))
+		return;
 
-	/* Turn napi back on if the block has queues */
-	for (n = 0; n < priv->num_ntfy_blks; n++) {
-		struct gve_notify_block *block = &priv->ntfy_blocks[n];
-
-		if (block->rx || block->tx)
-			gve_add_napi(priv, &priv->ntfy_blocks[n]);
+	if (test_bit(GVE_PRIV_FLAGS_DO_RESET, &priv->service_task_flags)) {
+		gve_reset(priv, false);
 	}
+}
+
+/* Handle NIC status register changes and reset requests */
+static void gve_service_task(struct work_struct *work)
+{
+	struct gve_priv *priv = container_of(work, struct gve_priv,
+					     service_task);
+
+	rtnl_lock();
+	gve_handle_status(priv, be32_to_cpu(readl(priv->reg_bar0 +
+						  GVE_DEVICE_STATUS)));
+
+	gve_handle_reset(priv);
+	rtnl_unlock();
 }
 
 static int gve_init_priv(struct gve_priv *priv)
@@ -782,237 +868,77 @@ abort_with_adminq:
 	return err;
 }
 
-static void gve_reset_pci(struct gve_priv *priv)
-{
-	bool was_up = test_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
-			       &priv->service_task_flags);
+static void gve_teardown_priv_resources(struct gve_priv *priv) {
+	gve_teardown_device_resources(priv);
+	gve_free_adminq(&priv->pdev->dev, priv);
+}
+
+static void gve_trigger_reset(struct gve_priv *priv) {
+	/* Reset the device by releasing the AQ */
+	gve_release_adminq(priv);
+}
+
+static void gve_reset_and_teardown(struct gve_priv *priv, bool was_up) {
+	gve_trigger_reset(priv);
+	if (was_up)
+		/* With the reset having already happened, close cannot fail */
+		gve_close(priv->dev);
+	gve_teardown_priv_resources(priv);
+}
+
+static int gve_reset_recovery(struct gve_priv *priv, bool was_up) {
 	int err;
 
-	dev_info(&priv->pdev->dev, "Performing pci reset\n");
-	clear_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->service_task_flags);
-	clear_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP, &priv->service_task_flags);
-	if (priv->is_up) {
-		dev_deactivate(priv->dev);
-		netif_carrier_off(priv->dev);
-		priv->is_up = false;
-		gve_turndown_queues(priv);
-	}
-
-	/* Reset the device */
-	pci_reset_function(priv->pdev);
-
-	/* Teardown all our device resources */
-	gve_free_rings(priv);
-	gve_free_qpls(priv);
-	gve_free_notify_blocks(priv);
-	gve_free_counter_array(priv);
-	gve_free_adminq(&priv->pdev->dev, priv);
-
-	/* Set it all back up */
-	priv->rx_cfg.max_queues = min_t(u32, be32_to_cpu(readl(priv->reg_bar0 +
-					GVE_DEVICE_MAX_RX_QUEUES)),
-					GVE_MAX_NUM_RX_QUEUES);
-	priv->tx_cfg.max_queues = min_t(u32, be32_to_cpu(readl(priv->reg_bar0 +
-					GVE_DEVICE_MAX_TX_QUEUES)),
-					GVE_MAX_NUM_TX_QUEUES);
 	err = gve_init_priv(priv);
 	if (err)
 		goto err;
 	if (was_up) {
-		dev_activate(priv->dev);
 		err = gve_open(priv->dev);
 		if (err)
 			goto err;
+		dev_activate(priv->dev);
 	}
-	return;
+	return 0;
 err:
-	dev_err(&priv->pdev->dev, "PCI reset failed! !!! DISABLING ALL QUEUES !!!\n");
-	if (was_up) {
-		gve_turndown_queues(priv);
-		priv->is_up = false;
-	}
+	dev_err(&priv->pdev->dev, "Reset failed! !!! DISABLING ALL QUEUES !!!\n");
+	gve_turndown(priv);
+	return err;
 }
 
-static void gve_reset_aq(struct gve_priv *priv)
+int gve_reset(struct gve_priv *priv, bool attempt_teardown)
 {
-	bool was_up = test_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
-			       &priv->service_task_flags);
+	bool was_up = netif_carrier_ok(priv->dev);
 	int err;
 
-	dev_info(&priv->pdev->dev, "Perfmorming AQ reset\n");
-	clear_bit(GVE_PRIV_FLAGS_DO_AQ_RESET, &priv->service_task_flags);
-	if (priv->is_up) {
-		dev_deactivate(priv->dev);
-		netif_carrier_off(priv->dev);
-		priv->is_up = false;
-		gve_turndown_queues(priv);
-	}
-
-	/* Reset the device by deallocating the AQ */
-	gve_free_adminq(&priv->pdev->dev, priv);
-
-	/* Tell the AQ where everything is again */
-	err = gve_alloc_adminq(&priv->pdev->dev, priv);
-	if (err)
-		goto pci_reset;
-	err = gve_adminq_configure_device_resources(priv,
-						    priv->counter_array_bus,
-						    priv->num_event_counters,
-						    priv->ntfy_block_bus,
-						    priv->num_ntfy_blks);
-	if (err)
-		goto pci_reset;
-	if (was_up) {
-		err = gve_register_qpls(priv);
-		if (err)
-			goto pci_reset;
-		err = gve_create_rings(priv);
-		if (err)
-			goto pci_reset;
-		dev_activate(priv->dev);
-		gve_turnup_queues(priv);
-		netif_carrier_on(priv->dev);
-		priv->is_up = true;
-		clear_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
-			  &priv->service_task_flags);
-	}
-	return;
-
-pci_reset:
-	dev_err(&priv->pdev->dev, "AQ reset failed, trying PCI reset\n");
-	set_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->service_task_flags);
-	queue_work(priv->gve_wq, &priv->service_task);
-}
-
-void gve_handle_user_reset(struct gve_priv *priv)
-{
-	bool was_up = priv->is_up;
-	int err;
-
-	dev_info(&priv->pdev->dev, "Performing user requested reset\n");
-	if (priv->is_up) {
-		dev_deactivate(priv->dev);
-		netif_carrier_off(priv->dev);
-		priv->is_up = false;
-		gve_turndown_queues(priv);
-	}
-
-	err = gve_destroy_rings(priv);
-	if (err)
-		goto aq_reset;
-	err = gve_unregister_qpls(priv);
-	if (err)
-		goto aq_reset;
-
-	/* Tell device its resources are being freed */
-	err = gve_adminq_deconfigure_device_resources(priv);
-	WARN(err, "GVE device resources not released\n");
-
-	/* Reset the device by deallocating the AQ */
-	gve_free_adminq(&priv->pdev->dev, priv);
-
-	/* Tell the AQ where everything is again */
-	err = gve_alloc_adminq(&priv->pdev->dev, priv);
-	if (err)
-		goto pci_reset;
-	err = gve_adminq_configure_device_resources(priv,
-						    priv->counter_array_bus,
-						    priv->num_event_counters,
-						    priv->ntfy_block_bus,
-						    priv->num_ntfy_blks);
-	if (err)
-		goto pci_reset;
-	if (was_up) {
-		err = gve_register_qpls(priv);
-		if (err)
-			goto pci_reset;
-		err = gve_create_rings(priv);
-		if (err)
-			goto pci_reset;
-		dev_activate(priv->dev);
-		gve_turnup_queues(priv);
-		netif_carrier_on(priv->dev);
-		priv->is_up = true;
-		clear_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
-			  &priv->service_task_flags);
-	}
-	return;
-
-aq_reset:
-	dev_err(&priv->pdev->dev, "User reset failed, trying AQ reset\n");
-	if (was_up)
-		set_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
-			&priv->service_task_flags);
-	set_bit(GVE_PRIV_FLAGS_DO_AQ_RESET, &priv->service_task_flags);
-	queue_work(priv->gve_wq, &priv->service_task);
-	return;
-
-pci_reset:
-	dev_err(&priv->pdev->dev, "User reset failed, trying PCI reset\n");
-	if (was_up)
-		set_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
-			&priv->service_task_flags);
-	set_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->service_task_flags);
-	queue_work(priv->gve_wq, &priv->service_task);
-}
-
-static void gve_handle_status(struct gve_priv *priv, u32 status)
-{
-	if (GVE_DEVICE_STATUS_RESET_MASK & status) {
-		dev_info(&priv->pdev->dev, "Device requested reset.\n");
-		if (priv->is_up)
-			set_bit(GVE_PRIV_FLAGS_DEVICE_WAS_UP,
-				&priv->service_task_flags);
-		set_bit(GVE_PRIV_FLAGS_DO_PCI_RESET,
-			&priv->service_task_flags);
-	}
-}
-
-static void gve_handle_reset(struct gve_priv *priv)
-{
-	/* A service task will be scheduled at the end of probe to catch any
-	 * resets that need to happen, and we don't want to reset until
-	 * probe is done.
+	dev_info(&priv->pdev->dev, "Performing reset\n");
+	clear_bit(GVE_PRIV_FLAGS_DO_RESET, &priv->service_task_flags);
+	set_bit(GVE_PRIV_FLAGS_RESET_IN_PROGRESS, &priv->service_task_flags);
+	/* If we aren't attempting to teardown normally, just go turndown and
+	 * reset right away.
 	 */
-	if (test_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS,
-		     &priv->service_task_flags))
-		return;
-
-	if (test_bit(GVE_PRIV_FLAGS_DO_PCI_RESET, &priv->service_task_flags)) {
-		/* PCI reset supercedes AQ reset */
-		clear_bit(GVE_PRIV_FLAGS_DO_AQ_RESET,
-			  &priv->service_task_flags);
-		rtnl_lock();
-		gve_reset_pci(priv);
-		rtnl_unlock();
+	if (!attempt_teardown) {
+		gve_turndown(priv);
+		gve_reset_and_teardown(priv, was_up);
+	} else {
+		/* Otherwise attempt to close normally */
+		if (was_up) {
+			dev_deactivate(priv->dev);
+			err = gve_close(priv->dev);
+			/* If that fails, turndown and reset as we did above */
+			if (err) {
+				gve_turndown(priv);
+				gve_reset_and_teardown(priv, was_up);
+			}
+		}
+		/* Clean up any remaining resources */
+		gve_teardown_priv_resources(priv);
 	}
 
-	if (test_bit(GVE_PRIV_FLAGS_DO_AQ_RESET, &priv->service_task_flags)) {
-		rtnl_lock();
-		gve_reset_aq(priv);
-		rtnl_unlock();
-	}
+	/* Set it all back up */
+	err = gve_reset_recovery(priv, was_up);
+	clear_bit(GVE_PRIV_FLAGS_RESET_IN_PROGRESS, &priv->service_task_flags);
+	return err;
 }
-
-/* Handle NIC status register changes and reset requests */
-static void gve_service_task(struct work_struct *work)
-{
-	struct gve_priv *priv = container_of(work, struct gve_priv,
-					     service_task);
-
-	gve_handle_status(priv, be32_to_cpu(readl(priv->reg_bar0 +
-						  GVE_DEVICE_STATUS)));
-
-	gve_handle_reset(priv);
-}
-
-static const struct net_device_ops gve_netdev_ops = {
-	.ndo_start_xmit		=	gve_tx,
-	.ndo_open		=	gve_open,
-	.ndo_stop		=	gve_close,
-	.ndo_get_stats64	=	gve_get_stats,
-	.ndo_change_mtu		=	gve_change_mtu,
-};
 
 static void gve_write_version(void __iomem *reg_bar)
 {
@@ -1049,29 +975,33 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	pci_set_master(pdev);
 
-	reg_bar = pci_iomap(pdev, GVE_REGISTER_BAR, 0);
-	if (!reg_bar)
-		goto abort_with_pci_region;
-
-	db_bar = pci_iomap(pdev, GVE_DOORBELL_BAR, 0);
-	if (!db_bar) {
-		dev_err(&pdev->dev, "Failed to map doorbell bar!\n");
-		goto abort_with_reg_bar;
-	}
 	err = pci_set_dma_mask(pdev, DMA_BIT_MASK(64));
 	if (err) {
 		dev_err(&pdev->dev, "Failed to set dma mask: err= %d\n", err);
-		goto abort_with_db_bar;
+		goto abort_with_pci_region;
 	}
+
 	err = pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(64));
 	if (err) {
 		dev_err(&pdev->dev,
 			"Failed to set consistent dma mask: err= %d\n", err);
-		goto abort_with_db_bar;
+		goto abort_with_pci_region;
+	}
+
+	reg_bar = pci_iomap(pdev, GVE_REGISTER_BAR, 0);
+	if (!reg_bar) {
+		err = -ENOMEM;
+		goto abort_with_pci_region;
+	}
+
+	db_bar = pci_iomap(pdev, GVE_DOORBELL_BAR, 0);
+	if (!db_bar) {
+		dev_err(&pdev->dev, "Failed to map doorbell bar!\n");
+		err = -ENOMEM;
+		goto abort_with_reg_bar;
 	}
 
 	gve_write_version(reg_bar);
-
 	/* Get max queues to alloc etherdev */
 	max_rx_queues = min_t(u32,
 			      be32_to_cpu(readl(reg_bar +
@@ -1106,7 +1036,6 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (err)
 		goto abort_with_netdev;
 	netif_carrier_off(dev);
-
 	priv = netdev_priv(dev);
 	priv->dev = dev;
 	priv->pdev = pdev;
@@ -1114,17 +1043,18 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	priv->reg_bar0 = reg_bar;
 	priv->db_bar2 = db_bar;
 	priv->service_task_flags = 0x0;
-	priv->is_up = false;
+	priv->state_flags = 0x0;
 	set_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS, &priv->service_task_flags);
 	priv->gve_wq = alloc_ordered_workqueue("gve", 0);
 	if (!priv->gve_wq) {
 		dev_err(&pdev->dev, "could not allocate workqueue");
+		err = -ENOMEM;
 		goto abort_while_registered;
 	}
 	INIT_WORK(&priv->service_task, gve_service_task);
-
 	priv->tx_cfg.max_queues = max_tx_queues;
 	priv->rx_cfg.max_queues = max_rx_queues;
+
 	err = gve_init_priv(priv);
 	if (err)
 		goto abort_with_wq;
@@ -1160,16 +1090,15 @@ EXPORT_SYMBOL(gve_probe);
 
 static void gve_remove(struct pci_dev *pdev)
 {
-	struct net_device *dev = pci_get_drvdata(pdev);
-	struct gve_priv *priv = netdev_priv(dev);
+	struct net_device *netdev = pci_get_drvdata(pdev);
+	struct gve_priv *priv = netdev_priv(netdev);
 	__be32 __iomem *db_bar = priv->db_bar2;
 	void __iomem *reg_bar = priv->reg_bar0;
 
-	unregister_netdev(dev);
-	gve_teardown_device_resources(priv);
-	gve_free_adminq(&pdev->dev, priv);
+	unregister_netdev(netdev);
+	gve_teardown_priv_resources(priv);
 	destroy_workqueue(priv->gve_wq);
-	free_netdev(dev);
+	free_netdev(netdev);
 	pci_iounmap(pdev, db_bar);
 	pci_iounmap(pdev, reg_bar);
 	pci_release_regions(pdev);

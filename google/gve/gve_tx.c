@@ -180,9 +180,7 @@ static void gve_tx_add_to_block(struct gve_priv *priv, int queue_idx)
 
 	block->tx = tx;
 	tx->ntfy_id = ntfy_idx;
-
-	if (!block->napi_enabled)
-		gve_add_napi(priv, block);
+	gve_add_napi(priv, block);
 }
 
 static int gve_tx_alloc_ring(struct gve_priv *priv, int idx)
