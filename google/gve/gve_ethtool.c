@@ -75,7 +75,7 @@ static int gve_get_sset_count(struct net_device *netdev, int sset)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 
-	if (!priv->is_up)
+	if (!netif_carrier_ok(netdev))
 		return 0;
 
 	switch (sset) {
@@ -100,7 +100,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 
 	ASSERT_RTNL();
 
-	if (!priv->is_up)
+	if (!netif_carrier_ok(netdev))
 		return;
 
 	for (rx_pkts = 0, rx_bytes = 0, ring = 0;
@@ -181,7 +181,7 @@ int gve_set_channels(struct net_device *netdev, struct ethtool_channels *cmd)
 	if (!new_rx || !new_tx)
 		return -EINVAL;
 
-	if (!priv->is_up) {
+	if (!netif_carrier_ok(netdev)) {
 		priv->tx_cfg.num_queues = new_tx;
 		priv->rx_cfg.num_queues = new_rx;
 		return 0;
@@ -204,14 +204,13 @@ void gve_get_ringparam(struct net_device *netdev,
 	cmd->tx_pending = priv->tx_desc_cnt;
 }
 
-int gve_reset(struct net_device *netdev, u32 *flags)
+int gve_user_reset(struct net_device *netdev, u32 *flags)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 
 	if (*flags == ETH_RESET_ALL) {
 		*flags = 0;
-		gve_handle_user_reset(priv);
-		return 0;
+		return gve_reset(priv, true);
 	}
 
 	return -EOPNOTSUPP;
@@ -228,5 +227,5 @@ const struct ethtool_ops gve_ethtool_ops = {
 	.get_channels = gve_get_channels,
 	.get_link = ethtool_op_get_link,
 	.get_ringparam = gve_get_ringparam,
-	.reset = gve_reset,
+	.reset = gve_user_reset,
 };

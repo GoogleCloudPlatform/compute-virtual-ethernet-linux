@@ -41,6 +41,7 @@
 #define GVE_ADMINQ_COMMAND_UNKNOWN_ERROR 0XFFFFFFFF
 
 #define GVE_MAX_ADMINQ_EVENT_COUNTER_CHECK	100
+#define GVE_MAX_ADMINQ_RELEASE_CHECK	100
 
 #define GVE_ADMINQ_DEVICE_DESCRIPTOR_VERSION 1
 
@@ -178,6 +179,7 @@ GVE_ASSERT_SIZE(union, gve_adminq_command, 64);
 
 int gve_alloc_adminq(struct device *dev, struct gve_priv *priv);
 void gve_free_adminq(struct device *dev, struct gve_priv *priv);
+void gve_release_adminq(struct gve_priv *priv);
 int gve_execute_adminq_cmd(struct gve_priv *priv,
 			   union gve_adminq_command *cmd_orig);
 int gve_adminq_describe_device(struct gve_priv *priv);
