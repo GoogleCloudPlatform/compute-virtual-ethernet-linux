@@ -756,17 +756,6 @@ static const struct net_device_ops gve_netdev_ops = {
 	.ndo_change_mtu		=	gve_change_mtu,
 };
 
-static void gve_write_version(void __iomem *reg_bar)
-{
-	const char *c = gve_version_str;
-
-	while (*c) {
-		writeb(*c, reg_bar + GVE_DRIVER_VERSION);
-		c++;
-	}
-	writeb('\n', reg_bar + GVE_DRIVER_VERSION);
-}
-
 static void gve_handle_status(struct gve_priv *priv, u32 status)
 {
 	if (GVE_DEVICE_STATUS_RESET_MASK & status) {
