@@ -837,10 +837,14 @@ static int gve_init_priv(struct gve_priv *priv)
 	priv->rx_cfg.max_queues =
 		min_t(int, priv->rx_cfg.max_queues, priv->num_ntfy_blks / 2);
 
-	priv->tx_cfg.num_queues =
-		min_t(int, priv->default_num_queues, priv->tx_cfg.max_queues);
-	priv->rx_cfg.num_queues =
-		min_t(int, priv->default_num_queues, priv->rx_cfg.max_queues);
+	priv->tx_cfg.num_queues = priv->tx_cfg.max_queues;
+	priv->rx_cfg.num_queues = priv->rx_cfg.max_queues;
+	if (priv->default_num_queues > 0) {
+		priv->tx_cfg.num_queues = min_t(int, priv->default_num_queues,
+						priv->tx_cfg.num_queues);
+		priv->rx_cfg.num_queues = min_t(int, priv->default_num_queues,
+						priv->rx_cfg.num_queues);
+	}
 
 	netif_info(priv, drv, priv->dev, "TX queues %d, RX queues %d\n",
 		   priv->tx_cfg.num_queues, priv->rx_cfg.num_queues);
