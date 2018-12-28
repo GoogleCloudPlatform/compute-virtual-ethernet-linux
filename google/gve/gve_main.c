@@ -124,6 +124,7 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 	int num_vecs_requested = priv->num_ntfy_blks + 1;
 	struct device *hdev = &priv->pdev->dev;
 	char *name = priv->dev->name;
+	unsigned int active_cpus;
 	int vecs_enabled;
 	int i, j;
 	int err;
@@ -160,6 +161,7 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 		if (priv->rx_cfg.num_queues > priv->rx_cfg.max_queues)
 			priv->rx_cfg.num_queues = priv->rx_cfg.max_queues;
 	}
+	active_cpus = min_t(int, priv->num_ntfy_blks / 2, num_online_cpus());
 
 	/* Setup Management Vector */
 	snprintf(priv->mgmt_msix_name, sizeof(priv->mgmt_msix_name), "%s-mgmnt",
@@ -184,7 +186,6 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 	for (i = 0; i < priv->num_ntfy_blks; i++) {
 		struct gve_notify_block *block = &priv->ntfy_blocks[i];
 		int msix_idx = i + priv->ntfy_blk_msix_base_idx;
-
 		snprintf(block->name, sizeof(block->name), "%s-ntfy-block.%d",
 			 name, i);
 		block->priv = priv;
@@ -195,7 +196,7 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 			goto abort_with_some_ntfy_blocks;
 		}
 		irq_set_affinity_hint(priv->msix_vectors[msix_idx].vector,
-				get_cpu_mask((i - 1) % num_online_cpus()));
+				      get_cpu_mask(i % active_cpus));
 	}
 	return 0;
 abort_with_some_ntfy_blocks:
