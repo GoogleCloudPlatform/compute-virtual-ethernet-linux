@@ -237,7 +237,7 @@ static inline u32 gve_tx_ntfy_idx(struct gve_priv *priv, u32 queue_idx)
  **/
 static inline u32 gve_rx_ntfy_idx(struct gve_priv *priv, u32 queue_idx)
 {
-	return priv->tx_cfg.max_queues + queue_idx;
+	return (priv->num_ntfy_blks / 2) + queue_idx;
 }
 
 /**
