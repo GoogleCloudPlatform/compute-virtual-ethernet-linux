@@ -166,7 +166,7 @@ if [ "$TARGET" == "oot" ]; then
 fi
 
 if [ -z "$RELEASE" ]; then
- sed -i "s/\(#define GVE_VERSION\s*\).*$/\1 \""${VERSION}"\"/" "$DESTDIR/gve_main.c"
+ sed -i "s/\(#define GVE_VERSION\s*\)\".*\"$/\1 \""${VERSION}"\"/" "$DESTDIR/gve_main.c"
 fi
 
 if [ "$COMPRESS"  == "gz" ]; then
