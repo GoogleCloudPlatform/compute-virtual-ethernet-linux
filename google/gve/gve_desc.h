@@ -96,6 +96,7 @@ struct gve_rx_data_slot {
 #define	GVE_RXF_IPV6	GVE_RXFLG(5)	/* IPv6				*/
 #define	GVE_RXF_TCP	GVE_RXFLG(6)	/* TCP Packet			*/
 #define	GVE_RXF_UDP	GVE_RXFLG(7)	/* UDP Packet			*/
+#define	GVE_RXF_ERR	GVE_RXFLG(8)	/* Packet Error Detected	*/
 
 /* GVE IRQ */
 #define GVE_IRQ_ACK	BIT(31)

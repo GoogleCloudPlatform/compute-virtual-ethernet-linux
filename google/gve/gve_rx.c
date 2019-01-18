@@ -251,6 +251,9 @@ static int gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 		   "[%d] %s: len=0x%x flags=0x%x data.cnt=%d\n",
 		   rx->q_num, __func__, len, rx_desc->flags_seq, rx->data.cnt);
 
+	if (unlikely(rx_desc->flags_seq & GVE_RXF_ERR))
+		return 0;
+
 #if PAGE_SIZE == 4096
 	/* just copy small packets. */
 	if (len <= priv->rx_copybreak)
