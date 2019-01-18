@@ -1026,10 +1026,6 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	dev->hw_features |= NETIF_F_RXHASH;
 	dev->features = dev->hw_features;
 
-	err = register_netdev(dev);
-	if (err)
-		goto abort_with_netdev;
-	netif_carrier_off(dev);
 	priv = netdev_priv(dev);
 	priv->dev = dev;
 	priv->pdev = pdev;
@@ -1038,6 +1034,12 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	priv->db_bar2 = db_bar;
 	priv->service_task_flags = 0x0;
 	priv->state_flags = 0x0;
+
+	netif_carrier_off(dev);
+	err = register_netdev(dev);
+	if (err)
+		goto abort_with_netdev;
+
 	set_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS, &priv->service_task_flags);
 	priv->gve_wq = alloc_ordered_workqueue("gve", 0);
 	if (!priv->gve_wq) {
