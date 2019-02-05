@@ -3,6 +3,11 @@
 This repository contains the source for building an out-of-tree Linux kernel
 module for the Compute Engine Virtual Ethernet device.
 
+This driver as well as the GCE VM virtual device are in Early Access stage [1],
+the feature is available to a closed group of testers.
+
+[1] https://cloud.google.com/terms/launch-stages
+
 # Supported Hardware
 
 The driver here binds to a single PCI device id used by the virtual Ethernet
