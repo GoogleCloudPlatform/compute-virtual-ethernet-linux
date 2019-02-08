@@ -282,28 +282,8 @@ static int gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 		rx->data.data_ring[idx].qpl_offset = cpu_to_be64(qpl_offset);
 	} else if (pagecount >= 2) {
 		/* We have previously passed the other half of this page up the
-		 * stack, but it has not yet been freed.
-		 *
-		 * NOTYET NOTYET NOTYET
-		 * 0) Scan rx::recycling list for a page w/ refcount==1.
-		 *    If found:
-		 * 0.1) get_page(page_info->page)
-		 * 0.2) Link page to rx::recycle list
-		 * 0.3) Unload page from page_info (clear ->page, page_address)
-		 * 0.4) Load page w/ refcount==1 from rx::recycling into
-		 *	page_info
-		 *    Otherwise:
-		 * 1.0) Fallback to copying.
-		 *
-		 * Optimizations:
-		 * - Second list of pages to reuse quickly; don't just scan for
-		 *   first pc == 1 page, scan more. (or scan on rx::recycling
-		 *   insert). Use reuse list first, before recycling).
-		 *   Remember: Reduce, Reuse, Recycle!
-		 * NOTYET NOTYET NOTYET
+		 * stack, but it has not yet been freed. Fallback to copying.
 		 */
-
-		/* Just fallback to copying for now */
 		can_page_flip = false;
 	} else {
 		WARN(pagecount < 1, "Pagecount should never be < 1");
