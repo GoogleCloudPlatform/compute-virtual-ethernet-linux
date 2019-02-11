@@ -227,7 +227,7 @@ static enum pkt_hash_types gve_rss_type(__be16 pkt_flags)
 	return PKT_HASH_TYPE_L2;
 }
 
-static int gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
+static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 		  netdev_features_t feat)
 {
 	struct gve_rx_slot_page_info *page_info;
@@ -252,7 +252,7 @@ static int gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 		   rx->q_num, __func__, len, rx_desc->flags_seq, rx->data.cnt);
 
 	if (unlikely(rx_desc->flags_seq & GVE_RXF_ERR))
-		return 0;
+		return true;
 
 #if PAGE_SIZE == 4096
 	/* just copy small packets. */
@@ -287,7 +287,7 @@ static int gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 		can_page_flip = false;
 	} else {
 		WARN(pagecount < 1, "Pagecount should never be < 1");
-		return 0;
+		return false;
 	}
 #else
 	can_page_flip = false;
@@ -297,7 +297,7 @@ copy:
 	if (len <= priv->rx_copybreak || !can_page_flip) {
 		skb = napi_alloc_skb(napi, len);
 		if (unlikely(!skb))
-			return 0;
+			return true;
 
 		va = page_info->page_address + page_info->page_offset +
 		     GVE_RX_PAD;
@@ -330,7 +330,7 @@ copy:
 		napi_gro_frags(napi);
 	else
 		napi_gro_receive(napi, skb);
-	return 1;
+	return true;
 }
 
 static bool gve_rx_work_pending(struct gve_rx_ring *rx)
@@ -370,7 +370,8 @@ bool gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 			   rx->q_num, GVE_SEQNO(desc->flags_seq),
 			   rx->desc.seqno);
 		bytes += be16_to_cpu(desc->len) - GVE_RX_PAD;
-		gve_rx(rx, desc, feat);
+		if(!gve_rx(rx, desc, feat))
+			gve_schedule_reset(priv);
 		cnt++;
 		idx = cnt & rx->desc.mask;
 		desc = rx->desc.desc_ring + idx;
