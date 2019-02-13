@@ -777,7 +777,9 @@ static void gve_handle_reset(struct gve_priv *priv)
 		return;
 
 	if (test_bit(GVE_PRIV_FLAGS_DO_RESET, &priv->service_task_flags)) {
+		rtnl_lock();
 		gve_reset(priv, false);
+		rtnl_unlock();
 	}
 }
 
@@ -787,12 +789,10 @@ static void gve_service_task(struct work_struct *work)
 	struct gve_priv *priv = container_of(work, struct gve_priv,
 					     service_task);
 
-	rtnl_lock();
 	gve_handle_status(priv, be32_to_cpu(readl(priv->reg_bar0 +
 						  GVE_DEVICE_STATUS)));
 
 	gve_handle_reset(priv);
-	rtnl_unlock();
 }
 
 static int gve_init_priv(struct gve_priv *priv)
