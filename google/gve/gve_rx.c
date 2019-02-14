@@ -222,18 +222,37 @@ static enum pkt_hash_types gve_rss_type(__be16 pkt_flags)
 	return PKT_HASH_TYPE_L2;
 }
 
+static struct sk_buff *gve_rx_copy(struct net_device *dev,
+				   struct napi_struct *napi,
+				   struct gve_rx_slot_page_info *page_info,
+				   u16 len)
+{
+	struct sk_buff *skb = napi_alloc_skb(napi, len);
+	void *va = page_info->page_address + GVE_RX_PAD +
+		   page_info->page_offset;
+
+	if (unlikely(!skb))
+		return NULL;
+
+	__skb_put(skb, len);
+
+	skb_copy_to_linear_data(skb, va, len);
+
+	skb->protocol = eth_type_trans(skb, dev);
+	return skb;
+}
+
 static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
-		  netdev_features_t feat)
+		   netdev_features_t feat)
 {
 	struct gve_rx_slot_page_info *page_info;
 	struct gve_priv *priv = rx->gve;
 	struct napi_struct *napi = &priv->ntfy_blocks[rx->ntfy_id].napi;
 	struct net_device *dev = priv->dev;
-	bool can_page_flip = true;
+	struct gve_rx_data_slot *data_ring;
 	struct sk_buff *skb;
 	int pagecount;
 	u64 qpl_offset;
-	void *va;
 	u16 len;
 	int idx;
 
@@ -250,59 +269,58 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 		return true;
 
 #if PAGE_SIZE == 4096
-	/* just copy small packets. */
-	if (len <= priv->rx_copybreak)
-		goto copy;
-
-	pagecount = page_count(page_info->page);
-	if (pagecount == 1) {
-		/* No part of this page is used by any SKBs; we attach the page
-		 * fragment to a new SKB and pass it up the stack.
+	if (len <= priv->rx_copybreak ||
+	    unlikely(priv->max_mtu > PAGE_SIZE / 2)) {
+		/* We can't recycle the pages if we can't fit a packet into
+		 * half a page so just copy, also just copy small packets.
 		 */
-		skb = napi_get_frags(napi);
-		if (unlikely(!skb)) {
-			can_page_flip = false;
-			goto copy;
-		}
-		get_page(page_info->page);
-
-		skb_add_rx_frag(skb, 0, page_info->page,
-				page_info->page_offset + GVE_RX_PAD, len,
-				PAGE_SIZE / 2);
-
-		/* "flip" to other packet buffer on this page */
-		qpl_offset = be64_to_cpu(rx->data.data_ring[idx].qpl_offset);
-		page_info->page_offset ^= PAGE_SIZE / 2;
-		qpl_offset ^= PAGE_SIZE / 2;
-		rx->data.data_ring[idx].qpl_offset = cpu_to_be64(qpl_offset);
-	} else if (pagecount >= 2) {
-		/* We have previously passed the other half of this page up the
-		 * stack, but it has not yet been freed. Fallback to copying.
-		 */
-		can_page_flip = false;
+		skb = gve_rx_copy(dev, napi, page_info, len);
+		if (!skb)
+			return true;
 	} else {
-		WARN(pagecount < 1, "Pagecount should never be < 1");
-		return false;
+		pagecount = page_count(page_info->page);
+		if (pagecount == 1) {
+			/* No part of this page is used by any SKBs; we attach
+			 * the page fragment to a new SKB and pass it up the
+			 * stack.
+			 */
+			skb = napi_get_frags(napi);
+			if (unlikely(!skb)) {
+				skb = gve_rx_copy(dev, napi, page_info, len);
+				if (!skb)
+					return true;
+			} else {
+				get_page(page_info->page);
+
+				skb_add_rx_frag(skb, 0, page_info->page,
+						page_info->page_offset +
+						GVE_RX_PAD, len, PAGE_SIZE / 2);
+
+				/* "flip" to other packet buffer on this page */
+				data_ring = &rx->data.data_ring[idx];
+				qpl_offset = be64_to_cpu(data_ring->qpl_offset);
+				page_info->page_offset ^= PAGE_SIZE / 2;
+				qpl_offset ^= PAGE_SIZE / 2;
+				data_ring->qpl_offset = cpu_to_be64(qpl_offset);
+			}
+		} else if (pagecount >= 2) {
+			/* We have previously passed the other half of this
+			 * page up the stack, but it has not yet been freed.
+			 * Fallback to copying.
+			 */
+			skb = gve_rx_copy(dev, napi, page_info, len);
+			if (!skb)
+				return true;
+		} else {
+			WARN(pagecount < 1, "Pagecount should never be < 1");
+			return false;
+		}
 	}
 #else
-	can_page_flip = false;
+	skb = gve_rx_copy(dev, napi, page_info, len);
+	if (!skb)
+		return true;
 #endif
-
-copy:
-	if (len <= priv->rx_copybreak || !can_page_flip) {
-		skb = napi_alloc_skb(napi, len);
-		if (unlikely(!skb))
-			return true;
-
-		va = page_info->page_address + page_info->page_offset +
-		     GVE_RX_PAD;
-
-		__skb_put(skb, len);
-
-		skb_copy_to_linear_data(skb, va, len);
-
-		skb->protocol = eth_type_trans(skb, dev);
-	}
 
 	rx->data.cnt++;
 
