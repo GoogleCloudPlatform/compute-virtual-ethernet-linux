@@ -89,7 +89,12 @@ fi
 if [ -z "$RELEASE" ] && [ -z "${GIVEN_VERSION}" ]; then
  pushd $MAINDIR > /dev/null
  if [ `git rev-parse --git-dir` ]; then
-  CALC_VERSION=`git log --oneline origin/master..HEAD | wc -l`"-"`git log --oneline -1 origin/master --pretty=%h`"-"`git log --oneline -1 --pretty=%h`
+  BRANCH=`git branch | sed -n '/\* /s///p'`
+  ISREMOTE=`git ls-remote origin "$BRANCH"`
+  if [ -z "$ISREMOTE" ]; then
+    BRANCH="master"
+  fi
+  CALC_VERSION=`git log --oneline origin/"$BRANCH"..HEAD | wc -l`"-"`git log --oneline -1 origin/"$BRANCH" --pretty=%h`"-"`git log --oneline -1 --pretty=%h`
  else
   CALC_VERSION=`date +%F`
  fi
