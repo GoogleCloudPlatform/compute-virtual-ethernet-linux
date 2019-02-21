@@ -29,6 +29,8 @@
 #define GVE_TX_QPL_MAX_PAGES	512
 #define GVE_RX_QPL_MAX_PAGES	1024
 
+#define GVE_MIN_MTU			(68)
+
 struct gve_rx_desc_queue {
 	struct gve_rx_desc *desc_ring;
 	dma_addr_t bus;
@@ -56,8 +58,6 @@ struct gve_rx_data_queue {
 	struct gve_rx_data_slot *data_ring;
 	dma_addr_t data_bus; /* dma mapping of the slots */
 	struct gve_rx_slot_page_info *page_info;
-	/* Recycling is picked up on Fridays. */
-	/*void *recycle_pages; */
 	struct gve_queue_page_list *qpl;
 	int mask;
 	int cnt;
@@ -83,8 +83,6 @@ union gve_tx_desc {
 };
 
 struct gve_tx_iovec {
-	/* References coherent DMA memory */
-	void *iov_base;
 	/* Offset into this segment */
 	u32 iov_offset;
 	u32 iov_len;
@@ -123,7 +121,7 @@ struct gve_tx_ring {
 	u32 mask;
 
 	/* Slow-path fields */
-	int q_num;
+	int q_num ____cacheline_aligned;
 	int stop_queue;
 	int wake_queue;
 	u32 ntfy_id;
@@ -135,16 +133,20 @@ struct gve_tx_ring {
 #define GVE_MIN_MSIX 3
 
 struct gve_notify_block {
-	volatile __be32 irq_db_index; /* Set by device - must be first field */
+	/* the irq_db_index is the index into db_bar2 where this block's irq
+	 * db can be found
+	 */
+	__be32 irq_db_index; /* Set by device - must be first field */
+	/* the name registered with the kernel for this irq */
 	char name[IFNAMSIZ + 16];
+	/* the kernel napi struct for this block */
 	struct napi_struct napi;
-	int napi_enabled;
 	struct gve_priv *priv;
+	/* the tx rings on this notification block */
 	struct gve_tx_ring *tx;
+	/* the rx rings on this notification block */
 	struct gve_rx_ring *rx;
 } ____cacheline_aligned;
-
-#define GVE_MIN_MTU			(68)
 
 struct gve_queue_config {
 	int max_queues;
@@ -170,7 +172,6 @@ struct gve_priv {
 	__be32 *counter_array; /* array of num_event_counters */
 	dma_addr_t counter_array_bus;
 
-	bool is_up;
 	int num_event_counters;
 	int tx_desc_cnt;
 	int rx_desc_cnt;
@@ -202,27 +203,29 @@ struct gve_priv {
 	struct workqueue_struct *gve_wq;
 	struct work_struct service_task;
 	unsigned long service_task_flags;
+	unsigned long state_flags;
 };
 
-#define GVE_PRIV_FLAGS_IGNORE_FLOW_TABLE	BIT(0)
-#define GVE_PRIV_FLAGS_DO_AQ_RESET		BIT(1)
-#define GVE_PRIV_FLAGS_DO_PCI_RESET		BIT(2)
+/* service_task_flags bits */
+#define GVE_PRIV_FLAGS_DO_RESET			BIT(1)
+#define GVE_PRIV_FLAGS_RESET_IN_PROGRESS	BIT(2)
 #define GVE_PRIV_FLAGS_PROBE_IN_PROGRESS	BIT(3)
-#define GVE_PRIV_FLAGS_DEVICE_WAS_UP		BIT(4)
+
+/* state_flags bits */
+#define GVE_PRIV_FLAGS_ADMIN_QUEUE_OK		BIT(1)
+#define GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK	BIT(2)
+#define GVE_PRIV_FLAGS_DEVICE_RINGS_OK		BIT(3)
+#define GVE_PRIV_FLAGS_NAPI_ENABLED		BIT(4)
+
 
 static inline __be32 __iomem *gve_irq_doorbell(struct gve_priv *priv,
 					       struct gve_notify_block *block)
 {
-	/* The device might have changed the db index so make sure we get the
-	 * latest copy.
-	 */
-	u32 irq_db_index = be32_to_cpu(smp_load_acquire(&block->irq_db_index));
-
-	return &priv->db_bar2[irq_db_index];
+	return &priv->db_bar2[be32_to_cpu(block->irq_db_index)];
 }
 
 /**
- * Returns the index into ntfy_blocks of the given rx ring's block
+ * Returns the index into ntfy_blocks of the given tx ring's block
  **/
 static inline u32 gve_tx_ntfy_idx(struct gve_priv *priv, u32 queue_idx)
 {
@@ -234,7 +237,7 @@ static inline u32 gve_tx_ntfy_idx(struct gve_priv *priv, u32 queue_idx)
  **/
 static inline u32 gve_rx_ntfy_idx(struct gve_priv *priv, u32 queue_idx)
 {
-	return priv->tx_cfg.max_queues + queue_idx;
+	return (priv->num_ntfy_blks / 2) + queue_idx;
 }
 
 /**
@@ -314,10 +317,9 @@ int gve_rx_alloc_rings(struct gve_priv *priv);
 void gve_rx_free_rings(struct gve_priv *priv);
 bool gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 		       netdev_features_t feat);
-/* Resets */
-void gve_schedule_aq_reset(struct gve_priv *priv);
-void gve_schedule_pci_reset(struct gve_priv *priv);
-void gve_handle_user_reset(struct gve_priv *priv);
+/* Reset */
+void gve_schedule_reset(struct gve_priv *priv);
+int gve_reset(struct gve_priv *priv, bool attempt_teardown);
 int gve_adjust_queues(struct gve_priv *priv,
 		      struct gve_queue_config new_rx_config,
 		      struct gve_queue_config new_tx_config);

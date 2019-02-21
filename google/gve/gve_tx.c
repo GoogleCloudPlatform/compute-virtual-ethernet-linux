@@ -15,22 +15,7 @@ static inline void gve_tx_put_doorbell(struct gve_priv *priv,
 				       struct gve_queue_resources *q_resources,
 				       __be32 val)
 {
-	u32 db_idx, new_db_idx;
-
-	/* Read queue_resources::db_index to find up-to-date location of Tx
-	 * queue doorbell. smp_load_acquire synchronizes-with release store
-	 * of db_index from the device.
-	 */
-	db_idx = be32_to_cpu(smp_load_acquire(&q_resources->db_index));
-	writel(val, &priv->db_bar2[db_idx]);
-
-	/* Re-read queue_resources::db_index; if doorbell location has changed,
-	 * write doorbell value to new location. smp_load_acquire synchronizes
-	 * with concurrent update to db_index from the device.
-	 */
-	new_db_idx = be32_to_cpu(smp_load_acquire(&q_resources->db_index));
-	if (unlikely(db_idx != new_db_idx))
-		writel(val, &priv->db_bar2[new_db_idx]);
+	writel(val, &priv->db_bar2[be32_to_cpu(q_resources->db_index)]);
 }
 
 /* gvnic can only transmit from a per-queue Registered Segment.
@@ -101,12 +86,10 @@ static int gve_tx_alloc_fifo(struct gve_tx_fifo *fifo, size_t bytes,
 	 * the padding to the next alignment.
 	 */
 	WARN(!gve_tx_fifo_can_alloc(fifo, bytes),
-	     "Reached %s when there's not enough space in the fifo",
-	     __func__);
+	     "Reached %s when there's not enough space in the fifo", __func__);
 
 	nfrags++;
 
-	iov[0].iov_base = fifo->base + fifo->head;
 	iov[0].iov_offset = fifo->head;
 	iov[0].iov_len = bytes;
 	fifo->head += bytes;
@@ -118,7 +101,6 @@ static int gve_tx_alloc_fifo(struct gve_tx_fifo *fifo, size_t bytes,
 		nfrags++;
 		overflow = fifo->head - fifo->size;
 		iov[0].iov_len -= overflow;
-		iov[1].iov_base = fifo->base;
 		iov[1].iov_offset = 0;	/* Start of fifo*/
 		iov[1].iov_len = overflow;
 
@@ -162,8 +144,8 @@ static void gve_tx_remove_from_block(struct gve_priv *priv, int queue_idx)
 
 void gve_tx_free_ring(struct gve_priv *priv, int idx)
 {
-	struct device *hdev = &priv->pdev->dev;
 	struct gve_tx_ring *tx = &priv->tx[idx];
+	struct device *hdev = &priv->pdev->dev;
 	size_t bytes;
 	int slots;
 
@@ -172,7 +154,7 @@ void gve_tx_free_ring(struct gve_priv *priv, int idx)
 	gve_clean_tx_done(priv, tx, tx->req);
 	netdev_tx_reset_queue(tx->netdev_txq);
 
-	dma_free_coherent(hdev, sizeof(struct gve_queue_resources),
+	dma_free_coherent(hdev, sizeof(*tx->q_resources),
 			  tx->q_resources, tx->q_resources_bus);
 	tx->q_resources = NULL;
 
@@ -187,7 +169,7 @@ void gve_tx_free_ring(struct gve_priv *priv, int idx)
 	vfree(tx->info);
 	tx->info = NULL;
 
-	netdev_dbg(priv->dev, "freed tx queue %d\n", idx);
+	netif_dbg(priv, drv, priv->dev, "freed tx queue %d\n", idx);
 }
 
 static void gve_tx_add_to_block(struct gve_priv *priv, int queue_idx)
@@ -198,9 +180,7 @@ static void gve_tx_add_to_block(struct gve_priv *priv, int queue_idx)
 
 	block->tx = tx;
 	tx->ntfy_id = ntfy_idx;
-
-	if (!block->napi_enabled)
-		gve_add_napi(priv, block);
+	gve_add_napi(priv, block);
 }
 
 static int gve_tx_alloc_ring(struct gve_priv *priv, int idx)
@@ -235,7 +215,7 @@ static int gve_tx_alloc_ring(struct gve_priv *priv, int idx)
 
 	tx->q_resources =
 		dma_zalloc_coherent(hdev,
-				    sizeof(struct gve_queue_resources),
+				    sizeof(*tx->q_resources),
 				    &tx->q_resources_bus,
 				    GFP_KERNEL);
 	if (!tx->q_resources)
@@ -371,21 +351,21 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 	bool is_gso = skb_is_gso(skb);
 	int idx = tx->req & tx->mask;
 	int payload_iov = 2;
+	int l4_hdr_offset;
 	int copy_offset;
-	int l4_offset;
 	int next_idx;
 	int i;
 
 	info = &tx->info[idx];
 	pkt_desc = &tx->desc[idx];
 
-	l4_offset = skb_checksum_start_offset(skb);
+	l4_hdr_offset = skb_checksum_start_offset(skb);
 	/* If the skb is gso, then we want the tcp header in the first segment
 	 * otherwise we want the linear portion of the skb (which will contain
 	 * the checksum because skb->csum_start and skb->csum_offset are given
 	 * relative to skb->head) in the first segment.
 	 */
-	hlen = is_gso ? l4_offset + tcp_hdrlen(skb) :
+	hlen = is_gso ? l4_hdr_offset + tcp_hdrlen(skb) :
 			skb_headlen(skb);
 
 	info->skb =  skb;
@@ -399,27 +379,28 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 	payload_nfrags = gve_tx_alloc_fifo(&tx->tx_fifo, skb->len - hlen,
 					   &info->iov[payload_iov]);
 
-	/* l4_offset and csum_offset are in units of 16-bit words */
+	/* l4_hdr_offset and csum_offset are in units of 16-bit words */
 	if (is_gso) {
 		pkt_desc->pkt.type_flags = GVE_TXD_TSO | GVE_TXF_L4CSUM;
-		pkt_desc->pkt.checksum_offset = skb->csum_offset >> 1;
-		pkt_desc->pkt.l4_offset = l4_offset >> 1;
+		pkt_desc->pkt.l4_csum_offset = skb->csum_offset >> 1;
+		pkt_desc->pkt.l4_hdr_offset = l4_hdr_offset >> 1;
 	} else if (likely(skb->ip_summed == CHECKSUM_PARTIAL)) {
 		pkt_desc->pkt.type_flags = GVE_TXD_STD | GVE_TXF_L4CSUM;
-		pkt_desc->pkt.checksum_offset = skb->csum_offset >> 1;
-		pkt_desc->pkt.l4_offset = l4_offset >> 1;
+		pkt_desc->pkt.l4_csum_offset = skb->csum_offset >> 1;
+		pkt_desc->pkt.l4_hdr_offset = l4_hdr_offset >> 1;
 	} else {
 		pkt_desc->pkt.type_flags = GVE_TXD_STD;
-		pkt_desc->pkt.checksum_offset = 0;
-		pkt_desc->pkt.l4_offset = 0;
+		pkt_desc->pkt.l4_csum_offset = 0;
+		pkt_desc->pkt.l4_hdr_offset = 0;
 	}
-	pkt_desc->pkt.seg_cnt = 1 + payload_nfrags;
+	pkt_desc->pkt.desc_cnt = 1 + payload_nfrags;
 	pkt_desc->pkt.len = cpu_to_be16(skb->len);
 	pkt_desc->pkt.seg_len = cpu_to_be16(hlen);
 	pkt_desc->pkt.seg_addr =
 		cpu_to_be64(info->iov[hdr_nfrags - 1].iov_offset);
 
-	skb_copy_bits(skb, 0, info->iov[hdr_nfrags - 1].iov_base, hlen);
+	skb_copy_bits(skb, 0, tx->tx_fifo.base + info->iov[hdr_nfrags - 1].iov_offset,
+		      hlen);
 	copy_offset = hlen;
 
 	for (i = payload_iov; i < payload_nfrags + payload_iov; i++) {
@@ -438,7 +419,8 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 		seg_desc->seg.seg_addr =
 			cpu_to_be64(info->iov[i].iov_offset);
 
-		skb_copy_bits(skb, copy_offset, info->iov[i].iov_base,
+		skb_copy_bits(skb, copy_offset,
+			      tx->tx_fifo.base + info->iov[i].iov_offset,
 			      info->iov[i].iov_len);
 		copy_offset += info->iov[i].iov_len;
 	}
@@ -448,13 +430,13 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 
 netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 {
-	struct gve_priv *p = netdev_priv(dev);
+	struct gve_priv *priv = netdev_priv(dev);
 	struct gve_tx_ring *tx;
 	int nsegs;
 
-	WARN(skb_get_queue_mapping(skb) > p->tx_cfg.num_queues,
+	WARN(skb_get_queue_mapping(skb) > priv->tx_cfg.num_queues,
 	     "skb queue index out of range");
-	tx = &p->tx[skb_get_queue_mapping(skb)];
+	tx = &priv->tx[skb_get_queue_mapping(skb)];
 	if (unlikely(gve_maybe_stop_tx(tx, skb))) {
 		/* We need to ring the txq doorbell -- we have stopped the Tx
 		 * queue for want of resources, but prior calls to gve_tx()
@@ -465,7 +447,7 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 		 * ringing doorbell.
 		 */
 		dma_wmb();
-		gve_tx_put_doorbell(p, tx->q_resources, cpu_to_be32(tx->req));
+		gve_tx_put_doorbell(priv, tx->q_resources, cpu_to_be32(tx->req));
 		return NETDEV_TX_BUSY;
 	}
 	nsegs = gve_tx_add_skb(tx, skb);
@@ -475,12 +457,12 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 
 	/* give packets to NIC */
 	tx->req += nsegs;
-	netif_info(p, tx_queued, p->dev, "[%d] %s: req=%u done=%u\n",
+	netif_info(priv, tx_queued, priv->dev, "[%d] %s: req=%u done=%u\n",
 		   tx->q_num, __func__, tx->req, tx->done);
 	if (!skb->xmit_more || netif_xmit_stopped(tx->netdev_txq)) {
 		/* Ensure tx descs are visible before ringing doorbell */
 		dma_wmb();
-		gve_tx_put_doorbell(p, tx->q_resources, cpu_to_be32(tx->req));
+		gve_tx_put_doorbell(priv, tx->q_resources, cpu_to_be32(tx->req));
 	}
 	return NETDEV_TX_OK;
 }
@@ -491,8 +473,8 @@ int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx, u32 to_do)
 	u64 pkts = 0, bytes = 0;
 	size_t space_freed = 0;
 	struct sk_buff *skb;
-	int idx = 0;
 	int i, j;
+	int idx;
 
 	for (j = 0; j < to_do; j++) {
 		idx = tx->done & tx->mask;
@@ -541,17 +523,14 @@ int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx, u32 to_do)
 __be32 gve_tx_load_event_counter(struct gve_priv *priv,
 				 struct gve_tx_ring *tx)
 {
-	__be32 counter_index;
+	u32 counter_index = be32_to_cpu((tx->q_resources->counter_index));
 
-	/* queue_resources::counter_index may be dynamically updated by the
-	 * device. Use READ_ONCE to ensure we do not cache counter_index.
-	 */
-	counter_index = READ_ONCE(tx->q_resources->counter_index);
-	return READ_ONCE(priv->counter_array[be32_to_cpu(counter_index)]);
+	return READ_ONCE(priv->counter_array[counter_index]);
 }
 
 bool gve_tx_poll(struct gve_notify_block *block, int budget)
 {
+	struct gve_priv *priv = block->priv;
 	struct gve_tx_ring *tx = block->tx;
 	bool repoll = false;
 	u32 nic_done;
@@ -562,14 +541,14 @@ bool gve_tx_poll(struct gve_notify_block *block, int budget)
 		budget = INT_MAX;
 
 	/* Find out how much work there is to be done */
-	tx->last_nic_done = gve_tx_load_event_counter(block->priv, tx);
+	tx->last_nic_done = gve_tx_load_event_counter(priv, tx);
 	nic_done = be32_to_cpu(tx->last_nic_done);
 	if (budget > 0) {
 		/* Do as much work as we have that the budget will
 		 * allow
 		 */
 		to_do = min_t(u32, (nic_done - tx->done), budget);
-		gve_clean_tx_done(block->priv, tx, to_do);
+		gve_clean_tx_done(priv, tx, to_do);
 	}
 	/* If we still have work we want to repoll */
 	repoll |= (nic_done != tx->done);

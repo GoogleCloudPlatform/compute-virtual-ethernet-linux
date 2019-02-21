@@ -52,21 +52,21 @@ static void gve_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 	       sizeof(gve_gstrings_main_stats));
 	s += sizeof(gve_gstrings_main_stats);
 	for (i = 0; i < priv->rx_cfg.num_queues; i++) {
-		sprintf(s, "rx_desc_cnt[%u]", i);
+		snprintf(s, ETH_GSTRING_LEN, "rx_desc_cnt[%u]", i);
 		s += ETH_GSTRING_LEN;
-		sprintf(s, "rx_desc_fill_cnt[%u]", i);
+		snprintf(s, ETH_GSTRING_LEN, "rx_desc_fill_cnt[%u]", i);
 		s += ETH_GSTRING_LEN;
 	}
 	for (i = 0; i < priv->tx_cfg.num_queues; i++) {
-		sprintf(s, "tx_req[%u]", i);
+		snprintf(s, ETH_GSTRING_LEN, "tx_req[%u]", i);
 		s += ETH_GSTRING_LEN;
-		sprintf(s, "tx_done[%u]", i);
+		snprintf(s, ETH_GSTRING_LEN, "tx_done[%u]", i);
 		s += ETH_GSTRING_LEN;
-		sprintf(s, "tx_wake[%u]", i);
+		snprintf(s, ETH_GSTRING_LEN, "tx_wake[%u]", i);
 		s += ETH_GSTRING_LEN;
-		sprintf(s, "tx_stop[%u]", i);
+		snprintf(s, ETH_GSTRING_LEN, "tx_stop[%u]", i);
 		s += ETH_GSTRING_LEN;
-		sprintf(s, "tx_event_counter[%u]", i);
+		snprintf(s, ETH_GSTRING_LEN, "tx_event_counter[%u]", i);
 		s += ETH_GSTRING_LEN;
 	}
 }
@@ -75,7 +75,7 @@ static int gve_get_sset_count(struct net_device *netdev, int sset)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 
-	if (!priv->is_up)
+	if (!netif_carrier_ok(netdev))
 		return 0;
 
 	switch (sset) {
@@ -100,18 +100,16 @@ gve_get_ethtool_stats(struct net_device *netdev,
 
 	ASSERT_RTNL();
 
-	if (!priv->is_up)
+	if (!netif_carrier_ok(netdev))
 		return;
 
 	for (rx_pkts = 0, rx_bytes = 0, ring = 0;
-	     ring < priv->rx_cfg.num_queues;
-	     ring++) {
+	     ring < priv->rx_cfg.num_queues; ring++) {
 		rx_pkts += priv->rx[ring].rpackets;
 		rx_bytes += priv->rx[ring].rbytes;
 	}
 	for (tx_pkts = 0, tx_bytes = 0, ring = 0;
-	     ring < priv->tx_cfg.num_queues;
-	     ring++) {
+	     ring < priv->tx_cfg.num_queues; ring++) {
 		tx_pkts += priv->tx[ring].pkt_done;
 		tx_bytes += priv->tx[ring].bytes_done;
 	}
@@ -183,7 +181,7 @@ int gve_set_channels(struct net_device *netdev, struct ethtool_channels *cmd)
 	if (!new_rx || !new_tx)
 		return -EINVAL;
 
-	if (!priv->is_up) {
+	if (!netif_carrier_ok(netdev)) {
 		priv->tx_cfg.num_queues = new_tx;
 		priv->rx_cfg.num_queues = new_rx;
 		return 0;
@@ -206,14 +204,13 @@ void gve_get_ringparam(struct net_device *netdev,
 	cmd->tx_pending = priv->tx_desc_cnt;
 }
 
-int gve_reset(struct net_device *netdev, u32 *flags)
+int gve_user_reset(struct net_device *netdev, u32 *flags)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 
 	if (*flags == ETH_RESET_ALL) {
 		*flags = 0;
-		gve_handle_user_reset(priv);
-		return 0;
+		return gve_reset(priv, true);
 	}
 
 	return -EOPNOTSUPP;
@@ -230,5 +227,5 @@ const struct ethtool_ops gve_ethtool_ops = {
 	.get_channels = gve_get_channels,
 	.get_link = ethtool_op_get_link,
 	.get_ringparam = gve_get_ringparam,
-	.reset = gve_reset,
+	.reset = gve_user_reset,
 };

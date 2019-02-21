@@ -23,18 +23,17 @@ void gve_rx_remove_from_block(struct gve_priv *priv, int queue_idx)
 static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 {
 	struct gve_rx_ring *rx = &priv->rx[idx];
-	struct device *hdev;
+	struct device *hdev = &priv->pdev->dev;
 	size_t bytes;
 	int slots;
 
 	gve_rx_remove_from_block(priv, idx);
-	hdev = &priv->pdev->dev;
 
 	bytes = sizeof(struct gve_rx_desc) * priv->rx_desc_cnt;
 	dma_free_coherent(hdev, bytes, rx->desc.desc_ring, rx->desc.bus);
 	rx->desc.desc_ring = NULL;
 
-	dma_free_coherent(hdev, sizeof(struct gve_queue_resources),
+	dma_free_coherent(hdev, sizeof(*rx->q_resources),
 			  rx->q_resources, rx->q_resources_bus);
 	rx->q_resources = NULL;
 
@@ -47,7 +46,7 @@ static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 	dma_free_coherent(hdev, bytes, rx->data.data_ring,
 			  rx->data.data_bus);
 	rx->data.data_ring = NULL;
-	netdev_dbg(priv->dev, "freed rx ring %d\n", idx);
+	netif_dbg(priv, drv, priv->dev, "freed rx ring %d\n", idx);
 }
 
 static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
@@ -64,7 +63,7 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 	size = slots * PAGE_SIZE;
 
 	rx->data.page_info = kcalloc(slots,
-				     sizeof(struct gve_rx_slot_page_info),
+				     sizeof(*rx->data.page_info),
 				     GFP_KERNEL);
 	if (!rx->data.page_info)
 		return -ENOMEM;
@@ -90,9 +89,7 @@ static void gve_rx_add_to_block(struct gve_priv *priv, int queue_idx)
 
 	block->rx = rx;
 	rx->ntfy_id = ntfy_idx;
-
-	if (!block->napi_enabled)
-		gve_add_napi(priv, block);
+	gve_add_napi(priv, block);
 }
 
 static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
@@ -132,7 +129,7 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 	/* Alloc gve_queue_resources */
 	rx->q_resources =
 		dma_zalloc_coherent(hdev,
-				    sizeof(struct gve_queue_resources),
+				    sizeof(*rx->q_resources),
 				    &rx->q_resources_bus,
 				    GFP_KERNEL);
 	if (!rx->q_resources) {
@@ -147,8 +144,9 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 	bytes = sizeof(struct gve_rx_desc) * priv->rx_desc_cnt;
 	npages = bytes / PAGE_SIZE;
 	if (npages * PAGE_SIZE != bytes) {
-		netdev_err(priv->dev, "rx[%d]->desc.desc_ring size=%lu illegal\n",
-			   idx, bytes);
+		netif_err(priv, drv, priv->dev,
+			  "rx[%d]->desc.desc_ring size must be a multiple of PAGE_SIZE. Actual size: %lu\n",
+			  idx, bytes);
 		err = -EIO;
 		goto abort_with_q_resources;
 	}
@@ -156,8 +154,8 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 	rx->desc.desc_ring = dma_zalloc_coherent(hdev, bytes, &rx->desc.bus,
 						 GFP_KERNEL);
 	if (!rx->desc.desc_ring) {
-		netdev_err(priv->dev, "alloc failed for rx[%d]->desc.desc_ring\n",
-			   idx);
+		netif_err(priv, drv, priv->dev,
+			  "alloc failed for rx[%d]->desc.desc_ring\n", idx);
 		err = -ENOMEM;
 		goto abort_with_q_resources;
 	}
@@ -169,7 +167,7 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 	return 0;
 
 abort_with_q_resources:
-	dma_free_coherent(hdev, sizeof(struct gve_queue_resources),
+	dma_free_coherent(hdev, sizeof(*rx->q_resources),
 			  rx->q_resources, rx->q_resources_bus);
 	rx->q_resources = NULL;
 abort_filled:
@@ -215,10 +213,7 @@ void gve_rx_free_rings(struct gve_priv *priv)
 
 void gve_rx_write_doorbell(struct gve_priv *priv, struct gve_rx_ring *rx)
 {
-	/* The device might have changed the db index so make sure we get the
-	 * latest copy.
-	 */
-	u32 db_idx = be32_to_cpu(smp_load_acquire(&rx->q_resources->db_index));
+	u32 db_idx = be32_to_cpu(rx->q_resources->db_index);
 
 	writel(cpu_to_be32(rx->desc.fill_cnt), &priv->db_bar2[db_idx]);
 }
@@ -232,7 +227,7 @@ static enum pkt_hash_types gve_rss_type(__be16 pkt_flags)
 	return PKT_HASH_TYPE_L2;
 }
 
-static int gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
+static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 		  netdev_features_t feat)
 {
 	struct gve_rx_slot_page_info *page_info;
@@ -243,7 +238,6 @@ static int gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 	struct sk_buff *skb;
 	int pagecount;
 	u64 qpl_offset;
-	u64 dma_addr;
 	void *va;
 	u16 len;
 	int idx;
@@ -256,6 +250,9 @@ static int gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 	netif_info(priv, rx_status, priv->dev,
 		   "[%d] %s: len=0x%x flags=0x%x data.cnt=%d\n",
 		   rx->q_num, __func__, len, rx_desc->flags_seq, rx->data.cnt);
+
+	if (unlikely(rx_desc->flags_seq & GVE_RXF_ERR))
+		return true;
 
 #if PAGE_SIZE == 4096
 	/* just copy small packets. */
@@ -285,32 +282,12 @@ static int gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 		rx->data.data_ring[idx].qpl_offset = cpu_to_be64(qpl_offset);
 	} else if (pagecount >= 2) {
 		/* We have previously passed the other half of this page up the
-		 * stack, but it has not yet been freed.
-		 *
-		 * NOTYET NOTYET NOTYET
-		 * 0) Scan rx::recycling list for a page w/ refcount==1.
-		 *    If found:
-		 * 0.1) get_page(page_info->page)
-		 * 0.2) Link page to rx::recycle list
-		 * 0.3) Unload page from page_info (clear ->page, page_address)
-		 * 0.4) Load page w/ refcount==1 from rx::recycling into
-		 *	page_info
-		 *    Otherwise:
-		 * 1.0) Fallback to copying.
-		 *
-		 * Optimizations:
-		 * - Second list of pages to reuse quickly; don't just scan for
-		 *   first pc == 1 page, scan more. (or scan on rx::recycling
-		 *   insert). Use reuse list first, before recycling).
-		 *   Remember: Reduce, Reuse, Recycle!
-		 * NOTYET NOTYET NOTYET
+		 * stack, but it has not yet been freed. Fallback to copying.
 		 */
-
-		/* Just fallback to copying for now */
 		can_page_flip = false;
 	} else {
 		WARN(pagecount < 1, "Pagecount should never be < 1");
-		return 0;
+		return false;
 	}
 #else
 	can_page_flip = false;
@@ -320,11 +297,10 @@ copy:
 	if (len <= priv->rx_copybreak || !can_page_flip) {
 		skb = napi_alloc_skb(napi, len);
 		if (unlikely(!skb))
-			return 0;
+			return true;
 
 		va = page_info->page_address + page_info->page_offset +
 		     GVE_RX_PAD;
-		dma_addr = rx->data.qpl->page_buses[idx];
 
 		__skb_put(skb, len);
 
@@ -354,7 +330,7 @@ copy:
 		napi_gro_frags(napi);
 	else
 		napi_gro_receive(napi, skb);
-	return 1;
+	return true;
 }
 
 static bool gve_rx_work_pending(struct gve_rx_ring *rx)
@@ -394,7 +370,8 @@ bool gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 			   rx->q_num, GVE_SEQNO(desc->flags_seq),
 			   rx->desc.seqno);
 		bytes += be16_to_cpu(desc->len) - GVE_RX_PAD;
-		gve_rx(rx, desc, feat);
+		if(!gve_rx(rx, desc, feat))
+			gve_schedule_reset(priv);
 		cnt++;
 		idx = cnt & rx->desc.mask;
 		desc = rx->desc.desc_ring + idx;

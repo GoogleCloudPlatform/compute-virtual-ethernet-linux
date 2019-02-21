@@ -23,18 +23,45 @@ int gve_alloc_adminq(struct device *dev, struct gve_priv *priv)
 	priv->adminq_prod_cnt = 0;
 
 	/* Setup Admin queue with the device */
-	writeq(cpu_to_be32(priv->adminq_bus_addr / PAGE_SIZE),
+	writel(cpu_to_be32(priv->adminq_bus_addr / PAGE_SIZE),
 	       priv->reg_bar0 + GVE_ADMIN_QUEUE_PFN);
 
+	set_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags);
 	return 0;
+}
+
+void gve_release_adminq(struct gve_priv *priv)
+{
+	int i;
+	/* Tell the device the adminq is leaving */
+	writel(0x0, priv->reg_bar0 + GVE_ADMIN_QUEUE_PFN);
+	for (i = 0; i < GVE_MAX_ADMINQ_RELEASE_CHECK; i++) {
+		if(!readl(priv->reg_bar0 + GVE_ADMIN_QUEUE_PFN)) {
+			clear_bit(GVE_PRIV_FLAGS_DEVICE_RINGS_OK,
+				  &priv->state_flags);
+			clear_bit(GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK,
+				  &priv->state_flags);
+			clear_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK,
+				  &priv->state_flags);
+			return;
+		}
+		msleep(20);
+	}
+	/* If this is reached the device is unrecoverable and still holding
+	 * memory. Anything other than a BUG risks memory corruption.
+	 */
+	WARN(1, "Unrecoverable platform error!");
+	BUG();
+
 }
 
 void gve_free_adminq(struct device *dev, struct gve_priv *priv)
 {
-	/* Tell the device the adminq is leaving */
-	writeq(0x0, priv->reg_bar0 + GVE_ADMIN_QUEUE_PFN);
-
+	if (test_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags)) {
+		gve_release_adminq(priv);
+	}
 	dma_free_coherent(dev, PAGE_SIZE, priv->adminq, priv->adminq_bus_addr);
+	clear_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags);
 }
 
 static int gve_adminq_kick_cmd(struct gve_priv *priv)
@@ -251,8 +278,8 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 
 	priv->tx_desc_cnt = be16_to_cpu(descriptor->tx_queue_entries);
 	if (priv->tx_desc_cnt * sizeof(priv->tx->desc[0]) < PAGE_SIZE) {
-		dev_err(&priv->pdev->dev, "Rx desc count %d too low\n",
-			priv->rx_desc_cnt);
+		netif_err(priv, drv, priv->dev, "Tx desc count %d too low\n",
+			  priv->tx_desc_cnt);
 		err = -EINVAL;
 		goto free_device_descriptor;
 	}
@@ -261,8 +288,8 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	    < PAGE_SIZE ||
 	    priv->rx_desc_cnt * sizeof(priv->rx->data.data_ring[0])
 	    < PAGE_SIZE) {
-		dev_err(&priv->pdev->dev, "Rx desc count %d too low\n",
-			priv->rx_desc_cnt);
+		netif_err(priv, drv, priv->dev, "Rx desc count %d too low\n",
+			  priv->rx_desc_cnt);
 		err = -EINVAL;
 		goto free_device_descriptor;
 	}
@@ -270,7 +297,8 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 				be64_to_cpu(descriptor->max_registered_pages);
 	mtu = be16_to_cpu(descriptor->mtu);
 	if (mtu < GVE_MIN_MTU) {
-		dev_err(&priv->pdev->dev, "MTU %d below minimum MTU\n", mtu);
+		netif_err(priv, drv, priv->dev, "MTU %d below minimum MTU\n",
+			  mtu);
 		err = -EINVAL;
 		goto free_device_descriptor;
 	}
@@ -279,18 +307,21 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	priv->num_event_counters = be16_to_cpu(descriptor->counters);
 	ether_addr_copy(priv->dev->dev_addr, descriptor->mac);
 	mac = descriptor->mac;
-	dev_info(&priv->pdev->dev, "MAC addr: %02x:%02x:%02x:%02x:%02x:%02x\n",
-		 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+	netif_info(priv, drv, priv->dev,
+		   "MAC addr: %02x:%02x:%02x:%02x:%02x:%02x\n",
+		   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 	priv->tx_pages_per_qpl = be16_to_cpu(descriptor->tx_pages_per_qpl);
 	if (priv->tx_pages_per_qpl > GVE_TX_QPL_MAX_PAGES) {
-		dev_info(&priv->pdev->dev, "TX pages per qpl %d more than maximum %d, defaulting to the maximum instead.\n",
-			 priv->tx_pages_per_qpl, GVE_TX_QPL_MAX_PAGES);
+		netif_info(priv, drv, priv->dev,
+			   "TX pages per qpl %d more than maximum %d, defaulting to the maximum instead.\n",
+			   priv->tx_pages_per_qpl, GVE_TX_QPL_MAX_PAGES);
 		priv->tx_pages_per_qpl = GVE_TX_QPL_MAX_PAGES;
 	}
 	priv->rx_pages_per_qpl = be16_to_cpu(descriptor->rx_pages_per_qpl);
 	if (priv->rx_pages_per_qpl > GVE_RX_QPL_MAX_PAGES) {
-		dev_info(&priv->pdev->dev, "RX pages per qpl %d more than maximum %d, defaulting to the maximum instead.\n",
-			 priv->rx_pages_per_qpl, GVE_RX_QPL_MAX_PAGES);
+		netif_info(priv, drv, priv->dev,
+			   "RX pages per qpl %d more than maximum %d, defaulting to the maximum instead.\n",
+			   priv->rx_pages_per_qpl, GVE_RX_QPL_MAX_PAGES);
 		priv->rx_pages_per_qpl = GVE_RX_QPL_MAX_PAGES;
 	}
 	priv->default_num_queues = be16_to_cpu(descriptor->default_num_queues);

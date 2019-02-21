@@ -1,7 +1,12 @@
-# Linux kernel driver for Compute Engine Virtual Ethernet (gve)
+# Linux kernel driver for Compute Engine Virtual Ethernet
 
 This repository contains the source for building an out-of-tree Linux kernel
-module for the Compute Engine Virtual Ethernet device named `gve.ko`.
+module for the Compute Engine Virtual Ethernet device.
+
+This driver as well as the GCE VM virtual device are in Early Access stage [1],
+the feature is available to a closed group of testers.
+
+[1] https://cloud.google.com/terms/launch-stages
 
 # Supported Hardware
 
@@ -25,12 +30,17 @@ Device Class  | `0x200`  | Ethernet
 
 ## GitHub
 
+If you downloaded a release tarball from GitHub: This source code should
+already be multi-kernel compatible. You can skip down to Compiling the Driver.
+
+### Building the multi-kernel compatible driver source
+
 If you downloaded the source from GitHub: To install this driver on anything
 other than the current upstream kernel, you will need to download coccinelle,
 and untar it. It can be found here: http://coccinelle.lip6.fr/download.php
 
 NOTE: Most distros will include a version of coccinelle in their package manager
-but we recommend using the version 1.0.6 or newer from the official website.
+but we require version 1.0.6 or newer, available from the official website.
 
 To build the multi-kernel compatible driver source:
 
@@ -40,6 +50,8 @@ export SPATCH='/path/to/coccinelle/spatch.opt'
 ```
 
 TIP: The spatch path may be omitted if it has been installed on the search path.
+
+### Compiling the driver
 
 Building and installing this driver requires that you have the headers installed
 for your current kernel version. Ensure the drivers are installed, then build,
@@ -71,8 +83,5 @@ those maximums.
 ethtool --set-channels devname [rx N] [tx N] [combined N]
 ```
 
--   `combined`: attempts to set both rx and tx queues to N
-
--   `rx`: attempts to set rx queues to N
-
--   `tx`: attempts to set tx queues to N
+combined: attempts to set both rx and tx queues to N rx: attempts to set rx
+queues to N tx: attempts to set tx queues to N
