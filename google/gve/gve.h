@@ -227,7 +227,7 @@ static inline __be32 __iomem *gve_irq_doorbell(struct gve_priv *priv,
 /**
  * Returns the index into ntfy_blocks of the given tx ring's block
  **/
-static inline u32 gve_tx_ntfy_idx(struct gve_priv *priv, u32 queue_idx)
+static inline u32 gve_tx_idx_to_ntfy(struct gve_priv *priv, u32 queue_idx)
 {
 	return queue_idx;
 }
@@ -235,7 +235,7 @@ static inline u32 gve_tx_ntfy_idx(struct gve_priv *priv, u32 queue_idx)
 /**
  * Returns the index into ntfy_blocks of the given rx ring's block
  **/
-static inline u32 gve_rx_ntfy_idx(struct gve_priv *priv, u32 queue_idx)
+static inline u32 gve_rx_idx_to_ntfy(struct gve_priv *priv, u32 queue_idx)
 {
 	return (priv->num_ntfy_blks / 2) + queue_idx;
 }
@@ -299,8 +299,6 @@ static inline void gve_unassign_qpl(struct gve_priv *priv, int id)
 	clear_bit(id, priv->qpl_cfg.qpl_id_map);
 }
 
-void gve_add_napi(struct gve_priv *priv, struct gve_notify_block *block);
-void gve_remove_napi(struct gve_notify_block *block);
 /* tx handling */
 netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev);
 int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,

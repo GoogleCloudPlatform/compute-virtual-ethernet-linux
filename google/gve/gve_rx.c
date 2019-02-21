@@ -11,13 +11,9 @@
 void gve_rx_remove_from_block(struct gve_priv *priv, int queue_idx)
 {
 	struct gve_notify_block *block =
-			&priv->ntfy_blocks[gve_rx_ntfy_idx(priv, queue_idx)];
+			&priv->ntfy_blocks[gve_rx_idx_to_ntfy(priv, queue_idx)];
 
 	block->rx = NULL;
-
-	/* If there are no more rings in this block disable napi */
-	if (!block->tx)
-		gve_remove_napi(block);
 }
 
 static void gve_rx_free_ring(struct gve_priv *priv, int idx)
@@ -83,13 +79,12 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 
 static void gve_rx_add_to_block(struct gve_priv *priv, int queue_idx)
 {
-	u32 ntfy_idx = gve_rx_ntfy_idx(priv, queue_idx);
+	u32 ntfy_idx = gve_rx_idx_to_ntfy(priv, queue_idx);
 	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 	struct gve_rx_ring *rx = &priv->rx[queue_idx];
 
 	block->rx = rx;
 	rx->ntfy_id = ntfy_idx;
-	gve_add_napi(priv, block);
 }
 
 static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)

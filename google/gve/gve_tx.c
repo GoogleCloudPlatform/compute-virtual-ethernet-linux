@@ -133,13 +133,9 @@ static void gve_tx_free_fifo(struct gve_tx_fifo *fifo, size_t bytes)
 static void gve_tx_remove_from_block(struct gve_priv *priv, int queue_idx)
 {
 	struct gve_notify_block *block =
-			&priv->ntfy_blocks[gve_tx_ntfy_idx(priv, queue_idx)];
+			&priv->ntfy_blocks[gve_tx_idx_to_ntfy(priv, queue_idx)];
 
 	block->tx = NULL;
-
-	/* If there are no more rings in this block disable napi */
-	if (!block->rx)
-		gve_remove_napi(block);
 }
 
 void gve_tx_free_ring(struct gve_priv *priv, int idx)
@@ -174,13 +170,12 @@ void gve_tx_free_ring(struct gve_priv *priv, int idx)
 
 static void gve_tx_add_to_block(struct gve_priv *priv, int queue_idx)
 {
-	int ntfy_idx = gve_tx_ntfy_idx(priv, queue_idx);
+	int ntfy_idx = gve_tx_idx_to_ntfy(priv, queue_idx);
 	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 	struct gve_tx_ring *tx = &priv->tx[queue_idx];
 
 	block->tx = tx;
 	tx->ntfy_id = ntfy_idx;
-	gve_add_napi(priv, block);
 }
 
 static int gve_tx_alloc_ring(struct gve_priv *priv, int idx)

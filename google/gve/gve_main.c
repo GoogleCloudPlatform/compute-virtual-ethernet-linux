@@ -292,14 +292,16 @@ static void gve_teardown_device_resources(struct gve_priv *priv)
 	clear_bit(GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK, &priv->state_flags);
 }
 
-void gve_add_napi(struct gve_priv *priv, struct gve_notify_block *block)
+void gve_add_napi(struct gve_priv *priv, int ntfy_idx)
 {
+	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 	netif_napi_add(priv->dev, &block->napi, gve_napi_poll,
 		       NAPI_POLL_WEIGHT);
 }
 
-void gve_remove_napi(struct gve_notify_block *block)
+void gve_remove_napi(struct gve_priv *priv, int ntfy_idx)
 {
+	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 	netif_napi_del(&block->napi);
 }
 
@@ -370,7 +372,9 @@ static int gve_create_rings(struct gve_priv *priv)
 
 static int gve_alloc_rings(struct gve_priv *priv)
 {
+	int ntfy_idx;
 	int err;
+	int i;
 
 	/* Setup tx rings */
 	priv->tx = kcalloc(priv->tx_cfg.num_queues, sizeof(*priv->tx),
@@ -390,6 +394,16 @@ static int gve_alloc_rings(struct gve_priv *priv)
 	err = gve_rx_alloc_rings(priv);
 	if (err)
 		goto free_rx;
+	/* Add tx napi */
+	for (i = 0; i < priv->tx_cfg.num_queues; i++) {
+		ntfy_idx = gve_tx_idx_to_ntfy(priv, i);
+		gve_add_napi(priv, ntfy_idx);
+	}
+	/* Add rx napi */
+	for (i = 0; i < priv->rx_cfg.num_queues; i++) {
+		ntfy_idx = gve_rx_idx_to_ntfy(priv, i);
+		gve_add_napi(priv, ntfy_idx);
+	}
 
 	return 0;
 
@@ -432,11 +446,22 @@ static int gve_destroy_rings(struct gve_priv *priv)
 
 static void gve_free_rings(struct gve_priv *priv)
 {
+	int ntfy_idx;
+	int i;
+
 	if (priv->tx) {
+		for (i = 0; i < priv->tx_cfg.num_queues; i++) {
+			ntfy_idx = gve_tx_idx_to_ntfy(priv, i);
+			gve_remove_napi(priv, ntfy_idx);
+		}
 		gve_tx_free_rings(priv);
 		kfree(priv->tx);
 	}
 	if (priv->rx) {
+		for (i = 0; i < priv->rx_cfg.num_queues; i++) {
+			ntfy_idx = gve_rx_idx_to_ntfy(priv, i);
+			gve_remove_napi(priv, ntfy_idx);
+		}
 		gve_rx_free_rings(priv);
 		kfree(priv->rx);
 	}
@@ -715,12 +740,12 @@ static void gve_turndown(struct gve_priv *priv)
 
 	/* Disable napi to prevent more work from coming in */
 	for (idx = 0; idx < priv->tx_cfg.num_queues; idx++) {
-		int ntfy_idx = gve_tx_ntfy_idx(priv, idx);
+		int ntfy_idx = gve_tx_idx_to_ntfy(priv, idx);
 		struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 		napi_disable(&block->napi);
 	}
 	for (idx = 0; idx < priv->rx_cfg.num_queues; idx++) {
-		int ntfy_idx = gve_rx_ntfy_idx(priv, idx);
+		int ntfy_idx = gve_rx_idx_to_ntfy(priv, idx);
 		struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 		napi_disable(&block->napi);
 	}
@@ -734,13 +759,13 @@ static void gve_turnup(struct gve_priv *priv)
 
 	/* Enable napi and unmask interupts for all queues */
 	for (idx = 0; idx < priv->tx_cfg.num_queues; idx++) {
-		int ntfy_idx = gve_tx_ntfy_idx(priv, idx);
+		int ntfy_idx = gve_tx_idx_to_ntfy(priv, idx);
 		struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 		napi_enable(&block->napi);
 		writel(cpu_to_be32(0), gve_irq_doorbell(priv, block));
 	}
 	for (idx = 0; idx < priv->rx_cfg.num_queues; idx++) {
-		int ntfy_idx = gve_rx_ntfy_idx(priv, idx);
+		int ntfy_idx = gve_rx_idx_to_ntfy(priv, idx);
 		struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 		napi_enable(&block->napi);
 		writel(cpu_to_be32(0), gve_irq_doorbell(priv, block));
