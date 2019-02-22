@@ -303,7 +303,6 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 		goto free_device_descriptor;
 	}
 	priv->max_mtu = mtu;
-	priv->dev->mtu = mtu;
 	priv->num_event_counters = be16_to_cpu(descriptor->counters);
 	ether_addr_copy(priv->dev->dev_addr, descriptor->mac);
 	mac = descriptor->mac;
@@ -372,6 +371,20 @@ int gve_adminq_unregister_page_list(struct gve_priv *priv, u32 page_list_id)
 	cmd.opcode = cpu_to_be32(GVE_ADMINQ_UNREGISTER_PAGE_LIST);
 	cmd.unreg_page_list = (struct gve_adminq_unregister_page_list) {
 		.page_list_id = cpu_to_be32(page_list_id),
+	};
+
+	return gve_execute_adminq_cmd(priv, &cmd);
+}
+
+int gve_adminq_set_mtu(struct gve_priv *priv)
+{
+	union gve_adminq_command cmd;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.opcode = cpu_to_be32(GVE_ADMINQ_SET_DRIVER_PARAMETER);
+	cmd.set_driver_param = (struct gve_adminq_set_driver_parameter) {
+		.parameter_type = cpu_to_be32(GVE_SET_PARAM_MTU),
+		.parameter_value = cpu_to_be64(priv->dev->mtu),
 	};
 
 	return gve_execute_adminq_cmd(priv, &cmd);
