@@ -207,7 +207,7 @@ if [ "$DEB" == "yes" ]; then
  pushd "$DEBDIR"
  tar xvzf gve-dkms_"$VERSION".tar.gz
  pushd gve-dkms-"$VERSION"
- debuild
+ debuild -uc -us
  popd
  cp gve-dkms_"$VERSION"_all.deb "$MAINDIR"
  popd
