@@ -162,7 +162,6 @@ GVE_ASSERT_SIZE(struct, gve_adminq_destroy_rx_queue, 4);
 
 struct gve_adminq_set_driver_parameter {
 	__be32 parameter_type;
-	__be32 parameter_version;
 	__be64 parameter_value;
 };
 
