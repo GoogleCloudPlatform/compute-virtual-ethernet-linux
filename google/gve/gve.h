@@ -24,11 +24,6 @@
 #define GVE_REGISTER_BAR	0
 #define GVE_DOORBELL_BAR	2
 
-#define GVE_MAX_NUM_TX_QUEUES	1024
-#define GVE_MAX_NUM_RX_QUEUES	256
-#define GVE_TX_QPL_MAX_PAGES	512
-#define GVE_RX_QPL_MAX_PAGES	1024
-
 #define GVE_MIN_MTU			(68)
 
 struct gve_rx_desc_queue {

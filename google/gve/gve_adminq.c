@@ -310,19 +310,7 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 		   "MAC addr: %02x:%02x:%02x:%02x:%02x:%02x\n",
 		   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 	priv->tx_pages_per_qpl = be16_to_cpu(descriptor->tx_pages_per_qpl);
-	if (priv->tx_pages_per_qpl > GVE_TX_QPL_MAX_PAGES) {
-		netif_info(priv, drv, priv->dev,
-			   "TX pages per qpl %d more than maximum %d, defaulting to the maximum instead.\n",
-			   priv->tx_pages_per_qpl, GVE_TX_QPL_MAX_PAGES);
-		priv->tx_pages_per_qpl = GVE_TX_QPL_MAX_PAGES;
-	}
-	priv->rx_pages_per_qpl = be16_to_cpu(descriptor->rx_pages_per_qpl);
-	if (priv->rx_pages_per_qpl > GVE_RX_QPL_MAX_PAGES) {
-		netif_info(priv, drv, priv->dev,
-			   "RX pages per qpl %d more than maximum %d, defaulting to the maximum instead.\n",
-			   priv->rx_pages_per_qpl, GVE_RX_QPL_MAX_PAGES);
-		priv->rx_pages_per_qpl = GVE_RX_QPL_MAX_PAGES;
-	}
+	priv->rx_pages_per_qpl = priv->rx_desc_cnt;
 	priv->default_num_queues = be16_to_cpu(descriptor->default_num_queues);
 
 free_device_descriptor:

@@ -1032,14 +1032,10 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	gve_write_version(reg_bar);
 	/* Get max queues to alloc etherdev */
-	max_rx_queues = min_t(u32,
-			      be32_to_cpu(readl(reg_bar +
-						GVE_DEVICE_MAX_RX_QUEUES)),
-			      GVE_MAX_NUM_RX_QUEUES);
-	max_tx_queues = min_t(u32,
-			      be32_to_cpu(readl(reg_bar +
-						GVE_DEVICE_MAX_TX_QUEUES)),
-			      GVE_MAX_NUM_TX_QUEUES);
+	max_rx_queues = be32_to_cpu(readl(reg_bar +
+					  GVE_DEVICE_MAX_RX_QUEUES));
+	max_tx_queues = be32_to_cpu(readl(reg_bar +
+					  GVE_DEVICE_MAX_TX_QUEUES));
 	/* Alloc and setup the netdev and priv */
 	dev = alloc_etherdev_mqs(sizeof(*priv), max_tx_queues, max_rx_queues);
 	if (!dev) {
