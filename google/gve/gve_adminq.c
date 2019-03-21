@@ -310,7 +310,12 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 		   "MAC addr: %02x:%02x:%02x:%02x:%02x:%02x\n",
 		   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 	priv->tx_pages_per_qpl = be16_to_cpu(descriptor->tx_pages_per_qpl);
-	priv->rx_pages_per_qpl = priv->rx_desc_cnt;
+	priv->rx_pages_per_qpl = be16_to_cpu(descriptor->rx_pages_per_qpl);
+	if(priv->rx_pages_per_qpl < priv->rx_desc_cnt) {
+		netif_err(priv, drv, priv->dev, "rx_pages_per_qpl cannot be smaller than rx_desc_cnt, setting rx_desc_cnt down to %d.\n",
+			  priv->rx_pages_per_qpl);
+		priv->rx_desc_cnt = priv->rx_pages_per_qpl;
+	}
 	priv->default_num_queues = be16_to_cpu(descriptor->default_num_queues);
 
 free_device_descriptor:

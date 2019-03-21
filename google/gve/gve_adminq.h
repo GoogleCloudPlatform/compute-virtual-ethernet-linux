@@ -67,11 +67,11 @@ struct gve_device_descriptor {
 	__be16 mtu;
 	__be16 counters;
 	__be16 tx_pages_per_qpl;
-	__be16 reserved2;
+	__be16 rx_pages_per_qpl;
 	u8  mac[ETH_ALEN];
 	__be16 num_device_options;
 	__be16 total_length;
-	u8  reserved3[6];
+	u8  reserved2[6];
 };
 
 GVE_ASSERT_SIZE(struct, gve_device_descriptor, 40);
