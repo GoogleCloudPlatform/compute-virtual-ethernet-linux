@@ -820,7 +820,7 @@ static void gve_service_task(struct work_struct *work)
 	gve_handle_reset(priv);
 }
 
-static int gve_init_priv(struct gve_priv *priv)
+static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 {
 	int num_ntfy;
 	int err;
@@ -829,6 +829,14 @@ static int gve_init_priv(struct gve_priv *priv)
 	err = gve_alloc_adminq(&priv->pdev->dev, priv);
 	if (err)
 		return err;
+
+	if (skip_describe_device) {
+		err = gve_setup_device_resources(priv);
+		if (err)
+			goto abort_with_adminq;
+		return 0;
+	}
+
 	/* Get the initial information we need from the device */
 	err = gve_adminq_describe_device(priv);
 	if (err) {
@@ -918,7 +926,7 @@ static void gve_reset_and_teardown(struct gve_priv *priv, bool was_up) {
 static int gve_reset_recovery(struct gve_priv *priv, bool was_up) {
 	int err;
 
-	err = gve_init_priv(priv);
+	err = gve_init_priv(priv, true);
 	if (err)
 		goto err;
 	if (was_up) {
@@ -1082,7 +1090,7 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	priv->tx_cfg.max_queues = max_tx_queues;
 	priv->rx_cfg.max_queues = max_rx_queues;
 
-	err = gve_init_priv(priv);
+	err = gve_init_priv(priv, false);
 	if (err)
 		goto abort_with_wq;
 
