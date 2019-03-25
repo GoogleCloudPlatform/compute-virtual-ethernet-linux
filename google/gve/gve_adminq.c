@@ -411,11 +411,14 @@ int gve_adminq_destroy_rx_queues(struct gve_priv *priv, u32 num_queues)
 int gve_adminq_describe_device(struct gve_priv *priv)
 {
 	struct gve_device_descriptor *descriptor;
+	struct gve_device_option *dev_opt;
 	union gve_adminq_command cmd;
 	dma_addr_t descriptor_bus;
+	u16 num_options;
 	int err = 0;
 	u8 *mac;
 	u16 mtu;
+	int i;
 
 	memset(&cmd, 0, sizeof(cmd));
 	descriptor = dma_alloc_coherent(&priv->pdev->dev, PAGE_SIZE,
@@ -472,6 +475,52 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 		priv->rx_desc_cnt = priv->rx_pages_per_qpl;
 	}
 	priv->default_num_queues = be16_to_cpu(descriptor->default_num_queues);
+	dev_opt = (struct gve_device_option *)((void *)descriptor +
+							sizeof(*descriptor));
+
+	num_options = be16_to_cpu(descriptor->num_device_options);
+	for (i = 0; i < num_options; i++) {
+		u16 option_id;
+		u16 option_length;
+
+		if ((void *)dev_opt + sizeof(*dev_opt)  > (void *)descriptor +
+				      be16_to_cpu(descriptor->total_length)) {
+			netif_err(priv, drv, priv->dev,
+				  "num_options in device_descriptor does not match total length.\n");
+			err = -EINVAL;
+			goto free_device_descriptor;
+		}
+
+		option_id = be16_to_cpu(dev_opt->option_id);
+		option_length = be16_to_cpu(dev_opt->option_length);
+		switch(option_id) {
+		case GVE_DEV_OPT_ID_RAW_ADDRESSING:
+			/* If the length or feature mask doesn't match,
+			 * continue without enabling the feature.
+			 */
+			if (option_length != GVE_DEV_OPT_LEN_RAW_ADDRESSING ||
+			    be32_to_cpu(dev_opt->feat_mask) !=
+			    GVE_DEV_OPT_FEAT_MASK_RAW_ADDRESSING) {
+				netif_info(priv, drv, priv->dev,
+					   "Raw addressing device option not enabled, length or features mask did not match expected.\n");
+				priv->raw_addressing = false;
+			} else {
+				netif_info(priv, drv, priv->dev,
+					   "Raw addressing device option enabled.\n");
+				priv->raw_addressing = true;
+			}
+			break;
+		default:
+			/* If we don't recognize the option just continue
+			 * without doing anything.
+			 */
+			netif_info(priv, drv, priv->dev,
+				   "Unrecognized device option 0x%hx not enabled.\n",
+				   option_id);
+			break;
+		}
+		dev_opt = (void *)dev_opt + sizeof(*dev_opt) + option_length;
+	}
 
 free_device_descriptor:
 	dma_free_coherent(&priv->pdev->dev, PAGE_SIZE, descriptor,
