@@ -45,9 +45,18 @@ static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 	netif_dbg(priv, drv, priv->dev, "freed rx ring %d\n", idx);
 }
 
+static void gve_setup_rx_buffer(struct gve_rx_slot_page_info *page_info,
+			       struct gve_rx_data_slot *slot,
+			       dma_addr_t addr, struct page *page)
+{
+	page_info->page = page;
+	page_info->page_offset = 0;
+	page_info->page_address = page_address(page);
+	slot->qpl_offset = cpu_to_be64(addr);
+}
+
 static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 {
-	struct gve_rx_slot_page_info *page_info;
 	struct gve_priv *priv = rx->gve;
 	int slots, size;
 	int i;
@@ -67,11 +76,10 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 	rx->data.qpl = gve_assign_rx_qpl(priv);
 
 	for (i = 0; i < slots; i++) {
-		page_info = &rx->data.page_info[i];
-		page_info->page = rx->data.qpl->pages[i];
-		page_info->page_offset = 0;
-		page_info->page_address = page_address(rx->data.qpl->pages[i]);
-		rx->data.data_ring[i].qpl_offset = cpu_to_be64(i * PAGE_SIZE);
+		struct page *page = rx->data.qpl->pages[i];
+		dma_addr_t addr = cpu_to_be64(i * PAGE_SIZE);
+		gve_setup_rx_buffer(&rx->data.page_info[i],
+				    &rx->data.data_ring[i], addr, page);
 	}
 
 	return slots;
