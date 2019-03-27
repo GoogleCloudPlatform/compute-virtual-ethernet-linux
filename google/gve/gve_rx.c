@@ -250,6 +250,33 @@ static struct sk_buff *gve_rx_copy(struct net_device *dev,
 	return skb;
 }
 
+static struct sk_buff *gve_rx_add_frags(struct net_device *dev,
+					struct napi_struct *napi,
+					struct gve_rx_slot_page_info *page_info,
+					u16 len)
+{
+	struct sk_buff *skb = napi_get_frags(napi);
+
+	if (unlikely(!skb)) {
+		return NULL;
+	}
+
+	skb_add_rx_frag(skb, 0, page_info->page,
+			page_info->page_offset +
+			GVE_RX_PAD, len, PAGE_SIZE / 2);
+
+	return skb;
+}
+
+static void gve_rx_flip_buff(struct gve_rx_slot_page_info *page_info,
+			     struct gve_rx_data_slot *data_ring)
+{
+	u64 addr = be64_to_cpu(data_ring->qpl_offset);
+	page_info->page_offset ^= PAGE_SIZE / 2;
+	addr ^= PAGE_SIZE / 2;
+	data_ring->qpl_offset = cpu_to_be64(addr);
+}
+
 static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 		   netdev_features_t feat)
 {
@@ -257,78 +284,62 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 	struct gve_priv *priv = rx->gve;
 	struct napi_struct *napi = &priv->ntfy_blocks[rx->ntfy_id].napi;
 	struct net_device *dev = priv->dev;
-	struct gve_rx_data_slot *data_ring;
 	struct sk_buff *skb;
 	int pagecount;
-	u64 qpl_offset;
 	u16 len;
 	int idx;
 
-	len = be16_to_cpu(rx_desc->len) - GVE_RX_PAD;
+	if (unlikely(rx_desc->flags_seq & GVE_RXF_ERR))
+		/* drop this packet */
+		return true;
 
+	len = be16_to_cpu(rx_desc->len) - GVE_RX_PAD;
 	idx = rx->data.cnt & rx->data.mask;
 	page_info = &rx->data.page_info[idx];
 
-	netif_info(priv, rx_status, priv->dev,
-		   "[%d] %s: len=0x%x flags=0x%x data.cnt=%d\n",
-		   rx->q_num, __func__, len, rx_desc->flags_seq, rx->data.cnt);
-
-	if (unlikely(rx_desc->flags_seq & GVE_RXF_ERR))
-		return true;
-
 #if PAGE_SIZE == 4096
-	if (len <= priv->rx_copybreak ||
-	    unlikely(priv->max_mtu > PAGE_SIZE / 2)) {
+	if (len <= priv->rx_copybreak ) {
+		/* Just copy small packets */
+		skb = gve_rx_copy(dev, napi, page_info, len);
+		goto have_skb;
+	}
+	if (unlikely(priv->max_mtu > PAGE_SIZE / 2)) {
 		/* We can't recycle the pages if we can't fit a packet into
-		 * half a page so just copy, also just copy small packets.
+		 * half a page.
 		 */
 		skb = gve_rx_copy(dev, napi, page_info, len);
-		if (!skb)
-			return true;
+		goto have_skb;
+	}
+	pagecount = page_count(page_info->page);
+	if (pagecount == 1) {
+		/* No part of this page is used by any SKBs; we attach
+		 * the page fragment to a new SKB and pass it up the
+		 * stack.
+		 */
+		skb = gve_rx_add_frags(dev, napi, page_info, len);
+		/* Make sure the kernel stack can't release the page */
+		get_page(page_info->page);
+		/* "flip" to other packet buffer on this page */
+		gve_rx_flip_buff(page_info, &rx->data.data_ring[idx]);
+	} else if (pagecount >= 2) {
+		/* We have previously passed the other half of this
+		 * page up the stack, but it has not yet been freed.
+		 */
+		skb = gve_rx_copy(dev, napi, page_info, len);
 	} else {
-		pagecount = page_count(page_info->page);
-		if (pagecount == 1) {
-			/* No part of this page is used by any SKBs; we attach
-			 * the page fragment to a new SKB and pass it up the
-			 * stack.
-			 */
-			skb = napi_get_frags(napi);
-			if (unlikely(!skb)) {
-				skb = gve_rx_copy(dev, napi, page_info, len);
-				if (!skb)
-					return true;
-			} else {
-				get_page(page_info->page);
-
-				skb_add_rx_frag(skb, 0, page_info->page,
-						page_info->page_offset +
-						GVE_RX_PAD, len, PAGE_SIZE / 2);
-
-				/* "flip" to other packet buffer on this page */
-				data_ring = &rx->data.data_ring[idx];
-				qpl_offset = be64_to_cpu(data_ring->qpl_offset);
-				page_info->page_offset ^= PAGE_SIZE / 2;
-				qpl_offset ^= PAGE_SIZE / 2;
-				data_ring->qpl_offset = cpu_to_be64(qpl_offset);
-			}
-		} else if (pagecount >= 2) {
-			/* We have previously passed the other half of this
-			 * page up the stack, but it has not yet been freed.
-			 * Fallback to copying.
-			 */
-			skb = gve_rx_copy(dev, napi, page_info, len);
-			if (!skb)
-				return true;
-		} else {
-			WARN(pagecount < 1, "Pagecount should never be < 1");
-			return false;
-		}
+		WARN(pagecount < 1, "Pagecount should never be < 1");
+		return false;
 	}
 #else
 	skb = gve_rx_copy(dev, napi, page_info, len);
-	if (!skb)
-		return true;
 #endif
+
+have_skb:
+	if (!skb)
+		/* We didn't manage to allocate an skb but we haven't had any
+		 * reset worthy failures.
+		 */
+		return true;
 
 	rx->data.cnt++;
 
