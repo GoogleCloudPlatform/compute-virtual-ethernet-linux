@@ -19,17 +19,17 @@ void gve_rx_remove_from_block(struct gve_priv *priv, int queue_idx)
 static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 {
 	struct gve_rx_ring *rx = &priv->rx[idx];
-	struct device *hdev = &priv->pdev->dev;
+	struct device *dev = &priv->pdev->dev;
 	size_t bytes;
 	int slots;
 
 	gve_rx_remove_from_block(priv, idx);
 
 	bytes = sizeof(struct gve_rx_desc) * priv->rx_desc_cnt;
-	dma_free_coherent(hdev, bytes, rx->desc.desc_ring, rx->desc.bus);
+	dma_free_coherent(dev, bytes, rx->desc.desc_ring, rx->desc.bus);
 	rx->desc.desc_ring = NULL;
 
-	dma_free_coherent(hdev, sizeof(*rx->q_resources),
+	dma_free_coherent(dev, sizeof(*rx->q_resources),
 			  rx->q_resources, rx->q_resources_bus);
 	rx->q_resources = NULL;
 
@@ -39,7 +39,7 @@ static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 
 	slots = rx->data.mask + 1;
 	bytes = sizeof(*rx->data.data_ring) * slots;
-	dma_free_coherent(hdev, bytes, rx->data.data_ring,
+	dma_free_coherent(dev, bytes, rx->data.data_ring,
 			  rx->data.data_bus);
 	rx->data.data_ring = NULL;
 	netif_dbg(priv, drv, priv->dev, "freed rx ring %d\n", idx);
