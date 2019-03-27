@@ -46,7 +46,6 @@ struct gve_queue_page_list {
 	u32 num_entries;
 	struct page **pages;
 	dma_addr_t *page_buses;
-	void **page_ptrs;
 };
 
 struct gve_rx_data_queue {
@@ -294,6 +293,23 @@ static inline void gve_unassign_qpl(struct gve_priv *priv, int id)
 	clear_bit(id, priv->qpl_cfg.qpl_id_map);
 }
 
+/**
+ * Returns the correct dma direction for tx and rx qpls
+ */
+static inline enum dma_data_direction  gve_qpl_dma_dir(struct gve_priv *priv,
+						       int id)
+{
+	if (id < gve_num_tx_qpls(priv))
+		return DMA_TO_DEVICE;
+	else
+		return DMA_FROM_DEVICE;
+}
+
+/* buffers */
+int gve_alloc_page(struct device *dev, struct page **page, dma_addr_t *dma,
+		   enum dma_data_direction);
+void gve_free_page(struct device *dev, struct page *page, dma_addr_t dma,
+		   enum dma_data_direction);
 /* tx handling */
 netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev);
 int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,

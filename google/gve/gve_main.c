@@ -467,11 +467,22 @@ static void gve_free_rings(struct gve_priv *priv)
 	}
 }
 
+int gve_alloc_page(struct device *dev, struct page **page, dma_addr_t *dma,
+		   enum dma_data_direction dir) {
+	*page = alloc_page(GFP_KERNEL);
+	if (!page)
+		return -ENOMEM;
+	*dma = dma_map_page(dev, *page, 0, PAGE_SIZE, dir);
+	if (dma_mapping_error(dev, *dma))
+		return -ENOMEM;
+	return 0;
+}
+
 static int gve_alloc_queue_page_list(struct gve_priv *priv, u32 id,
 				     int pages)
 {
 	struct gve_queue_page_list *qpl = &priv->qpls[id];
-	struct device *dev = &priv->pdev->dev;
+	int err;
 	int i;
 
 	if (pages + priv->num_registered_pages > priv->max_registered_pages)
@@ -485,21 +496,12 @@ static int gve_alloc_queue_page_list(struct gve_priv *priv, u32 id,
 	qpl->page_buses = kcalloc(pages, sizeof(*qpl->page_buses), GFP_KERNEL);
 	if (!qpl->page_buses)
 		return -ENOMEM;
-	qpl->page_ptrs = kcalloc(pages, sizeof(*qpl->page_ptrs), GFP_KERNEL);
-	if (!qpl->page_ptrs)
-		return -ENOMEM;
 
 	for (i = 0; i < pages; i++) {
-		qpl->page_ptrs[i] = dma_alloc_coherent(dev, PAGE_SIZE,
-						       &qpl->page_buses[i],
-						       GFP_KERNEL);
-		if (!qpl->page_ptrs[i])
-			return -ENOMEM;
-		if (is_vmalloc_addr(qpl->page_ptrs[i]))
-			qpl->pages[i] = vmalloc_to_page(qpl->page_ptrs[i]);
-		else
-			qpl->pages[i] = virt_to_page(qpl->page_ptrs[i]);
-		if (!qpl->pages[i])
+		err = gve_alloc_page(&priv->pdev->dev, &qpl->pages[i],
+				     &qpl->page_buses[i],
+				     gve_qpl_dma_dir(priv, id));
+		if (err)
 			return -ENOMEM;
 	}
 	priv->num_registered_pages += pages;
@@ -507,28 +509,30 @@ static int gve_alloc_queue_page_list(struct gve_priv *priv, u32 id,
 	return 0;
 }
 
+void gve_free_page(struct device *dev, struct page* page, dma_addr_t dma,
+		   enum dma_data_direction dir)
+{
+	if (!dma_mapping_error(dev, dma))
+		dma_unmap_page(dev, dma, PAGE_SIZE, dir);
+	if (page)
+		put_page(page);
+}
+
 static void gve_free_queue_page_list(struct gve_priv *priv,
 				     int id)
 {
 	struct gve_queue_page_list *qpl = &priv->qpls[id];
-	struct device *dev = &priv->pdev->dev;
 	int i;
 
 	if (!qpl->pages)
 		return;
 	if (!qpl->page_buses)
 		goto free_pages;
-	if (!qpl->page_ptrs)
-		goto free_buses;
 
-	for (i = 0; i < qpl->num_entries; i++) {
-		if (qpl->page_ptrs[i])
-			dma_free_coherent(dev, PAGE_SIZE, qpl->page_ptrs[i],
-					  qpl->page_buses[i]);
-	}
+	for (i = 0; i < qpl->num_entries; i++)
+		gve_free_page(&priv->pdev->dev, qpl->pages[i],
+			      qpl->page_buses[i], gve_qpl_dma_dir(priv, id));
 
-	kfree(qpl->page_ptrs);
-free_buses:
 	kfree(qpl->page_buses);
 free_pages:
 	kfree(qpl->pages);
