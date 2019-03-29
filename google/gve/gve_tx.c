@@ -338,15 +338,54 @@ static int gve_maybe_stop_tx(struct gve_tx_ring *tx, struct sk_buff *skb)
 	return 0;
 }
 
+static void gve_tx_fill_pkt_desc(union gve_tx_desc *pkt_desc,
+				 struct sk_buff *skb, bool is_gso,
+				 int l4_hdr_offset, int desc_cnt,
+				 u16 hlen, u64 addr)
+{
+	/* l4_hdr_offset and csum_offset are in units of 16-bit words */
+	if (is_gso) {
+		pkt_desc->pkt.type_flags = GVE_TXD_TSO | GVE_TXF_L4CSUM;
+		pkt_desc->pkt.l4_csum_offset = skb->csum_offset >> 1;
+		pkt_desc->pkt.l4_hdr_offset = l4_hdr_offset >> 1;
+	} else if (likely(skb->ip_summed == CHECKSUM_PARTIAL)) {
+		pkt_desc->pkt.type_flags = GVE_TXD_STD | GVE_TXF_L4CSUM;
+		pkt_desc->pkt.l4_csum_offset = skb->csum_offset >> 1;
+		pkt_desc->pkt.l4_hdr_offset = l4_hdr_offset >> 1;
+	} else {
+		pkt_desc->pkt.type_flags = GVE_TXD_STD;
+		pkt_desc->pkt.l4_csum_offset = 0;
+		pkt_desc->pkt.l4_hdr_offset = 0;
+	}
+	pkt_desc->pkt.desc_cnt = desc_cnt;
+	pkt_desc->pkt.len = cpu_to_be16(skb->len);
+	pkt_desc->pkt.seg_len = cpu_to_be16(hlen);
+	pkt_desc->pkt.seg_addr = cpu_to_be64(addr);
+}
+
+static void gve_tx_fill_seg_desc(union gve_tx_desc *seg_desc,
+				 struct sk_buff *skb, bool is_gso,
+				 u16 len, u64 addr)
+{
+	seg_desc->seg.type_flags = GVE_TXD_SEG;
+	if (is_gso) {
+		if (skb_is_gso_v6(skb))
+			seg_desc->seg.type_flags |= GVE_TXSF_IPV6;
+		seg_desc->seg.l3_offset = skb_network_offset(skb) >> 1;
+		seg_desc->seg.mss = cpu_to_be16(skb_shinfo(skb)->gso_size);
+	}
+	seg_desc->seg.seg_len = cpu_to_be16(len);
+	seg_desc->seg.seg_addr = cpu_to_be64(addr);
+}
+
 static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 {
-	int pad_bytes, hlen, hdr_nfrags, payload_nfrags;
+	int pad_bytes, hlen, hdr_nfrags, payload_nfrags, l4_hdr_offset;
 	union gve_tx_desc *pkt_desc, *seg_desc;
 	struct gve_tx_buffer_state *info;
 	bool is_gso = skb_is_gso(skb);
 	int idx = tx->req & tx->mask;
 	int payload_iov = 2;
-	int l4_hdr_offset;
 	int copy_offset;
 	int next_idx;
 	int i;
@@ -374,27 +413,12 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 	payload_nfrags = gve_tx_alloc_fifo(&tx->tx_fifo, skb->len - hlen,
 					   &info->iov[payload_iov]);
 
-	/* l4_hdr_offset and csum_offset are in units of 16-bit words */
-	if (is_gso) {
-		pkt_desc->pkt.type_flags = GVE_TXD_TSO | GVE_TXF_L4CSUM;
-		pkt_desc->pkt.l4_csum_offset = skb->csum_offset >> 1;
-		pkt_desc->pkt.l4_hdr_offset = l4_hdr_offset >> 1;
-	} else if (likely(skb->ip_summed == CHECKSUM_PARTIAL)) {
-		pkt_desc->pkt.type_flags = GVE_TXD_STD | GVE_TXF_L4CSUM;
-		pkt_desc->pkt.l4_csum_offset = skb->csum_offset >> 1;
-		pkt_desc->pkt.l4_hdr_offset = l4_hdr_offset >> 1;
-	} else {
-		pkt_desc->pkt.type_flags = GVE_TXD_STD;
-		pkt_desc->pkt.l4_csum_offset = 0;
-		pkt_desc->pkt.l4_hdr_offset = 0;
-	}
-	pkt_desc->pkt.desc_cnt = 1 + payload_nfrags;
-	pkt_desc->pkt.len = cpu_to_be16(skb->len);
-	pkt_desc->pkt.seg_len = cpu_to_be16(hlen);
-	pkt_desc->pkt.seg_addr =
-		cpu_to_be64(info->iov[hdr_nfrags - 1].iov_offset);
+	gve_tx_fill_pkt_desc(pkt_desc, skb, is_gso, l4_hdr_offset,
+			     1 + payload_nfrags, hlen,
+			     info->iov[hdr_nfrags - 1].iov_offset);
 
-	skb_copy_bits(skb, 0, tx->tx_fifo.base + info->iov[hdr_nfrags - 1].iov_offset,
+	skb_copy_bits(skb, 0,
+		      tx->tx_fifo.base + info->iov[hdr_nfrags - 1].iov_offset,
 		      hlen);
 	copy_offset = hlen;
 
@@ -402,17 +426,9 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 		next_idx = (tx->req + 1 + i - payload_iov) & tx->mask;
 		seg_desc = &tx->desc[next_idx];
 
-		seg_desc->seg.type_flags = GVE_TXD_SEG;
-		if (is_gso) {
-			if (skb_is_gso_v6(skb))
-				seg_desc->seg.type_flags |= GVE_TXSF_IPV6;
-			seg_desc->seg.l3_offset = skb_network_offset(skb) >> 1;
-			seg_desc->seg.mss =
-					 cpu_to_be16(skb_shinfo(skb)->gso_size);
-		}
-		seg_desc->seg.seg_len = cpu_to_be16(info->iov[i].iov_len);
-		seg_desc->seg.seg_addr =
-			cpu_to_be64(info->iov[i].iov_offset);
+		gve_tx_fill_seg_desc(seg_desc, skb, is_gso,
+				     info->iov[i].iov_len,
+				     info->iov[i].iov_offset);
 
 		skb_copy_bits(skb, copy_offset,
 			      tx->tx_fifo.base + info->iov[i].iov_offset,
