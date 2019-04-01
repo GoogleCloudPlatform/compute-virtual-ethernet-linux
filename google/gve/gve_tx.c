@@ -468,8 +468,6 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 
 	/* give packets to NIC */
 	tx->req += nsegs;
-	netif_info(priv, tx_queued, priv->dev, "[%d] %s: req=%u done=%u\n",
-		   tx->q_num, __func__, tx->req, tx->done);
 	if (!skb->xmit_more || netif_xmit_stopped(tx->netdev_txq)) {
 		/* Ensure tx descs are visible before ringing doorbell */
 		dma_wmb();

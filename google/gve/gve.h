@@ -26,6 +26,8 @@
 
 #define GVE_MIN_MTU			(68)
 
+#define GVE_TX_MAX_IOVEC	4
+
 struct gve_rx_desc_queue {
 	struct gve_rx_desc *desc_ring;
 	dma_addr_t bus;
@@ -85,7 +87,7 @@ struct gve_tx_iovec {
 
 struct gve_tx_buffer_state {
 	struct sk_buff *skb;
-	struct gve_tx_iovec iov[4];
+		struct gve_tx_iovec iov[GVE_TX_MAX_IOVEC];
 };
 
 struct gve_tx_fifo {
