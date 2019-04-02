@@ -296,7 +296,7 @@ static inline void gve_unassign_qpl(struct gve_priv *priv, int id)
 /**
  * Returns the correct dma direction for tx and rx qpls
  */
-static inline enum dma_data_direction  gve_qpl_dma_dir(struct gve_priv *priv,
+static inline enum dma_data_direction gve_qpl_dma_dir(struct gve_priv *priv,
 						       int id)
 {
 	if (id < gve_num_tx_qpls(priv))
