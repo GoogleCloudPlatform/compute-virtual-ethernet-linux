@@ -77,7 +77,7 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 
 	for (i = 0; i < slots; i++) {
 		struct page *page = rx->data.qpl->pages[i];
-		dma_addr_t addr = cpu_to_be64(i * PAGE_SIZE);
+		dma_addr_t addr = i * PAGE_SIZE;
 		gve_setup_rx_buffer(&rx->data.page_info[i],
 				    &rx->data.data_ring[i], addr, page);
 	}
