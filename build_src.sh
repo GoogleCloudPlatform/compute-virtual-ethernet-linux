@@ -74,6 +74,9 @@ case $var in
 esac
 done
 
+set -e
+set -x
+
 # Check release and version weren't both set
 if [ "$RELEASE" == "yes" ] && [ -n "$GIVEN_VERSION" ]; then
  echo "Cannot set release and version options at the same time."
