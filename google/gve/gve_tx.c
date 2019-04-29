@@ -477,7 +477,7 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 
 	/* give packets to NIC */
 	tx->req += nsegs;
-	if (!skb->xmit_more || netif_xmit_stopped(tx->netdev_txq)) {
+	if (netif_xmit_stopped(tx->netdev_txq) || !netdev_xmit_more()) {
 		/* Ensure tx descs are visible before ringing doorbell */
 		dma_wmb();
 		gve_tx_put_doorbell(priv, tx->q_resources,
