@@ -13,8 +13,8 @@
 
 int gve_alloc_adminq(struct device *dev, struct gve_priv *priv)
 {
-	priv->adminq = dma_zalloc_coherent(dev, PAGE_SIZE,
-					   &priv->adminq_bus_addr, GFP_KERNEL);
+	priv->adminq = dma_alloc_coherent(dev, PAGE_SIZE,
+					  &priv->adminq_bus_addr, GFP_KERNEL);
 	if (unlikely(!priv->adminq))
 		return -ENOMEM;
 
@@ -52,7 +52,6 @@ void gve_release_adminq(struct gve_priv *priv)
 	 */
 	WARN(1, "Unrecoverable platform error!");
 	BUG();
-
 }
 
 void gve_free_adminq(struct device *dev, struct gve_priv *priv)
@@ -262,8 +261,8 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	u16 mtu;
 
 	memset(&cmd, 0, sizeof(cmd));
-	descriptor = dma_zalloc_coherent(&priv->pdev->dev, PAGE_SIZE,
-					 &descriptor_bus, GFP_KERNEL);
+	descriptor = dma_alloc_coherent(&priv->pdev->dev, PAGE_SIZE,
+					&descriptor_bus, GFP_KERNEL);
 	cmd.opcode = cpu_to_be32(GVE_ADMINQ_DESCRIBE_DEVICE);
 	cmd.describe_device.device_descriptor_addr =
 						cpu_to_be64(descriptor_bus);
@@ -336,7 +335,7 @@ int gve_adminq_register_page_list(struct gve_priv *priv,
 	int i;
 
 	memset(&cmd, 0, sizeof(cmd));
-	page_list = dma_zalloc_coherent(hdev, size, &page_list_bus, GFP_KERNEL);
+	page_list = dma_alloc_coherent(hdev, size, &page_list_bus, GFP_KERNEL);
 	if (!page_list)
 		return -ENOMEM;
 

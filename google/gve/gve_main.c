@@ -48,10 +48,10 @@ static void gve_get_stats(struct net_device *dev, struct rtnl_link_stats64 *s)
 static int gve_alloc_counter_array(struct gve_priv *priv)
 {
 	priv->counter_array =
-		dma_zalloc_coherent(&priv->pdev->dev,
-				    priv->num_event_counters *
-				    sizeof(*priv->counter_array),
-				    &priv->counter_array_bus, GFP_KERNEL);
+		dma_alloc_coherent(&priv->pdev->dev,
+				   priv->num_event_counters *
+				   sizeof(*priv->counter_array),
+				   &priv->counter_array_bus, GFP_KERNEL);
 	if (!priv->counter_array)
 		return -ENOMEM;
 
@@ -79,6 +79,7 @@ static irqreturn_t gve_intr(int irq, void *arg)
 {
 	struct gve_notify_block *block = arg;
 	struct gve_priv *priv = block->priv;
+
 	writel(cpu_to_be32(GVE_IRQ_MASK), gve_irq_doorbell(priv, block));
 	napi_schedule_irqoff(&block->napi);
 	return IRQ_HANDLED;
@@ -173,10 +174,10 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 		goto abort_with_msix_enabled;
 	}
 	priv->ntfy_blocks =
-		dma_zalloc_coherent(&priv->pdev->dev,
-				    priv->num_ntfy_blks *
-				    sizeof(*priv->ntfy_blocks),
-				    &priv->ntfy_block_bus, GFP_KERNEL);
+		dma_alloc_coherent(&priv->pdev->dev,
+				   priv->num_ntfy_blks *
+				   sizeof(*priv->ntfy_blocks),
+				   &priv->ntfy_block_bus, GFP_KERNEL);
 	if (!priv->ntfy_blocks) {
 		dev_err(hdev, "Failed to allocate notification blocks\n");
 		err = -ENOMEM;

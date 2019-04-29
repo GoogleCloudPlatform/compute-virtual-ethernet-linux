@@ -198,7 +198,7 @@ static int gve_tx_alloc_ring(struct gve_priv *priv, int idx)
 
 	/* alloc tx queue */
 	bytes = sizeof(*tx->desc) * slots;
-	tx->desc = dma_zalloc_coherent(hdev, bytes, &tx->bus, GFP_KERNEL);
+	tx->desc = dma_alloc_coherent(hdev, bytes, &tx->bus, GFP_KERNEL);
 	if (!tx->desc)
 		goto abort_with_info;
 
@@ -209,10 +209,10 @@ static int gve_tx_alloc_ring(struct gve_priv *priv, int idx)
 		goto abort_with_desc;
 
 	tx->q_resources =
-		dma_zalloc_coherent(hdev,
-				    sizeof(*tx->q_resources),
-				    &tx->q_resources_bus,
-				    GFP_KERNEL);
+		dma_alloc_coherent(hdev,
+				   sizeof(*tx->q_resources),
+				   &tx->q_resources_bus,
+				   GFP_KERNEL);
 	if (!tx->q_resources)
 		goto abort_with_fifo;
 
