@@ -36,7 +36,7 @@ void gve_release_adminq(struct gve_priv *priv)
 	/* Tell the device the adminq is leaving */
 	writel(0x0, priv->reg_bar0 + GVE_ADMIN_QUEUE_PFN);
 	for (i = 0; i < GVE_MAX_ADMINQ_RELEASE_CHECK; i++) {
-		if(!readl(priv->reg_bar0 + GVE_ADMIN_QUEUE_PFN)) {
+		if (!readl(priv->reg_bar0 + GVE_ADMIN_QUEUE_PFN)) {
 			clear_bit(GVE_PRIV_FLAGS_DEVICE_RINGS_OK,
 				  &priv->state_flags);
 			clear_bit(GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK,
@@ -57,9 +57,8 @@ void gve_release_adminq(struct gve_priv *priv)
 
 void gve_free_adminq(struct device *dev, struct gve_priv *priv)
 {
-	if (test_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags)) {
+	if (test_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags))
 		gve_release_adminq(priv);
-	}
 	dma_free_coherent(dev, PAGE_SIZE, priv->adminq, priv->adminq_bus_addr);
 	clear_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags);
 }
@@ -168,8 +167,8 @@ int gve_adminq_configure_device_resources(struct gve_priv *priv,
 		.num_counters = cpu_to_be32(num_counters),
 		.irq_db_addr = cpu_to_be64(db_array_bus_addr),
 		.num_irq_dbs = cpu_to_be32(num_ntfy_blks),
-		.irq_db_stride = cpu_to_be32(
-			L1_CACHE_ALIGN(sizeof(priv->ntfy_blocks[0]))),
+		.irq_db_stride =
+		      cpu_to_be32(L1_CACHE_ALIGN(sizeof(priv->ntfy_blocks[0]))),
 		.ntfy_blk_msix_base_idx =
 			cpu_to_be32(priv->ntfy_blk_msix_base_idx),
 	};
@@ -311,7 +310,7 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 		   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 	priv->tx_pages_per_qpl = be16_to_cpu(descriptor->tx_pages_per_qpl);
 	priv->rx_pages_per_qpl = be16_to_cpu(descriptor->rx_pages_per_qpl);
-	if(priv->rx_pages_per_qpl < priv->rx_desc_cnt) {
+	if (priv->rx_pages_per_qpl < priv->rx_desc_cnt) {
 		netif_err(priv, drv, priv->dev, "rx_pages_per_qpl cannot be smaller than rx_desc_cnt, setting rx_desc_cnt down to %d.\n",
 			  priv->rx_pages_per_qpl);
 		priv->rx_desc_cnt = priv->rx_pages_per_qpl;

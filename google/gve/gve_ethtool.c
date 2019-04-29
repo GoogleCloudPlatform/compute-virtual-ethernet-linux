@@ -79,11 +79,10 @@ static int gve_get_sset_count(struct net_device *netdev, int sset)
 		return 0;
 
 	switch (sset) {
-	case ETH_SS_STATS:{
+	case ETH_SS_STATS:
 		return GVE_MAIN_STATS_LEN +
 		       (priv->rx_cfg.num_queues * NUM_GVE_RX_CNTS) +
 		       (priv->tx_cfg.num_queues * NUM_GVE_TX_CNTS);
-	}
 	default:
 		return -EOPNOTSUPP;
 	}

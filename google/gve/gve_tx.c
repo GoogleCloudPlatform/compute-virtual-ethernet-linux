@@ -458,7 +458,8 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 		 * ringing doorbell.
 		 */
 		dma_wmb();
-		gve_tx_put_doorbell(priv, tx->q_resources, cpu_to_be32(tx->req));
+		gve_tx_put_doorbell(priv, tx->q_resources,
+				    cpu_to_be32(tx->req));
 		return NETDEV_TX_BUSY;
 	}
 	nsegs = gve_tx_add_skb(tx, skb);
@@ -471,7 +472,8 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 	if (!skb->xmit_more || netif_xmit_stopped(tx->netdev_txq)) {
 		/* Ensure tx descs are visible before ringing doorbell */
 		dma_wmb();
-		gve_tx_put_doorbell(priv, tx->q_resources, cpu_to_be32(tx->req));
+		gve_tx_put_doorbell(priv, tx->q_resources,
+				    cpu_to_be32(tx->req));
 	}
 	return NETDEV_TX_OK;
 }

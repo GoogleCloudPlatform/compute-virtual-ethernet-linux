@@ -213,7 +213,6 @@ struct gve_priv {
 #define GVE_PRIV_FLAGS_DEVICE_RINGS_OK		BIT(3)
 #define GVE_PRIV_FLAGS_NAPI_ENABLED		BIT(4)
 
-
 static inline __be32 __iomem *gve_irq_doorbell(struct gve_priv *priv,
 					       struct gve_notify_block *block)
 {
@@ -299,7 +298,7 @@ static inline void gve_unassign_qpl(struct gve_priv *priv, int id)
  * Returns the correct dma direction for tx and rx qpls
  */
 static inline enum dma_data_direction gve_qpl_dma_dir(struct gve_priv *priv,
-						       int id)
+						      int id)
 {
 	if (id < gve_num_tx_qpls(priv))
 		return DMA_TO_DEVICE;

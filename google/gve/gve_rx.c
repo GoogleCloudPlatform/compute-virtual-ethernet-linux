@@ -46,8 +46,8 @@ static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 }
 
 static void gve_setup_rx_buffer(struct gve_rx_slot_page_info *page_info,
-			       struct gve_rx_data_slot *slot,
-			       dma_addr_t addr, struct page *page)
+				struct gve_rx_data_slot *slot,
+				dma_addr_t addr, struct page *page)
 {
 	page_info->page = page;
 	page_info->page_offset = 0;
@@ -147,9 +147,6 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 	bytes = sizeof(struct gve_rx_desc) * priv->rx_desc_cnt;
 	npages = bytes / PAGE_SIZE;
 	if (npages * PAGE_SIZE != bytes) {
-		netif_err(priv, drv, priv->dev,
-			  "rx[%d]->desc.desc_ring size must be a multiple of PAGE_SIZE. Actual size: %lu\n",
-			  idx, bytes);
 		err = -EIO;
 		goto abort_with_q_resources;
 	}
@@ -157,8 +154,6 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 	rx->desc.desc_ring = dma_zalloc_coherent(hdev, bytes, &rx->desc.bus,
 						 GFP_KERNEL);
 	if (!rx->desc.desc_ring) {
-		netif_err(priv, drv, priv->dev,
-			  "alloc failed for rx[%d]->desc.desc_ring\n", idx);
 		err = -ENOMEM;
 		goto abort_with_q_resources;
 	}
@@ -257,9 +252,8 @@ static struct sk_buff *gve_rx_add_frags(struct net_device *dev,
 {
 	struct sk_buff *skb = napi_get_frags(napi);
 
-	if (unlikely(!skb)) {
+	if (unlikely(!skb))
 		return NULL;
-	}
 
 	skb_add_rx_frag(skb, 0, page_info->page,
 			page_info->page_offset +
@@ -272,6 +266,7 @@ static void gve_rx_flip_buff(struct gve_rx_slot_page_info *page_info,
 			     struct gve_rx_data_slot *data_ring)
 {
 	u64 addr = be64_to_cpu(data_ring->qpl_offset);
+
 	page_info->page_offset ^= PAGE_SIZE / 2;
 	addr ^= PAGE_SIZE / 2;
 	data_ring->qpl_offset = cpu_to_be64(addr);
@@ -298,7 +293,7 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 	page_info = &rx->data.page_info[idx];
 
 #if PAGE_SIZE == 4096
-	if (len <= priv->rx_copybreak ) {
+	if (len <= priv->rx_copybreak) {
 		/* Just copy small packets */
 		skb = gve_rx_copy(dev, napi, page_info, len);
 		goto have_skb;
@@ -402,7 +397,7 @@ bool gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 			   rx->q_num, GVE_SEQNO(desc->flags_seq),
 			   rx->desc.seqno);
 		bytes += be16_to_cpu(desc->len) - GVE_RX_PAD;
-		if(!gve_rx(rx, desc, feat))
+		if (!gve_rx(rx, desc, feat))
 			gve_schedule_reset(priv);
 		cnt++;
 		idx = cnt & rx->desc.mask;

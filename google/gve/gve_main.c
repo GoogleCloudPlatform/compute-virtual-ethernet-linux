@@ -150,9 +150,9 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 
 		priv->num_ntfy_blks = new_num_ntfy_blks;
 		priv->tx_cfg.max_queues = min_t(int, priv->tx_cfg.max_queues,
-                                                vecs_per_type);
+						vecs_per_type);
 		priv->rx_cfg.max_queues = min_t(int, priv->rx_cfg.max_queues,
-                                                vecs_per_type + vecs_left);
+						vecs_per_type + vecs_left);
 		dev_info(hdev, "Could not enable desired msix, only enabled %d, adjusting tx max queues to %d, and rx max queues to %d\n",
 			 vecs_enabled, priv->tx_cfg.max_queues,
 			 priv->rx_cfg.max_queues);
@@ -186,6 +186,7 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 	for (i = 0; i < priv->num_ntfy_blks; i++) {
 		struct gve_notify_block *block = &priv->ntfy_blocks[i];
 		int msix_idx = i + priv->ntfy_blk_msix_base_idx;
+
 		snprintf(block->name, sizeof(block->name), "%s-ntfy-block.%d",
 			 name, i);
 		block->priv = priv;
@@ -295,6 +296,7 @@ static void gve_teardown_device_resources(struct gve_priv *priv)
 void gve_add_napi(struct gve_priv *priv, int ntfy_idx)
 {
 	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
+
 	netif_napi_add(priv->dev, &block->napi, gve_napi_poll,
 		       NAPI_POLL_WEIGHT);
 }
@@ -302,6 +304,7 @@ void gve_add_napi(struct gve_priv *priv, int ntfy_idx)
 void gve_remove_napi(struct gve_priv *priv, int ntfy_idx)
 {
 	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
+
 	netif_napi_del(&block->napi);
 }
 
@@ -468,7 +471,8 @@ static void gve_free_rings(struct gve_priv *priv)
 }
 
 int gve_alloc_page(struct device *dev, struct page **page, dma_addr_t *dma,
-		   enum dma_data_direction dir) {
+		   enum dma_data_direction dir)
+{
 	*page = alloc_page(GFP_KERNEL);
 	if (!page)
 		return -ENOMEM;
@@ -509,7 +513,7 @@ static int gve_alloc_queue_page_list(struct gve_priv *priv, u32 id,
 	return 0;
 }
 
-void gve_free_page(struct device *dev, struct page* page, dma_addr_t dma,
+void gve_free_page(struct device *dev, struct page *page, dma_addr_t dma,
 		   enum dma_data_direction dir)
 {
 	if (!dma_mapping_error(dev, dma))
@@ -682,11 +686,10 @@ err:
 		     &priv->service_task_flags)) {
 		/* If we already have a reset going, just return the error */
 		return err;
-	} else {
-		/* Otherwise do a reset */
-		gve_reset_and_teardown(priv, true);
-		return(gve_reset_recovery(priv, false));
 	}
+	/* Otherwise do a reset */
+	gve_reset_and_teardown(priv, true);
+	return gve_reset_recovery(priv, false);
 }
 
 int gve_adjust_queues(struct gve_priv *priv,
@@ -702,12 +705,11 @@ int gve_adjust_queues(struct gve_priv *priv,
 		 */
 		dev_deactivate(priv->dev);
 		err = gve_close(priv->dev);
-		if (err) {
-			/* we have already tried to reset in close,
-			 * just fail at this point
-			 */
-			 return err;
-		}
+		/* we have already tried to reset in close,
+		 * just fail at this point
+		 */
+		if (err)
+			return err;
 		priv->tx_cfg = new_tx_config;
 		priv->rx_cfg = new_rx_config;
 
@@ -715,14 +717,14 @@ int gve_adjust_queues(struct gve_priv *priv,
 		if (err)
 			goto err;
 		dev_activate(priv->dev);
-		return 0;
-	} else {
-		/* Set the config for the next up. */
-		priv->tx_cfg = new_tx_config;
-		priv->rx_cfg = new_rx_config;
 
 		return 0;
 	}
+	/* Set the config for the next up. */
+	priv->tx_cfg = new_tx_config;
+	priv->rx_cfg = new_rx_config;
+
+	return 0;
 err:
 	dev_err(&priv->pdev->dev,
 		"Adjust queues failed! !!! DISABLING ALL QUEUES !!!\n");
@@ -746,11 +748,13 @@ static void gve_turndown(struct gve_priv *priv)
 	for (idx = 0; idx < priv->tx_cfg.num_queues; idx++) {
 		int ntfy_idx = gve_tx_idx_to_ntfy(priv, idx);
 		struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
+
 		napi_disable(&block->napi);
 	}
 	for (idx = 0; idx < priv->rx_cfg.num_queues; idx++) {
 		int ntfy_idx = gve_rx_idx_to_ntfy(priv, idx);
 		struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
+
 		napi_disable(&block->napi);
 	}
 
@@ -761,16 +765,18 @@ static void gve_turnup(struct gve_priv *priv)
 {
 	int idx;
 
-	/* Enable napi and unmask interupts for all queues */
+	/* Enable napi and unmask interrupts for all queues */
 	for (idx = 0; idx < priv->tx_cfg.num_queues; idx++) {
 		int ntfy_idx = gve_tx_idx_to_ntfy(priv, idx);
 		struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
+
 		napi_enable(&block->napi);
 		writel(cpu_to_be32(0), gve_irq_doorbell(priv, block));
 	}
 	for (idx = 0; idx < priv->rx_cfg.num_queues; idx++) {
 		int ntfy_idx = gve_rx_idx_to_ntfy(priv, idx);
 		struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
+
 		napi_enable(&block->napi);
 		writel(cpu_to_be32(0), gve_irq_doorbell(priv, block));
 	}
@@ -909,17 +915,20 @@ abort_with_adminq:
 	return err;
 }
 
-static void gve_teardown_priv_resources(struct gve_priv *priv) {
+static void gve_teardown_priv_resources(struct gve_priv *priv)
+{
 	gve_teardown_device_resources(priv);
 	gve_free_adminq(&priv->pdev->dev, priv);
 }
 
-static void gve_trigger_reset(struct gve_priv *priv) {
+static void gve_trigger_reset(struct gve_priv *priv)
+{
 	/* Reset the device by releasing the AQ */
 	gve_release_adminq(priv);
 }
 
-static void gve_reset_and_teardown(struct gve_priv *priv, bool was_up) {
+static void gve_reset_and_teardown(struct gve_priv *priv, bool was_up)
+{
 	gve_trigger_reset(priv);
 	if (was_up)
 		/* With the reset having already happened, close cannot fail */
@@ -927,7 +936,8 @@ static void gve_reset_and_teardown(struct gve_priv *priv, bool was_up) {
 	gve_teardown_priv_resources(priv);
 }
 
-static int gve_reset_recovery(struct gve_priv *priv, bool was_up) {
+static int gve_reset_recovery(struct gve_priv *priv, bool was_up)
+{
 	int err;
 
 	err = gve_init_priv(priv, true);
@@ -984,6 +994,7 @@ int gve_reset(struct gve_priv *priv, bool attempt_teardown)
 static void gve_write_version(void __iomem *reg_bar)
 {
 	const char *c = gve_version_prefix;
+
 	while (*c) {
 		writeb(*c, reg_bar + GVE_DRIVER_VERSION);
 		c++;
