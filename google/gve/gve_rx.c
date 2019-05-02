@@ -293,6 +293,11 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 	idx = rx->data.cnt & rx->data.mask;
 	page_info = &rx->data.page_info[idx];
 
+	/* gvnic can only receive into registered segments. If the buffer
+	 * can't be recycled, our only choice is to copy the data out of
+	 * it so that we can return it to the device.
+	 */
+
 #if PAGE_SIZE == 4096
 	if (len <= priv->rx_copybreak) {
 		/* Just copy small packets */
@@ -313,6 +318,8 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 		 * stack.
 		 */
 		skb = gve_rx_add_frags(dev, napi, page_info, len);
+		if (!skb)
+			return true;
 		/* Make sure the kernel stack can't release the page */
 		get_page(page_info->page);
 		/* "flip" to other packet buffer on this page */
