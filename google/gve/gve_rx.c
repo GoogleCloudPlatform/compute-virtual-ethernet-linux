@@ -350,7 +350,7 @@ have_skb:
 
 	/* parse flags & pass relevant info up */
 	if (likely(feat & NETIF_F_RXHASH) &&
-	    gve_rss_valid(rx_desc->flags_seq))
+	    gve_needs_rss(rx_desc->flags_seq))
 		skb_set_hash(skb, be32_to_cpu(rx_desc->rss_hash),
 			     gve_rss_type(rx_desc->flags_seq));
 

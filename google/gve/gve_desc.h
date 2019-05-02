@@ -53,9 +53,9 @@ struct gve_tx_seg_desc {
 #define	GVE_TXSF_IPV6	BIT(1)	/* IPv6 TSO */
 
 /* GVE Receive Packet Descriptor */
-/* The start of an ethernet packet comes 2 bytes into
- * the rx buffer.  This way, both the DMA and the L3/4 protocol
- * header access is aligned
+/* The start of an ethernet packet comes 2 bytes into the rx buffer.
+ * gVNIC adds this padding so that both the DMA and the L3/4 protocol header
+ * access is aligned.
  */
 #define GVE_RX_PAD 2
 
@@ -103,7 +103,7 @@ struct gve_rx_data_slot {
 #define GVE_IRQ_MASK	BIT(30)
 #define GVE_IRQ_EVENT	BIT(29)
 
-static inline bool gve_rss_valid(__be16 flag)
+static inline bool gve_needs_rss(__be16 flag)
 {
 	if (flag & GVE_RXF_FRAG)
 		return false;
