@@ -147,13 +147,11 @@ void gve_get_channels(struct net_device *netdev, struct ethtool_channels *cmd)
 	cmd->max_rx = priv->rx_cfg.max_queues;
 	cmd->max_tx = priv->tx_cfg.max_queues;
 	cmd->max_other = 0;
-	cmd->max_combined = min_t(u32, priv->rx_cfg.max_queues,
-				  priv->tx_cfg.max_queues);
+	cmd->max_combined = 0;
 	cmd->rx_count = priv->rx_cfg.num_queues;
 	cmd->tx_count = priv->tx_cfg.num_queues;
 	cmd->other_count = 0;
-	cmd->combined_count = min_t(int, priv->rx_cfg.num_queues,
-				    priv->tx_cfg.num_queues);
+	cmd->combined_count = 0;
 }
 
 int gve_set_channels(struct net_device *netdev, struct ethtool_channels *cmd)
@@ -166,16 +164,10 @@ int gve_set_channels(struct net_device *netdev, struct ethtool_channels *cmd)
 	int new_rx = cmd->rx_count;
 
 	gve_get_channels(netdev, &old_settings);
-	if (cmd->combined_count != old_settings.combined_count) {
-		/* Changing combined at the same time as rx and tx isn't
-		 * allowed
-		 */
-		if (new_tx != priv->tx_cfg.num_queues ||
-		    new_rx != priv->rx_cfg.num_queues)
-			return -EINVAL;
-		new_rx = cmd->combined_count;
-		new_tx = cmd->combined_count;
-	}
+
+	/* Changing combined is not allowed allowed */
+	if (cmd->combined_count != old_settings.combined_count)
+		return -EINVAL;
 
 	if (!new_rx || !new_tx)
 		return -EINVAL;
