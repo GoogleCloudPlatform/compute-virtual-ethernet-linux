@@ -667,7 +667,7 @@ static int gve_close(struct net_device *dev)
 	struct gve_priv *priv = netdev_priv(dev);
 	int err;
 
-	netif_carrier_off(priv->dev);
+	netif_carrier_off(dev);
 	if (test_bit(GVE_PRIV_FLAGS_DEVICE_RINGS_OK, &priv->state_flags)) {
 		gve_turndown(priv);
 		err = gve_destroy_rings(priv);
@@ -704,7 +704,6 @@ int gve_adjust_queues(struct gve_priv *priv,
 		 * device, set the new configuration, and then bring the device
 		 * up again.
 		 */
-		dev_deactivate(priv->dev);
 		err = gve_close(priv->dev);
 		/* we have already tried to reset in close,
 		 * just fail at this point
@@ -717,7 +716,6 @@ int gve_adjust_queues(struct gve_priv *priv,
 		err = gve_open(priv->dev);
 		if (err)
 			goto err;
-		dev_activate(priv->dev);
 
 		return 0;
 	}
@@ -737,10 +735,8 @@ static void gve_turndown(struct gve_priv *priv)
 {
 	int idx;
 
-	if (netif_carrier_ok(priv->dev)) {
+	if (netif_carrier_ok(priv->dev))
 		netif_carrier_off(priv->dev);
-		dev_deactivate(priv->dev);
-	}
 
 	if (!test_bit(GVE_PRIV_FLAGS_NAPI_ENABLED, &priv->state_flags))
 		return;
@@ -759,12 +755,18 @@ static void gve_turndown(struct gve_priv *priv)
 		napi_disable(&block->napi);
 	}
 
+	/* Stop tx queues */
+	netif_tx_disable(priv->dev);
+
 	clear_bit(GVE_PRIV_FLAGS_NAPI_ENABLED, &priv->state_flags);
 }
 
 static void gve_turnup(struct gve_priv *priv)
 {
 	int idx;
+
+	/* Start the tx queues */
+	netif_tx_start_all_queues(priv->dev);
 
 	/* Enable napi and unmask interrupts for all queues */
 	for (idx = 0; idx < priv->tx_cfg.num_queues; idx++) {
@@ -948,7 +950,6 @@ static int gve_reset_recovery(struct gve_priv *priv, bool was_up)
 		err = gve_open(priv->dev);
 		if (err)
 			goto err;
-		dev_activate(priv->dev);
 	}
 	return 0;
 err:
@@ -974,13 +975,10 @@ int gve_reset(struct gve_priv *priv, bool attempt_teardown)
 	} else {
 		/* Otherwise attempt to close normally */
 		if (was_up) {
-			dev_deactivate(priv->dev);
 			err = gve_close(priv->dev);
-			/* If that fails, turndown and reset as we did above */
-			if (err) {
-				gve_turndown(priv);
+			/* If that fails reset as we did above */
+			if (err)
 				gve_reset_and_teardown(priv, was_up);
-			}
 		}
 		/* Clean up any remaining resources */
 		gve_teardown_priv_resources(priv);

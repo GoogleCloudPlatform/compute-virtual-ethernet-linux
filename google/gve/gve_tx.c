@@ -537,7 +537,6 @@ static int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
 	smp_mb();
 #endif
 	if (try_to_wake && netif_tx_queue_stopped(tx->netdev_txq) &&
-	    netif_running(priv->dev) &&
 	    likely(gve_can_tx(tx, GVE_TX_START_THRESH))) {
 		tx->wake_queue++;
 		netif_tx_wake_queue(tx->netdev_txq);
