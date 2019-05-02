@@ -1091,22 +1091,23 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	priv->state_flags = 0x0;
 
 	netif_carrier_off(dev);
-	err = register_netdev(dev);
-	if (err)
-		goto abort_with_netdev;
 
 	set_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS, &priv->service_task_flags);
 	priv->gve_wq = alloc_ordered_workqueue("gve", 0);
 	if (!priv->gve_wq) {
 		dev_err(&pdev->dev, "could not allocate workqueue");
 		err = -ENOMEM;
-		goto abort_while_registered;
+		goto abort_with_netdev;
 	}
 	INIT_WORK(&priv->service_task, gve_service_task);
 	priv->tx_cfg.max_queues = max_tx_queues;
 	priv->rx_cfg.max_queues = max_rx_queues;
 
 	err = gve_init_priv(priv, false);
+	if (err)
+		goto abort_with_wq;
+
+	err = register_netdev(dev);
 	if (err)
 		goto abort_with_wq;
 
@@ -1117,9 +1118,6 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 abort_with_wq:
 	destroy_workqueue(priv->gve_wq);
-
-abort_while_registered:
-	unregister_netdev(dev);
 
 abort_with_netdev:
 	free_netdev(dev);
