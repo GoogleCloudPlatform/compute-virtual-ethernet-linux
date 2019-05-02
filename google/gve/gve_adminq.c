@@ -62,13 +62,15 @@ void gve_free_adminq(struct device *dev, struct gve_priv *priv)
 	clear_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags);
 }
 
-static int gve_adminq_kick_cmd(struct gve_priv *priv)
+static void gve_adminq_kick_cmd(struct gve_priv *priv, u32 prod_cnt)
 {
-	u32 prod_cnt = priv->adminq_prod_cnt;
-	int i;
-
 	writel(cpu_to_be32(prod_cnt),
 	       priv->reg_bar0 + GVE_ADMIN_QUEUE_DOORBELL);
+}
+
+static int gve_adminq_wait_for_cmd(struct gve_priv *priv, u32 prod_cnt)
+{
+	int i;
 
 	for (i = 0; i < GVE_MAX_ADMINQ_EVENT_COUNTER_CHECK; i++) {
 		if (be32_to_cpu(readl(priv->reg_bar0 +
@@ -128,16 +130,20 @@ int gve_execute_adminq_cmd(struct gve_priv *priv,
 			   union gve_adminq_command *cmd_orig)
 {
 	union gve_adminq_command *cmd;
+	u32 prod_cnt;
 	u32 status = 0;
 	int err;
 
 	spin_lock(&priv->adminq_lock);
 	cmd = &priv->adminq[priv->adminq_prod_cnt & priv->adminq_mask];
 	priv->adminq_prod_cnt++;
+	prod_cnt = priv->adminq_prod_cnt;
 
 	memcpy(cmd, cmd_orig, sizeof(*cmd_orig));
 
-	err = gve_adminq_kick_cmd(priv);
+	gve_adminq_kick_cmd(priv, prod_cnt);
+	spin_unlock(&priv->adminq_lock);
+	err = gve_adminq_wait_for_cmd(priv, prod_cnt);
 	if (err == -ETIME) {
 		dev_err(&priv->pdev->dev, "AQ command timed out, need to reset AQ\n");
 		err = -ENOTRECOVERABLE;
@@ -145,7 +151,6 @@ int gve_execute_adminq_cmd(struct gve_priv *priv,
 		memcpy(cmd_orig, cmd, sizeof(*cmd));
 	}
 
-	spin_unlock(&priv->adminq_lock);
 	status = be32_to_cpu(READ_ONCE(cmd->status));
 	return gve_parse_aq_err(&priv->pdev->dev, err, status);
 }
