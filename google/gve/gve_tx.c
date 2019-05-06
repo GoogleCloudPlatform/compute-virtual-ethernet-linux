@@ -138,6 +138,9 @@ static void gve_tx_remove_from_block(struct gve_priv *priv, int queue_idx)
 	block->tx = NULL;
 }
 
+static int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
+			     u32 to_do, bool try_to_wake);
+
 void gve_tx_free_ring(struct gve_priv *priv, int idx)
 {
 	struct gve_tx_ring *tx = &priv->tx[idx];
@@ -147,7 +150,7 @@ void gve_tx_free_ring(struct gve_priv *priv, int idx)
 
 	gve_tx_remove_from_block(priv, idx);
 	slots = tx->mask + 1;
-	gve_clean_tx_done(priv, tx, tx->req);
+	gve_clean_tx_done(priv, tx, tx->req, false);
 	netdev_tx_reset_queue(tx->netdev_txq);
 
 	dma_free_coherent(hdev, sizeof(*tx->q_resources),
@@ -488,7 +491,8 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 
 #define GVE_TX_START_THRESH	PAGE_SIZE
 
-int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx, u32 to_do)
+static int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
+			     u32 to_do, bool try_to_wake)
 {
 	struct gve_tx_buffer_state *info;
 	u64 pkts = 0, bytes = 0;
@@ -532,7 +536,7 @@ int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx, u32 to_do)
 	/* Make sure that the doorbells are synced */
 	smp_mb();
 #endif
-	if (netif_tx_queue_stopped(tx->netdev_txq) &&
+	if (try_to_wake && netif_tx_queue_stopped(tx->netdev_txq) &&
 	    netif_running(priv->dev) &&
 	    likely(gve_can_tx(tx, GVE_TX_START_THRESH))) {
 		tx->wake_queue++;
@@ -570,7 +574,7 @@ bool gve_tx_poll(struct gve_notify_block *block, int budget)
 		 * allow
 		 */
 		to_do = min_t(u32, (nic_done - tx->done), budget);
-		gve_clean_tx_done(priv, tx, to_do);
+		gve_clean_tx_done(priv, tx, to_do, true);
 	}
 	/* If we still have work we want to repoll */
 	repoll |= (nic_done != tx->done);

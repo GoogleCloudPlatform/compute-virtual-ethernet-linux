@@ -313,8 +313,6 @@ void gve_free_page(struct device *dev, struct page *page, dma_addr_t dma,
 		   enum dma_data_direction);
 /* tx handling */
 netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev);
-int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
-		      u32 nic_done);
 bool gve_tx_poll(struct gve_notify_block *block, int budget);
 int gve_tx_alloc_rings(struct gve_priv *priv);
 void gve_tx_free_rings(struct gve_priv *priv);
