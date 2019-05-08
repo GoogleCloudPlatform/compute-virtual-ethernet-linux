@@ -18,7 +18,7 @@ static inline void gve_tx_put_doorbell(struct gve_priv *priv,
 	writel(val, &priv->db_bar2[be32_to_cpu(q_resources->db_index)]);
 }
 
-/* gvnic can only transmit from a per-queue Registered Segment.
+/* gvnic can only transmit from a Registered Segment.
  * We copy skb payloads into the registered segment before writing Tx
  * descriptors and ringing the Tx doorbell.
  *
@@ -297,19 +297,28 @@ static inline int gve_skb_fifo_bytes_required(struct gve_tx_ring *tx,
 	return bytes;
 }
 
-/* Check if sufficient resources (descriptor ring space, FIFO space) are
- * available to transmit an SKB.
+/* The most descriptors we could need are 3 - 1 for the headers, 1 for
+ * the beginning of the payload at the end of the FIFO, and 1 if the
+ * payload wraps to the beginning of the FIFO.
  */
+#define MAX_TX_DESC_NEEDED	3
+
+/* Check if sufficient resources (descriptor ring space, FIFO space) are
+ * available to transmit the given number of bytes.
+ */
+static inline bool gve_can_tx(struct gve_tx_ring *tx, int bytes_required)
+{
+	return (gve_tx_avail(tx) >= MAX_TX_DESC_NEEDED &&
+		gve_tx_fifo_can_alloc(&tx->tx_fifo, bytes_required));
+}
+
+/* Stops the queue if the skb cannot be transmitted. */
 static int gve_maybe_stop_tx(struct gve_tx_ring *tx, struct sk_buff *skb)
 {
-	int nsegs_required = 3;
 	int bytes_required;
-	bool can_alloc;
 
 	bytes_required = gve_skb_fifo_bytes_required(tx, skb);
-	can_alloc = gve_tx_fifo_can_alloc(&tx->tx_fifo, bytes_required);
-
-	if (likely(gve_tx_avail(tx) >= nsegs_required) && likely(can_alloc))
+	if (likely(gve_can_tx(tx, bytes_required)))
 		return 0;
 
 	/* No space, so stop the queue */
@@ -329,8 +338,7 @@ static int gve_maybe_stop_tx(struct gve_tx_ring *tx, struct sk_buff *skb)
 	 *   netif_tx_stop_queue()
 	 *   Need to check again for space here!
 	 */
-	can_alloc = gve_tx_fifo_can_alloc(&tx->tx_fifo, bytes_required);
-	if (likely(gve_tx_avail(tx) < nsegs_required) || likely(!can_alloc))
+	if (likely(!gve_can_tx(tx, bytes_required)))
 		return -EBUSY;
 
 	netif_tx_start_queue(tx->netdev_txq);
@@ -478,6 +486,8 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 	return NETDEV_TX_OK;
 }
 
+#define GVE_TX_START_THRESH	PAGE_SIZE
+
 int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx, u32 to_do)
 {
 	struct gve_tx_buffer_state *info;
@@ -523,7 +533,8 @@ int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx, u32 to_do)
 	smp_mb();
 #endif
 	if (netif_tx_queue_stopped(tx->netdev_txq) &&
-	    netif_running(priv->dev)) {
+	    netif_running(priv->dev) &&
+	    likely(gve_can_tx(tx, GVE_TX_START_THRESH))) {
 		tx->wake_queue++;
 		netif_tx_wake_queue(tx->netdev_txq);
 	}
