@@ -33,6 +33,7 @@ int gve_alloc_adminq(struct device *dev, struct gve_priv *priv)
 void gve_release_adminq(struct gve_priv *priv)
 {
 	int i;
+
 	/* Tell the device the adminq is leaving */
 	writel(0x0, priv->reg_bar0 + GVE_ADMIN_QUEUE_PFN);
 	for (i = 0; i < GVE_MAX_ADMINQ_RELEASE_CHECK; i++) {
@@ -130,8 +131,8 @@ int gve_execute_adminq_cmd(struct gve_priv *priv,
 			   union gve_adminq_command *cmd_orig)
 {
 	union gve_adminq_command *cmd;
-	u32 prod_cnt;
 	u32 status = 0;
+	u32 prod_cnt;
 	int err;
 
 	spin_lock(&priv->adminq_lock);

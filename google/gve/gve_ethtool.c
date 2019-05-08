@@ -93,9 +93,9 @@ gve_get_ethtool_stats(struct net_device *netdev,
 		      struct ethtool_stats *stats, u64 *data)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
+	u64 rx_pkts, rx_bytes, tx_pkts, tx_bytes;
 	int ring;
 	int i;
-	u64 rx_pkts, rx_bytes, tx_pkts, tx_bytes;
 
 	ASSERT_RTNL();
 

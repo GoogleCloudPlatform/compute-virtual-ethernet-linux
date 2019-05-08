@@ -371,8 +371,8 @@ have_skb:
 static bool gve_rx_work_pending(struct gve_rx_ring *rx)
 {
 	struct gve_rx_desc *desc;
-	int next_idx;
 	u16 flags_seq;
+	int next_idx;
 
 	next_idx = rx->desc.cnt & rx->desc.mask;
 	desc = rx->desc.desc_ring + next_idx;
