@@ -219,41 +219,36 @@ static inline __be32 __iomem *gve_irq_doorbell(struct gve_priv *priv,
 	return &priv->db_bar2[be32_to_cpu(block->irq_db_index)];
 }
 
-/**
- * Returns the index into ntfy_blocks of the given tx ring's block
- **/
+/* Returns the index into ntfy_blocks of the given tx ring's block
+ */
 static inline u32 gve_tx_idx_to_ntfy(struct gve_priv *priv, u32 queue_idx)
 {
 	return queue_idx;
 }
 
-/**
- * Returns the index into ntfy_blocks of the given rx ring's block
- **/
+/* Returns the index into ntfy_blocks of the given rx ring's block
+ */
 static inline u32 gve_rx_idx_to_ntfy(struct gve_priv *priv, u32 queue_idx)
 {
 	return (priv->num_ntfy_blks / 2) + queue_idx;
 }
 
-/**
- * Returns the number of tx queue page lists
- **/
+/* Returns the number of tx queue page lists
+ */
 static inline u32 gve_num_tx_qpls(struct gve_priv *priv)
 {
 	return priv->tx_cfg.num_queues;
 }
 
-/**
- * Returns the number of rx queue page lists
- **/
+/* Returns the number of rx queue page lists
+ */
 static inline u32 gve_num_rx_qpls(struct gve_priv *priv)
 {
 	return priv->rx_cfg.num_queues;
 }
 
-/**
- * Returns a pointer to the next available tx qpl in the list of qpls
- **/
+/* Returns a pointer to the next available tx qpl in the list of qpls
+ */
 static inline
 struct gve_queue_page_list *gve_assign_tx_qpl(struct gve_priv *priv)
 {
@@ -268,9 +263,8 @@ struct gve_queue_page_list *gve_assign_tx_qpl(struct gve_priv *priv)
 	return &priv->qpls[id];
 }
 
-/**
- * Returns a pointer to the next available rx qpl in the list of qpls
- **/
+/* Returns a pointer to the next available rx qpl in the list of qpls
+ */
 static inline
 struct gve_queue_page_list *gve_assign_rx_qpl(struct gve_priv *priv)
 {
@@ -286,16 +280,14 @@ struct gve_queue_page_list *gve_assign_rx_qpl(struct gve_priv *priv)
 	return &priv->qpls[id];
 }
 
-/**
- * Unassigns the qpl with the given id
- **/
+/* Unassigns the qpl with the given id
+ */
 static inline void gve_unassign_qpl(struct gve_priv *priv, int id)
 {
 	clear_bit(id, priv->qpl_cfg.qpl_id_map);
 }
 
-/**
- * Returns the correct dma direction for tx and rx qpls
+/* Returns the correct dma direction for tx and rx qpls
  */
 static inline enum dma_data_direction gve_qpl_dma_dir(struct gve_priv *priv,
 						      int id)

@@ -58,8 +58,7 @@ static bool gve_tx_fifo_can_alloc(struct gve_tx_fifo *fifo, size_t bytes)
 	return (atomic_read(&fifo->available) <= bytes) ? false : true;
 }
 
-/**
- * gve_tx_alloc_fifo - Allocate fragment(s) from Tx FIFO
+/* gve_tx_alloc_fifo - Allocate fragment(s) from Tx FIFO
  * @fifo: FIFO to allocate from
  * @bytes: Allocation size
  * @iov: Scatter-gather elements to fill with allocation fragment base/len
@@ -120,8 +119,7 @@ static int gve_tx_alloc_fifo(struct gve_tx_fifo *fifo, size_t bytes,
 	return nfrags;
 }
 
-/**
- * gve_tx_free_fifo - Return space to Tx FIFO
+/* gve_tx_free_fifo - Return space to Tx FIFO
  * @fifo: FIFO to return fragments to
  * @bytes: Bytes to free
  */
@@ -268,8 +266,7 @@ void gve_tx_free_rings(struct gve_priv *priv)
 		gve_tx_free_ring(priv, i);
 }
 
-/**
- * gve_tx_avail - Calculates the number of slots available in the ring
+/* gve_tx_avail - Calculates the number of slots available in the ring
  * @tx: tx ring to check
  *
  * Returns the number of slots available
