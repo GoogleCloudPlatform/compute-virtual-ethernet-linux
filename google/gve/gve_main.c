@@ -787,12 +787,21 @@ static void gve_turnup(struct gve_priv *priv)
 	set_bit(GVE_PRIV_FLAGS_NAPI_ENABLED, &priv->state_flags);
 }
 
+static void gve_tx_timeout(struct net_device *dev)
+{
+	struct gve_priv *priv = netdev_priv(dev);
+
+	gve_schedule_reset(priv);
+	priv->tx_timeo_cnt++;
+}
+
 static const struct net_device_ops gve_netdev_ops = {
 	.ndo_start_xmit		=	gve_tx,
 	.ndo_open		=	gve_open,
 	.ndo_stop		=	gve_close,
 	.ndo_get_stats64	=	gve_get_stats,
 	.ndo_change_mtu		=	gve_change_mtu,
+	.ndo_tx_timeout         =       gve_tx_timeout,
 };
 
 static void gve_handle_status(struct gve_priv *priv, u32 status)
@@ -1078,6 +1087,7 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	dev->hw_features |= NETIF_F_RXCSUM;
 	dev->hw_features |= NETIF_F_RXHASH;
 	dev->features = dev->hw_features;
+	dev->watchdog_timeo = 5 * HZ;
 	netif_carrier_off(dev);
 
 	priv = netdev_priv(dev);

@@ -32,7 +32,7 @@ static u32 gve_get_msglevel(struct net_device *netdev)
 
 static const char gve_gstrings_main_stats[][ETH_GSTRING_LEN] = {
 	"rx_packets", "tx_packets", "rx_bytes", "tx_bytes",
-	"rx_dropped", "tx_dropped",
+	"rx_dropped", "tx_dropped", "tx_timeouts",
 };
 
 #define GVE_MAIN_STATS_LEN  ARRAY_SIZE(gve_gstrings_main_stats)
@@ -119,6 +119,9 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	data[i++] = tx_pkts;
 	data[i++] = rx_bytes;
 	data[i++] = tx_bytes;
+	/* Skip rx_dropped and tx_dropped */
+	i += 2;
+	data[i++] = priv->tx_timeo_cnt;
 	i = GVE_MAIN_STATS_LEN;
 
 	/* walk RX rings */

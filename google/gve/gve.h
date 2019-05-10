@@ -189,6 +189,9 @@ struct gve_priv {
 	u32 msg_enable;	/* level for netif* netdev print macros	*/
 	struct pci_dev *pdev;
 
+	/* metrics */
+	unsigned int tx_timeo_cnt;
+
 	/* Admin queue */
 	spinlock_t adminq_lock;
 	union gve_adminq_command *adminq;
