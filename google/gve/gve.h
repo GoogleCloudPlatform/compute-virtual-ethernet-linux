@@ -128,6 +128,11 @@ struct gve_tx_ring {
 /* 1 for management, 1 for rx, 1 for tx */
 #define GVE_MIN_MSIX 3
 
+/* The msix vectors are arrange that the first n-1 are for the notification
+ * blocks and the last vector is the management vector.
+ */
+#define GVE_NTFY_BLK_BASE_MSIX_IDX	0
+
 struct gve_notify_block {
 	/* the irq_db_index is the index into db_bar2 where this block's irq
 	 * db can be found
@@ -164,7 +169,6 @@ struct gve_priv {
 	struct msix_entry *msix_vectors; /* array of num_ntfy_blks + 1 */
 	char mgmt_msix_name[IFNAMSIZ + 16];
 	int mgmt_msix_idx;
-	int ntfy_blk_msix_base_idx;
 	__be32 *counter_array; /* array of num_event_counters */
 	dma_addr_t counter_array_bus;
 

@@ -174,7 +174,7 @@ int gve_adminq_configure_device_resources(struct gve_priv *priv,
 		.irq_db_stride =
 		      cpu_to_be32(L1_CACHE_ALIGN(sizeof(priv->ntfy_blocks[0]))),
 		.ntfy_blk_msix_base_idx =
-			cpu_to_be32(priv->ntfy_blk_msix_base_idx),
+					cpu_to_be32(GVE_NTFY_BLK_BASE_MSIX_IDX),
 	};
 
 	return gve_execute_adminq_cmd(priv, &cmd);

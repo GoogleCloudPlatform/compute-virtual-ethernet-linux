@@ -162,9 +162,10 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 		if (priv->rx_cfg.num_queues > priv->rx_cfg.max_queues)
 			priv->rx_cfg.num_queues = priv->rx_cfg.max_queues;
 	}
+	/* Half the notification blocks go to TX and half to RX */
 	active_cpus = min_t(int, priv->num_ntfy_blks / 2, num_online_cpus());
 
-	/* Setup Management Vector */
+	/* Setup Management Vector  - the last vector */
 	snprintf(priv->mgmt_msix_name, sizeof(priv->mgmt_msix_name), "%s-mgmnt",
 		 name);
 	err = request_irq(priv->msix_vectors[priv->mgmt_msix_idx].vector,
@@ -183,10 +184,10 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 		err = -ENOMEM;
 		goto abort_with_mgmt_vector;
 	}
-	/* Setup the other blocks */
+	/* Setup the other blocks - the first n-1 vectors */
 	for (i = 0; i < priv->num_ntfy_blks; i++) {
 		struct gve_notify_block *block = &priv->ntfy_blocks[i];
-		int msix_idx = i + priv->ntfy_blk_msix_base_idx;
+		int msix_idx = i;
 
 		snprintf(block->name, sizeof(block->name), "%s-ntfy-block.%d",
 			 name, i);
@@ -204,7 +205,7 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 abort_with_some_ntfy_blocks:
 	for (j = 0; j < i; j++) {
 		struct gve_notify_block *block = &priv->ntfy_blocks[j];
-		int msix_idx = j + priv->ntfy_blk_msix_base_idx;
+		int msix_idx = j;
 
 		irq_set_affinity_hint(priv->msix_vectors[msix_idx].vector,
 				      NULL);
@@ -231,7 +232,7 @@ static void gve_free_notify_blocks(struct gve_priv *priv)
 	/* Free the irqs */
 	for (i = 0; i < priv->num_ntfy_blks; i++) {
 		struct gve_notify_block *block = &priv->ntfy_blocks[i];
-		int msix_idx = i + priv->ntfy_blk_msix_base_idx;
+		int msix_idx = i;
 
 		irq_set_affinity_hint(priv->msix_vectors[msix_idx].vector,
 				      NULL);
@@ -896,7 +897,6 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 	 */
 	priv->num_ntfy_blks = num_ntfy - 1;
 	priv->mgmt_msix_idx = num_ntfy - 1;
-	priv->ntfy_blk_msix_base_idx = 0;
 
 	priv->tx_cfg.max_queues =
 		min_t(int, priv->tx_cfg.max_queues, priv->num_ntfy_blks / 2);
