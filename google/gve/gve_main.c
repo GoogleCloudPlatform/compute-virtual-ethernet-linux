@@ -853,12 +853,8 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 	if (err)
 		return err;
 
-	if (skip_describe_device) {
-		err = gve_setup_device_resources(priv);
-		if (err)
-			goto abort_with_adminq;
-		return 0;
-	}
+	if (skip_describe_device)
+		goto setup_device;
 
 	/* Get the initial information we need from the device */
 	err = gve_adminq_describe_device(priv);
@@ -917,11 +913,10 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 	netif_info(priv, drv, priv->dev, "Max TX queues %d, Max RX queues %d\n",
 		   priv->tx_cfg.max_queues, priv->rx_cfg.max_queues);
 
+setup_device:
 	err = gve_setup_device_resources(priv);
-	if (err)
-		goto abort_with_adminq;
-	return 0;
-
+	if (!err)
+		return 0;
 abort_with_adminq:
 	gve_adminq_free(&priv->pdev->dev, priv);
 	return err;
