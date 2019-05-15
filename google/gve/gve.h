@@ -209,16 +209,18 @@ struct gve_priv {
 	unsigned long state_flags;
 };
 
-/* service_task_flags bits */
-#define GVE_PRIV_FLAGS_DO_RESET			BIT(1)
-#define GVE_PRIV_FLAGS_RESET_IN_PROGRESS	BIT(2)
-#define GVE_PRIV_FLAGS_PROBE_IN_PROGRESS	BIT(3)
+enum gve_service_task_flags {
+	GVE_PRIV_FLAGS_DO_RESET			= BIT(1),
+	GVE_PRIV_FLAGS_RESET_IN_PROGRESS	= BIT(2),
+	GVE_PRIV_FLAGS_PROBE_IN_PROGRESS	= BIT(3),
+};
 
-/* state_flags bits */
-#define GVE_PRIV_FLAGS_ADMIN_QUEUE_OK		BIT(1)
-#define GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK	BIT(2)
-#define GVE_PRIV_FLAGS_DEVICE_RINGS_OK		BIT(3)
-#define GVE_PRIV_FLAGS_NAPI_ENABLED		BIT(4)
+enum gve_state_flags {
+	GVE_PRIV_FLAGS_ADMIN_QUEUE_OK		= BIT(1),
+	GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK	= BIT(2),
+	GVE_PRIV_FLAGS_DEVICE_RINGS_OK		= BIT(3),
+	GVE_PRIV_FLAGS_NAPI_ENABLED		= BIT(4),
+};
 
 static inline __be32 __iomem *gve_irq_doorbell(struct gve_priv *priv,
 					       struct gve_notify_block *block)
