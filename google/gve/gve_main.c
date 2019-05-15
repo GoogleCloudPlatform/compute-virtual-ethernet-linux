@@ -836,8 +836,8 @@ static void gve_service_task(struct work_struct *work)
 	struct gve_priv *priv = container_of(work, struct gve_priv,
 					     service_task);
 
-	gve_handle_status(priv, be32_to_cpu(readl(priv->reg_bar0 +
-						  GVE_DEVICE_STATUS)));
+	gve_handle_status(priv,
+			  be32_to_cpu(readl(&priv->reg_bar0->device_status)));
 
 	gve_handle_reset(priv);
 }
@@ -999,21 +999,21 @@ int gve_reset(struct gve_priv *priv, bool attempt_teardown)
 	return err;
 }
 
-static void gve_write_version(void __iomem *reg_bar)
+static void gve_write_version(u8 __iomem *driver_version_register)
 {
 	const char *c = gve_version_prefix;
 
 	while (*c) {
-		writeb(*c, reg_bar + GVE_DRIVER_VERSION);
+		writeb(*c, driver_version_register);
 		c++;
 	}
 
 	c = gve_version_str;
 	while (*c) {
-		writeb(*c, reg_bar + GVE_DRIVER_VERSION);
+		writeb(*c, driver_version_register);
 		c++;
 	}
-	writeb('\n', reg_bar + GVE_DRIVER_VERSION);
+	writeb('\n', driver_version_register);
 }
 
 static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
@@ -1021,7 +1021,7 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	int max_tx_queues, max_rx_queues;
 	struct net_device *dev;
 	__be32 __iomem *db_bar;
-	void __iomem *reg_bar;
+	struct gve_registers __iomem *reg_bar;
 	struct gve_priv *priv;
 	int err;
 
@@ -1061,12 +1061,10 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto abort_with_reg_bar;
 	}
 
-	gve_write_version(reg_bar);
+	gve_write_version(&reg_bar->driver_version);
 	/* Get max queues to alloc etherdev */
-	max_rx_queues = be32_to_cpu(readl(reg_bar +
-					  GVE_DEVICE_MAX_RX_QUEUES));
-	max_tx_queues = be32_to_cpu(readl(reg_bar +
-					  GVE_DEVICE_MAX_TX_QUEUES));
+	max_rx_queues = be32_to_cpu(readl(&reg_bar->max_tx_queues));
+	max_tx_queues = be32_to_cpu(readl(&reg_bar->max_rx_queues));
 	/* Alloc and setup the netdev and priv */
 	dev = alloc_etherdev_mqs(sizeof(*priv), max_tx_queues, max_rx_queues);
 	if (!dev) {

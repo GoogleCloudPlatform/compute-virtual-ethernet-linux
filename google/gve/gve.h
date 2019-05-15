@@ -184,7 +184,7 @@ struct gve_priv {
 	struct gve_qpl_config qpl_cfg;
 	int num_ntfy_blks;
 
-	void __iomem *reg_bar0;
+	struct gve_registers __iomem *reg_bar0;
 	__be32 __iomem *db_bar2; /* "array" of doorbells */
 	u32 msg_enable;	/* level for netif* netdev print macros	*/
 	struct pci_dev *pdev;
