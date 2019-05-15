@@ -24,7 +24,7 @@
 #define GVE_REGISTER_BAR	0
 #define GVE_DOORBELL_BAR	2
 
-#define GVE_MIN_MTU			(68)
+#define GVE_MIN_MTU		(68)
 
 #define GVE_TX_MAX_IOVEC	4
 
