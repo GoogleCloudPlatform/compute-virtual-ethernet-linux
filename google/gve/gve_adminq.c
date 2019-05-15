@@ -267,6 +267,8 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	memset(&cmd, 0, sizeof(cmd));
 	descriptor = dma_alloc_coherent(&priv->pdev->dev, PAGE_SIZE,
 					&descriptor_bus, GFP_KERNEL);
+	if (!descriptor)
+		return -ENOMEM;
 	cmd.opcode = cpu_to_be32(GVE_ADMINQ_DESCRIBE_DEVICE);
 	cmd.describe_device.device_descriptor_addr =
 						cpu_to_be64(descriptor_bus);
