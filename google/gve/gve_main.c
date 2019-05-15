@@ -849,7 +849,7 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 	int err;
 
 	/* Set up the adminq */
-	err = gve_alloc_adminq(&priv->pdev->dev, priv);
+	err = gve_adminq_alloc(&priv->pdev->dev, priv);
 	if (err)
 		return err;
 
@@ -923,20 +923,20 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 	return 0;
 
 abort_with_adminq:
-	gve_free_adminq(&priv->pdev->dev, priv);
+	gve_adminq_free(&priv->pdev->dev, priv);
 	return err;
 }
 
 static void gve_teardown_priv_resources(struct gve_priv *priv)
 {
 	gve_teardown_device_resources(priv);
-	gve_free_adminq(&priv->pdev->dev, priv);
+	gve_adminq_free(&priv->pdev->dev, priv);
 }
 
 static void gve_trigger_reset(struct gve_priv *priv)
 {
 	/* Reset the device by releasing the AQ */
-	gve_release_adminq(priv);
+	gve_adminq_release(priv);
 }
 
 static void gve_reset_and_teardown(struct gve_priv *priv, bool was_up)
