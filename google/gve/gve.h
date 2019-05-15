@@ -197,7 +197,6 @@ struct gve_priv {
 	unsigned int tx_timeo_cnt;
 
 	/* Admin queue */
-	spinlock_t adminq_lock;
 	union gve_adminq_command *adminq;
 	dma_addr_t adminq_bus_addr;
 	int adminq_mask;

@@ -5,7 +5,6 @@
  */
 
 #include <linux/etherdevice.h>
-#include <linux/spinlock.h>
 #include <linux/pci.h>
 #include "gve.h"
 #include "gve_adminq.h"
@@ -18,7 +17,6 @@ int gve_alloc_adminq(struct device *dev, struct gve_priv *priv)
 	if (unlikely(!priv->adminq))
 		return -ENOMEM;
 
-	spin_lock_init(&priv->adminq_lock);
 	priv->adminq_mask = (PAGE_SIZE / sizeof(union gve_adminq_command)) - 1;
 	priv->adminq_prod_cnt = 0;
 
@@ -126,6 +124,9 @@ static int gve_parse_aq_err(struct device *dev, int err, u32 status)
 	}
 }
 
+/* This function is not threadsafe - the caller is responsible for any
+ * necessary locks.
+ */
 int gve_execute_adminq_cmd(struct gve_priv *priv,
 			   union gve_adminq_command *cmd_orig)
 {
@@ -134,7 +135,6 @@ int gve_execute_adminq_cmd(struct gve_priv *priv,
 	u32 prod_cnt;
 	int err;
 
-	spin_lock(&priv->adminq_lock);
 	cmd = &priv->adminq[priv->adminq_prod_cnt & priv->adminq_mask];
 	priv->adminq_prod_cnt++;
 	prod_cnt = priv->adminq_prod_cnt;
@@ -142,7 +142,6 @@ int gve_execute_adminq_cmd(struct gve_priv *priv,
 	memcpy(cmd, cmd_orig, sizeof(*cmd_orig));
 
 	gve_adminq_kick_cmd(priv, prod_cnt);
-	spin_unlock(&priv->adminq_lock);
 	err = gve_adminq_wait_for_cmd(priv, prod_cnt);
 	if (err == -ETIME) {
 		dev_err(&priv->pdev->dev, "AQ command timed out, need to reset AQ\n");
