@@ -4,6 +4,7 @@
  * Copyright (C) 2015-2019 Google, Inc.
  */
 
+#include <linux/rtnetlink.h>
 #include "gve.h"
 
 static void gve_get_drvinfo(struct net_device *netdev,

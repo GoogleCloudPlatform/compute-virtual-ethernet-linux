@@ -21,7 +21,7 @@ static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 	struct gve_rx_ring *rx = &priv->rx[idx];
 	struct device *dev = &priv->pdev->dev;
 	size_t bytes;
-	int slots;
+	u32 slots;
 
 	gve_rx_remove_from_block(priv, idx);
 
@@ -58,7 +58,7 @@ static void gve_setup_rx_buffer(struct gve_rx_slot_page_info *page_info,
 static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 {
 	struct gve_priv *priv = rx->gve;
-	int slots, size;
+	u32 slots, size;
 	int i;
 
 	/* Allocate one page per Rx queue slot. Each page is split into two
@@ -100,7 +100,7 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 {
 	struct gve_rx_ring *rx = &priv->rx[idx];
 	struct device *hdev = &priv->pdev->dev;
-	int slots, npages, gve_desc_per_page;
+	u32 slots, npages, gve_desc_per_page;
 	size_t bytes;
 	int err;
 
@@ -283,10 +283,10 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 	struct sk_buff *skb;
 	int pagecount;
 	u16 len;
-	int idx;
+	u32 idx;
 
+	/* drop this packet */
 	if (unlikely(rx_desc->flags_seq & GVE_RXF_ERR))
-		/* drop this packet */
 		return true;
 
 	len = be16_to_cpu(rx_desc->len) - GVE_RX_PAD;
@@ -338,10 +338,10 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 #endif
 
 have_skb:
+	/* We didn't manage to allocate an skb but we haven't had any
+	 * reset worthy failures.
+	 */
 	if (!skb)
-		/* We didn't manage to allocate an skb but we haven't had any
-		 * reset worthy failures.
-		 */
 		return true;
 
 	rx->data.cnt++;
@@ -372,7 +372,7 @@ static bool gve_rx_work_pending(struct gve_rx_ring *rx)
 {
 	struct gve_rx_desc *desc;
 	u16 flags_seq;
-	int next_idx;
+	u32 next_idx;
 
 	next_idx = rx->desc.cnt & rx->desc.mask;
 	desc = rx->desc.desc_ring + next_idx;
@@ -389,9 +389,9 @@ bool gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 {
 	struct gve_priv *priv = rx->gve;
 	struct gve_rx_desc *desc;
-	int cnt = rx->desc.cnt;
-	int idx = cnt & rx->desc.mask;
-	int work_done = 0;
+	u32 cnt = rx->desc.cnt;
+	u32 idx = cnt & rx->desc.mask;
+	u32 work_done = 0;
 	u64 bytes = 0;
 
 	desc = rx->desc.desc_ring + idx;

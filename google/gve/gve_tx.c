@@ -144,7 +144,7 @@ void gve_tx_free_ring(struct gve_priv *priv, int idx)
 	struct gve_tx_ring *tx = &priv->tx[idx];
 	struct device *hdev = &priv->pdev->dev;
 	size_t bytes;
-	int slots;
+	u32 slots;
 
 	gve_tx_remove_from_block(priv, idx);
 	slots = tx->mask + 1;
@@ -183,7 +183,7 @@ static int gve_tx_alloc_ring(struct gve_priv *priv, int idx)
 {
 	struct gve_tx_ring *tx = &priv->tx[idx];
 	struct device *hdev = &priv->pdev->dev;
-	int slots = priv->tx_desc_cnt;
+	u32 slots = priv->tx_desc_cnt;
 	size_t bytes;
 
 	/* Make sure everything is zeroed to start */
@@ -273,7 +273,7 @@ void gve_tx_free_rings(struct gve_priv *priv)
  *
  * The capacity of the queue is mask + 1. We don't need to reserve an entry.
  **/
-static inline int gve_tx_avail(struct gve_tx_ring *tx)
+static inline u32 gve_tx_avail(struct gve_tx_ring *tx)
 {
 	return tx->mask + 1 - (tx->req - tx->done);
 }
@@ -348,7 +348,7 @@ static int gve_maybe_stop_tx(struct gve_tx_ring *tx, struct sk_buff *skb)
 
 static void gve_tx_fill_pkt_desc(union gve_tx_desc *pkt_desc,
 				 struct sk_buff *skb, bool is_gso,
-				 int l4_hdr_offset, int desc_cnt,
+				 int l4_hdr_offset, u32 desc_cnt,
 				 u16 hlen, u64 addr)
 {
 	/* l4_hdr_offset and csum_offset are in units of 16-bit words */
@@ -392,10 +392,10 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 	union gve_tx_desc *pkt_desc, *seg_desc;
 	struct gve_tx_buffer_state *info;
 	bool is_gso = skb_is_gso(skb);
-	int idx = tx->req & tx->mask;
+	u32 idx = tx->req & tx->mask;
 	int payload_iov = 2;
 	int copy_offset;
-	int next_idx;
+	u32 next_idx;
 	int i;
 
 	info = &tx->info[idx];
@@ -496,7 +496,7 @@ static int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
 	size_t space_freed = 0;
 	struct sk_buff *skb;
 	int i, j;
-	int idx;
+	u32 idx;
 
 	for (j = 0; j < to_do; j++) {
 		idx = tx->done & tx->mask;

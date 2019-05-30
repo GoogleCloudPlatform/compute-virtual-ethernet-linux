@@ -10,6 +10,9 @@
 #include "gve_adminq.h"
 #include "gve_register.h"
 
+#define GVE_MAX_ADMINQ_RELEASE_CHECK	500
+#define GVE_MAX_ADMINQ_EVENT_COUNTER_CHECK	100
+
 int gve_adminq_alloc(struct device *dev, struct gve_priv *priv)
 {
 	priv->adminq = dma_alloc_coherent(dev, PAGE_SIZE,
@@ -24,7 +27,7 @@ int gve_adminq_alloc(struct device *dev, struct gve_priv *priv)
 	writel(cpu_to_be32(priv->adminq_bus_addr / PAGE_SIZE),
 	       &priv->reg_bar0->adminq_pfn);
 
-	set_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags);
+	gve_set_admin_queue_ok(priv);
 	return 0;
 }
 
@@ -36,12 +39,9 @@ void gve_adminq_release(struct gve_priv *priv)
 	writel(0x0, &priv->reg_bar0->adminq_pfn);
 	for (i = 0; i < GVE_MAX_ADMINQ_RELEASE_CHECK; i++) {
 		if (!readl(&priv->reg_bar0->adminq_pfn)) {
-			clear_bit(GVE_PRIV_FLAGS_DEVICE_RINGS_OK,
-				  &priv->state_flags);
-			clear_bit(GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK,
-				  &priv->state_flags);
-			clear_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK,
-				  &priv->state_flags);
+			gve_clear_device_rings_ok(priv);
+			gve_clear_device_resources_ok(priv);
+			gve_clear_admin_queue_ok(priv);
 			return;
 		}
 		msleep(20);
@@ -55,10 +55,11 @@ void gve_adminq_release(struct gve_priv *priv)
 
 void gve_adminq_free(struct device *dev, struct gve_priv *priv)
 {
-	if (test_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags))
-		gve_adminq_release(priv);
+	if (!gve_get_admin_queue_ok(priv))
+		return;
+	gve_adminq_release(priv);
 	dma_free_coherent(dev, PAGE_SIZE, priv->adminq, priv->adminq_bus_addr);
-	clear_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags);
+	gve_clear_admin_queue_ok(priv);
 }
 
 static void gve_adminq_kick_cmd(struct gve_priv *priv, u32 prod_cnt)
@@ -67,25 +68,22 @@ static void gve_adminq_kick_cmd(struct gve_priv *priv, u32 prod_cnt)
 	       &priv->reg_bar0->adminq_doorbell);
 }
 
-static int gve_adminq_wait_for_cmd(struct gve_priv *priv, u32 prod_cnt)
+static bool gve_adminq_wait_for_cmd(struct gve_priv *priv, u32 prod_cnt)
 {
 	int i;
 
 	for (i = 0; i < GVE_MAX_ADMINQ_EVENT_COUNTER_CHECK; i++) {
 		if (be32_to_cpu(readl(&priv->reg_bar0->adminq_event_counter))
 		    == prod_cnt)
-			return 0;
+			return true;
 		msleep(20);
 	}
 
-	return -ETIME;
+	return false;
 }
 
-static int gve_adminq_parse_err(struct device *dev, int err, u32 status)
+static int gve_adminq_parse_err(struct device *dev, u32 status)
 {
-	if (err)
-		return err;
-
 	if (status != GVE_ADMINQ_COMMAND_PASSED &&
 	    status != GVE_ADMINQ_COMMAND_UNSET)
 		dev_err(dev, "AQ command failed with status %d\n", status);
@@ -133,7 +131,6 @@ int gve_adminq_execute_cmd(struct gve_priv *priv,
 	union gve_adminq_command *cmd;
 	u32 status = 0;
 	u32 prod_cnt;
-	int err;
 
 	cmd = &priv->adminq[priv->adminq_prod_cnt & priv->adminq_mask];
 	priv->adminq_prod_cnt++;
@@ -142,23 +139,29 @@ int gve_adminq_execute_cmd(struct gve_priv *priv,
 	memcpy(cmd, cmd_orig, sizeof(*cmd_orig));
 
 	gve_adminq_kick_cmd(priv, prod_cnt);
-	err = gve_adminq_wait_for_cmd(priv, prod_cnt);
-	if (err == -ETIME) {
+	if (!gve_adminq_wait_for_cmd(priv, prod_cnt)) {
 		dev_err(&priv->pdev->dev, "AQ command timed out, need to reset AQ\n");
-		err = -ENOTRECOVERABLE;
-	} else {
-		memcpy(cmd_orig, cmd, sizeof(*cmd));
+		return -ENOTRECOVERABLE;
 	}
 
+	memcpy(cmd_orig, cmd, sizeof(*cmd));
 	status = be32_to_cpu(READ_ONCE(cmd->status));
-	return gve_adminq_parse_err(&priv->pdev->dev, err, status);
+	return gve_adminq_parse_err(&priv->pdev->dev, status);
 }
 
+/* The device specifies that the manegment vector can either be the first irq
+ * or the last irq. ntfy_blk_msix_base_idx indicates the first irq assigned to
+ * the ntfy blks. It if is 0 then the manegment vector is last, if it is 1 then
+ * the management vector is first.
+ *
+ * gve arranges the msix vectors so that the management vector is last.
+ */
+#define GVE_NTFY_BLK_BASE_MSIX_IDX	0
 int gve_adminq_configure_device_resources(struct gve_priv *priv,
 					  dma_addr_t counter_array_bus_addr,
-					  int num_counters,
+					  u32 num_counters,
 					  dma_addr_t db_array_bus_addr,
-					  int num_ntfy_blks)
+					  u32 num_ntfy_blks)
 {
 	union gve_adminq_command cmd;
 
@@ -170,8 +173,7 @@ int gve_adminq_configure_device_resources(struct gve_priv *priv,
 		.num_counters = cpu_to_be32(num_counters),
 		.irq_db_addr = cpu_to_be64(db_array_bus_addr),
 		.num_irq_dbs = cpu_to_be32(num_ntfy_blks),
-		.irq_db_stride =
-		      cpu_to_be32(L1_CACHE_ALIGN(sizeof(priv->ntfy_blocks[0]))),
+		.irq_db_stride = cpu_to_be32(sizeof(priv->ntfy_blocks[0])),
 		.ntfy_blk_msix_base_idx =
 					cpu_to_be32(GVE_NTFY_BLK_BASE_MSIX_IDX),
 	};
@@ -330,8 +332,8 @@ int gve_adminq_register_page_list(struct gve_priv *priv,
 				  struct gve_queue_page_list *qpl)
 {
 	struct device *hdev = &priv->pdev->dev;
-	int num_entries = qpl->num_entries;
-	int size = num_entries * sizeof(qpl->page_buses[0]);
+	u32 num_entries = qpl->num_entries;
+	u32 size = num_entries * sizeof(qpl->page_buses[0]);
 	union gve_adminq_command cmd;
 	dma_addr_t page_list_bus;
 	__be64 *page_list;

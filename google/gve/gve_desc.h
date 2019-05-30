@@ -75,7 +75,6 @@ GVE_ASSERT_SIZE(struct, gve_rx_desc, 64);
 /* As with the Tx ring format, the qpl_offset entries below are offsets into an
  * ordered list of registered pages.
  */
-
 struct gve_rx_data_slot {
 	/* byte offset into the rx registered segment of this slot */
 	__be64 qpl_offset;

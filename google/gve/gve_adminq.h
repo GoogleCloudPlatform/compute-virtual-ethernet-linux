@@ -45,9 +45,6 @@ enum gve_adminq_statuses {
 	GVE_ADMINQ_COMMAND_ERROR_UNKNOWN_ERROR		= 0xFFFFFFFF,
 };
 
-#define GVE_MAX_ADMINQ_EVENT_COUNTER_CHECK	100
-#define GVE_MAX_ADMINQ_RELEASE_CHECK	500
-
 #define GVE_ADMINQ_DEVICE_DESCRIPTOR_VERSION 1
 
 /* All AdminQ command structs should be naturally packed. The GVE_ASSERT_SIZE
@@ -203,9 +200,9 @@ int gve_adminq_execute_cmd(struct gve_priv *priv,
 int gve_adminq_describe_device(struct gve_priv *priv);
 int gve_adminq_configure_device_resources(struct gve_priv *priv,
 					  dma_addr_t counter_array_bus_addr,
-					  int num_counters,
+					  u32 num_counters,
 					  dma_addr_t db_array_bus_addr,
-					  int num_ntfy_blks);
+					  u32 num_ntfy_blks);
 int gve_adminq_deconfigure_device_resources(struct gve_priv *priv);
 int gve_adminq_create_tx_queue(struct gve_priv *priv, u32 queue_id);
 int gve_adminq_destroy_tx_queue(struct gve_priv *priv, u32 queue_id);
