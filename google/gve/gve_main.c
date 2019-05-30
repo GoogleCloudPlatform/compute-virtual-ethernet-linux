@@ -131,8 +131,8 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 	int i, j;
 	int err;
 
-	priv->msix_vectors = kcalloc(num_vecs_requested,
-				     sizeof(*priv->msix_vectors), GFP_KERNEL);
+	priv->msix_vectors = kvzalloc(num_vecs_requested,
+				      sizeof(*priv->msix_vectors));
 	if (!priv->msix_vectors)
 		return -ENOMEM;
 	for (i = 0; i < num_vecs_requested; i++)
@@ -393,16 +393,14 @@ static int gve_alloc_rings(struct gve_priv *priv)
 	int i;
 
 	/* Setup tx rings */
-	priv->tx = kcalloc(priv->tx_cfg.num_queues, sizeof(*priv->tx),
-			   GFP_KERNEL);
+	priv->tx = kvzalloc(priv->tx_cfg.num_queues, sizeof(*priv->tx));
 	if (!priv->tx)
 		return -ENOMEM;
 	err = gve_tx_alloc_rings(priv);
 	if (err)
 		goto free_tx;
 	/* Setup rx rings */
-	priv->rx = kcalloc(priv->rx_cfg.num_queues, sizeof(*priv->rx),
-			   GFP_KERNEL);
+	priv->rx = kvzalloc(priv->rx_cfg.num_queues, sizeof(*priv->rx));
 	if (!priv->rx) {
 		err = -ENOMEM;
 		goto free_tx_queue;
@@ -513,11 +511,11 @@ static int gve_alloc_queue_page_list(struct gve_priv *priv, u32 id,
 
 	qpl->id = id;
 	qpl->num_entries = pages;
-	qpl->pages = kcalloc(pages, sizeof(*qpl->pages), GFP_KERNEL);
+	qpl->pages = kvzalloc(pages, sizeof(*qpl->pages));
 	/* caller handles clean up */
 	if (!qpl->pages)
 		return -ENOMEM;
-	qpl->page_buses = kcalloc(pages, sizeof(*qpl->page_buses), GFP_KERNEL);
+	qpl->page_buses = kvzalloc(pages, sizeof(*qpl->page_buses));
 	/* caller handles clean up */
 	if (!qpl->page_buses)
 		return -ENOMEM;
@@ -571,7 +569,7 @@ static int gve_alloc_qpls(struct gve_priv *priv)
 	int i, j;
 	int err;
 
-	priv->qpls = kcalloc(num_qpls, sizeof(*priv->qpls), GFP_KERNEL);
+	priv->qpls = kvzalloc(num_qpls, sizeof(*priv->qpls));
 	if (!priv->qpls)
 		return -ENOMEM;
 
@@ -590,8 +588,8 @@ static int gve_alloc_qpls(struct gve_priv *priv)
 
 	priv->qpl_cfg.qpl_map_size = BITS_TO_LONGS(num_qpls) *
 				     sizeof(unsigned long) * BITS_PER_BYTE;
-	priv->qpl_cfg.qpl_id_map = kcalloc(BITS_TO_LONGS(num_qpls),
-					   sizeof(unsigned long), GFP_KERNEL);
+	priv->qpl_cfg.qpl_id_map = kvzalloc(BITS_TO_LONGS(num_qpls),
+					    sizeof(unsigned long));
 	if (!priv->qpl_cfg.qpl_id_map)
 		goto free_qpls;
 
