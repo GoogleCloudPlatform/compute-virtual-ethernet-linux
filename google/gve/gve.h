@@ -21,8 +21,6 @@
 #define GVE_REGISTER_BAR	0
 #define GVE_DOORBELL_BAR	2
 
-#define GVE_MIN_MTU		(68)
-
 /* Driver can alloc up to 2 segments for the header and 2 for the payload. */
 #define GVE_TX_MAX_IOVEC	4
 /* 1 for management, 1 for rx, 1 for tx */
@@ -183,7 +181,6 @@ struct gve_priv {
 	u64 max_registered_pages;
 	u64 num_registered_pages; /* num pages registered with NIC */
 	u32 rx_copybreak; /* copy packets smaller than this */
-	int max_mtu;
 	u16 default_num_queues; /* default num queues to set up */
 
 	struct gve_queue_config tx_cfg;
@@ -416,6 +413,15 @@ static inline enum dma_data_direction gve_qpl_dma_dir(struct gve_priv *priv,
 		return DMA_TO_DEVICE;
 	else
 		return DMA_FROM_DEVICE;
+}
+
+/* Returns true if the max mtu allows page recycling */
+static inline bool gve_can_recycle_pages(struct net_device *dev)
+{
+	/* We can't recycle the pages if we can't fit a packet into half a
+	 * page.
+	 */
+	return dev->max_mtu <= PAGE_SIZE / 2;
 }
 
 /* buffers */

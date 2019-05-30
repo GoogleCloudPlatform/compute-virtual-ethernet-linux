@@ -211,5 +211,5 @@ int gve_adminq_destroy_rx_queue(struct gve_priv *priv, u32 queue_id);
 int gve_adminq_register_page_list(struct gve_priv *priv,
 				  struct gve_queue_page_list *qpl);
 int gve_adminq_unregister_page_list(struct gve_priv *priv, u32 page_list_id);
-int gve_adminq_set_mtu(struct gve_priv *priv);
+int gve_adminq_set_mtu(struct gve_priv *priv, u64 mtu);
 #endif /* _GVE_ADMINQ_H */

@@ -303,10 +303,7 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 		skb = gve_rx_copy(dev, napi, page_info, len);
 		goto have_skb;
 	}
-	if (unlikely(priv->max_mtu > PAGE_SIZE / 2)) {
-		/* We can't recycle the pages if we can't fit a packet into
-		 * half a page.
-		 */
+	if (unlikely(!gve_can_recycle_pages(dev))) {
 		skb = gve_rx_copy(dev, napi, page_info, len);
 		goto have_skb;
 	}

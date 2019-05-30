@@ -302,13 +302,13 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	priv->max_registered_pages =
 				be64_to_cpu(descriptor->max_registered_pages);
 	mtu = be16_to_cpu(descriptor->mtu);
-	if (mtu < GVE_MIN_MTU) {
+	if (mtu < ETH_MIN_MTU) {
 		netif_err(priv, drv, priv->dev, "MTU %d below minimum MTU\n",
 			  mtu);
 		err = -EINVAL;
 		goto free_device_descriptor;
 	}
-	priv->max_mtu = mtu;
+	priv->dev->max_mtu = mtu;
 	priv->num_event_counters = be16_to_cpu(descriptor->counters);
 	ether_addr_copy(priv->dev->dev_addr, descriptor->mac);
 	mac = descriptor->mac;
@@ -373,7 +373,7 @@ int gve_adminq_unregister_page_list(struct gve_priv *priv, u32 page_list_id)
 	return gve_adminq_execute_cmd(priv, &cmd);
 }
 
-int gve_adminq_set_mtu(struct gve_priv *priv)
+int gve_adminq_set_mtu(struct gve_priv *priv, u64 mtu)
 {
 	union gve_adminq_command cmd;
 
@@ -381,7 +381,7 @@ int gve_adminq_set_mtu(struct gve_priv *priv)
 	cmd.opcode = cpu_to_be32(GVE_ADMINQ_SET_DRIVER_PARAMETER);
 	cmd.set_driver_param = (struct gve_adminq_set_driver_parameter) {
 		.parameter_type = cpu_to_be32(GVE_SET_PARAM_MTU),
-		.parameter_value = cpu_to_be64(priv->dev->mtu),
+		.parameter_value = cpu_to_be64(mtu),
 	};
 
 	return gve_adminq_execute_cmd(priv, &cmd);

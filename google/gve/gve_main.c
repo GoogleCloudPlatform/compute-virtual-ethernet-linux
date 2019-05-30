@@ -629,11 +629,6 @@ void gve_schedule_reset(struct gve_priv *priv)
 
 static int gve_change_mtu(struct net_device *dev, int new_mtu)
 {
-	struct gve_priv *priv = netdev_priv(dev);
-
-	if (new_mtu < GVE_MIN_MTU || new_mtu > priv->max_mtu)
-		return -EINVAL;
-
 	dev->mtu = new_mtu;
 	return 0;
 }
@@ -891,16 +886,16 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 			"Could not get device information: err=%d\n", err);
 		goto err;
 	}
-	if (priv->max_mtu > PAGE_SIZE) {
-		priv->max_mtu = PAGE_SIZE;
-		err = gve_adminq_set_mtu(priv);
+	if (priv->dev->max_mtu > PAGE_SIZE) {
+		priv->dev->max_mtu = PAGE_SIZE;
+		err = gve_adminq_set_mtu(priv, priv->dev->mtu);
 		if (err) {
 			dev_err(&priv->pdev->dev,
 				"Could not set mtu: err = %d\n", err);
 			goto err;
 		}
 	}
-	priv->dev->mtu = priv->max_mtu;
+	priv->dev->mtu = priv->dev->max_mtu;
 	num_ntfy = pci_msix_vec_count(priv->pdev);
 	if (num_ntfy <= 0) {
 		dev_err(&priv->pdev->dev,
@@ -1109,6 +1104,7 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	dev->hw_features |= NETIF_F_RXHASH;
 	dev->features = dev->hw_features;
 	dev->watchdog_timeo = 5 * HZ;
+	dev->min_mtu = ETH_MIN_MTU;
 	netif_carrier_off(dev);
 
 	priv = netdev_priv(dev);

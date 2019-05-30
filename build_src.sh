@@ -167,8 +167,8 @@ cp "$MAINDIR"/"$MAKEFILE" "$DESTDIR"/Makefile;
 
 if [ "$TARGET" == "oot" ] || [ "$TARGET" == "cos" ]; then
  for f in $(ls "$PATCHDIR"/*.cocci); do
-  $SPATCH "$f" "$DESTDIR"/*.c --in-place;
-  $SPATCH "$f" "$DESTDIR"/*.h --in-place;
+  $SPATCH "$f" "$DESTDIR"/*.c --in-place --no-includes;
+  $SPATCH "$f" "$DESTDIR"/*.h --in-place --no-includes;
  done
  cp "$MAINDIR"/LICENSE "$DESTDIR"/LICENSE
 fi
