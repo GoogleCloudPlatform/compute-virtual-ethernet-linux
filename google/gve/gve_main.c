@@ -146,7 +146,7 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 		goto abort_with_msix_vectors;
 	}
 	if (vecs_enabled != num_vecs_requested) {
-		int new_num_ntfy_blks = vecs_enabled - 1;
+		int new_num_ntfy_blks = (vecs_enabled - 1) & ~0x1;
 		int vecs_per_type = new_num_ntfy_blks / 2;
 		int vecs_left = new_num_ntfy_blks % 2;
 
@@ -494,8 +494,10 @@ int gve_alloc_page(struct device *dev, struct page **page, dma_addr_t *dma,
 	if (!page)
 		return -ENOMEM;
 	*dma = dma_map_page(dev, *page, 0, PAGE_SIZE, dir);
-	if (dma_mapping_error(dev, *dma))
+	if (dma_mapping_error(dev, *dma)) {
+		put_page(*page);
 		return -ENOMEM;
+	}
 	return 0;
 }
 
@@ -596,7 +598,7 @@ static int gve_alloc_qpls(struct gve_priv *priv)
 	return 0;
 
 free_qpls:
-	for (j = 0; j < i; j++)
+	for (j = 0; j <= i; j++)
 		gve_free_queue_page_list(priv, j);
 	kfree(priv->qpls);
 	return err;
@@ -615,6 +617,10 @@ static void gve_free_qpls(struct gve_priv *priv)
 	kfree(priv->qpls);
 }
 
+/* Use this to schedule a reset when the device is capable of continuing
+ * to handle other requests in its current state. If it is not, do a reset
+ * in thread instead.
+ */
 void gve_schedule_reset(struct gve_priv *priv)
 {
 	gve_set_do_reset(priv);
@@ -646,39 +652,45 @@ static int gve_open(struct net_device *dev)
 	if (err)
 		return err;
 	err = gve_alloc_rings(priv);
-	if (err) {
-		gve_free_qpls(priv);
-		return err;
-	}
+	if (err)
+		goto free_qpls;
 
 	err = netif_set_real_num_tx_queues(dev, priv->tx_cfg.num_queues);
-	if (err) {
-		gve_free_rings(priv);
-		gve_free_qpls(priv);
-		return err;
-	}
+	if (err)
+		goto free_rings;
 	err = netif_set_real_num_rx_queues(dev, priv->rx_cfg.num_queues);
-	if (err) {
-		gve_free_rings(priv);
-		gve_free_qpls(priv);
-		return err;
-	}
+	if (err)
+		goto free_rings;
 
 	err = gve_register_qpls(priv);
-	if (err) {
-		gve_schedule_reset(priv);
-		return err;
-	}
+	if (err)
+		goto reset;
 	err = gve_create_rings(priv);
-	if (err) {
-		gve_schedule_reset(priv);
-		return err;
-	}
+	if (err)
+		goto reset;
 	gve_set_device_rings_ok(priv);
 
 	gve_turnup(priv);
 	netif_carrier_on(dev);
 	return 0;
+
+free_rings:
+	gve_free_rings(priv);
+free_qpls:
+	gve_free_qpls(priv);
+	return err;
+reset:
+	/* This must have been called from a reset due to the rtnl lock
+	 * so just return at this point.
+	 */
+	if (gve_get_reset_in_progress(priv))
+		return err;
+	/* Otherwise reset before returning */
+	gve_reset_and_teardown(priv, true);
+	/* if this fails there is nothing we can do so just ignore the return */
+	gve_reset_recovery(priv, false);
+	/* return the original error */
+	return err;
 }
 
 static int gve_close(struct net_device *dev)
@@ -907,8 +919,8 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 	/* gvnic has one Notification Block per MSI-x vector, except for the
 	 * management vector
 	 */
-	priv->num_ntfy_blks = num_ntfy - 1;
-	priv->mgmt_msix_idx = num_ntfy - 1;
+	priv->num_ntfy_blks = (num_ntfy - 1) & ~0x1;
+	priv->mgmt_msix_idx = priv->num_ntfy_blks;
 
 	priv->tx_cfg.max_queues =
 		min_t(int, priv->tx_cfg.max_queues, priv->num_ntfy_blks / 2);
