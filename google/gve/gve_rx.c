@@ -67,8 +67,8 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 	slots = rx->data.mask + 1;
 	size = slots * PAGE_SIZE;
 
-	rx->data.page_info = kvzalloc(slots,
-				      sizeof(*rx->data.page_info));
+	rx->data.page_info = kvzalloc(slots *
+				      sizeof(*rx->data.page_info), GFP_KERNEL);
 	if (!rx->data.page_info)
 		return -ENOMEM;
 
