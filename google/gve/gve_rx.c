@@ -186,8 +186,9 @@ int gve_rx_alloc_rings(struct gve_priv *priv)
 	for (i = 0; i < priv->rx_cfg.num_queues; i++) {
 		err = gve_rx_alloc_ring(priv, i);
 		if (err) {
-			netdev_err(priv->dev, "alloc failed for rx ring=%d\n",
-				   i);
+			netif_err(priv, drv, priv->dev,
+				  "Failed to alloc rx ring=%d: err=%d\n",
+				  i, err);
 			break;
 		}
 	}

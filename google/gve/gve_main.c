@@ -124,7 +124,6 @@ int gve_napi_poll(struct napi_struct *napi, int budget)
 static int gve_alloc_notify_blocks(struct gve_priv *priv)
 {
 	int num_vecs_requested = priv->num_ntfy_blks + 1;
-	struct device *hdev = &priv->pdev->dev;
 	char *name = priv->dev->name;
 	unsigned int active_cpus;
 	int vecs_enabled;
@@ -140,7 +139,7 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 	vecs_enabled = pci_enable_msix_range(priv->pdev, priv->msix_vectors,
 					     GVE_MIN_MSIX, num_vecs_requested);
 	if (vecs_enabled < 0) {
-		dev_err(hdev, "Could not enable min msix %d/%d\n",
+		dev_err(&priv->pdev->dev, "Could not enable min msix %d/%d\n",
 			GVE_MIN_MSIX, vecs_enabled);
 		err = vecs_enabled;
 		goto abort_with_msix_vectors;
@@ -155,7 +154,8 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 						vecs_per_type);
 		priv->rx_cfg.max_queues = min_t(int, priv->rx_cfg.max_queues,
 						vecs_per_type + vecs_left);
-		dev_err(hdev, "Could not enable desired msix, only enabled %d, adjusting tx max queues to %d, and rx max queues to %d\n",
+		dev_err(&priv->pdev->dev,
+			"Could not enable desired msix, only enabled %d, adjusting tx max queues to %d, and rx max queues to %d\n",
 			vecs_enabled, priv->tx_cfg.max_queues,
 			priv->rx_cfg.max_queues);
 		if (priv->tx_cfg.num_queues > priv->tx_cfg.max_queues)
@@ -172,7 +172,7 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 	err = request_irq(priv->msix_vectors[priv->mgmt_msix_idx].vector,
 			  gve_mgmnt_intr, 0, priv->mgmt_msix_name, priv);
 	if (err) {
-		dev_err(hdev, "Did not receive management vector.\n");
+		dev_err(&priv->pdev->dev, "Did not receive management vector.\n");
 		goto abort_with_msix_enabled;
 	}
 	priv->ntfy_blocks =
@@ -181,7 +181,6 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 				   sizeof(*priv->ntfy_blocks),
 				   &priv->ntfy_block_bus, GFP_KERNEL);
 	if (!priv->ntfy_blocks) {
-		dev_err(hdev, "Failed to allocate notification blocks\n");
 		err = -ENOMEM;
 		goto abort_with_mgmt_vector;
 	}
@@ -196,7 +195,8 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 		err = request_irq(priv->msix_vectors[msix_idx].vector,
 				  gve_intr, 0, block->name, block);
 		if (err) {
-			dev_err(hdev, "Failed to receive msix vector %d\n", i);
+			dev_err(&priv->pdev->dev,
+				"Failed to receive msix vector %d\n", i);
 			goto abort_with_some_ntfy_blocks;
 		}
 		irq_set_affinity_hint(priv->msix_vectors[msix_idx].vector,
@@ -288,8 +288,12 @@ static void gve_teardown_device_resources(struct gve_priv *priv)
 	/* Tell device its resources are being freed */
 	if (gve_get_device_resources_ok(priv)) {
 		err = gve_adminq_deconfigure_device_resources(priv);
-		if (err)
+		if (err) {
+			dev_err(&priv->pdev->dev,
+				"Could not deconfigure device resources: err=%d\n",
+				err);
 			gve_trigger_reset(priv);
+		}
 	}
 	gve_free_counter_array(priv);
 	gve_free_notify_blocks(priv);
@@ -341,8 +345,12 @@ static int gve_unregister_qpls(struct gve_priv *priv)
 	for (i = 0; i < num_qpls; i++) {
 		err = gve_adminq_unregister_page_list(priv, priv->qpls[i].id);
 		/* This failure will trigger a reset - no need to clean up */
-		if (err)
+		if (err) {
+			netif_err(priv, drv, priv->dev,
+				  "Failed to unregister queue page list %d\n",
+				  priv->qpls[i].id);
 			return err;
+		}
 	}
 	return 0;
 }
@@ -510,8 +518,13 @@ static int gve_alloc_queue_page_list(struct gve_priv *priv, u32 id,
 	int err;
 	int i;
 
-	if (pages + priv->num_registered_pages > priv->max_registered_pages)
+	if (pages + priv->num_registered_pages > priv->max_registered_pages) {
+		netif_err(priv, drv, priv->dev,
+			  "Reached max number of registered pages %llu > %llu\n",
+			  pages + priv->num_registered_pages,
+			  priv->max_registered_pages);
 		return -EINVAL;
+	}
 
 	qpl->id = id;
 	qpl->num_entries = pages;
@@ -754,8 +767,8 @@ int gve_adjust_queues(struct gve_priv *priv,
 
 	return 0;
 err:
-	dev_err(&priv->pdev->dev,
-		"Adjust queues failed! !!! DISABLING ALL QUEUES !!!\n");
+	netif_err(priv, drv, priv->dev,
+		  "Adjust queues failed! !!! DISABLING ALL QUEUES !!!\n");
 	gve_turndown(priv);
 	return err;
 }
@@ -876,8 +889,11 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 
 	/* Set up the adminq */
 	err = gve_adminq_alloc(&priv->pdev->dev, priv);
-	if (err)
+	if (err) {
+		dev_err(&priv->pdev->dev,
+			"Failed to alloc admin queue: err=%d\n", err);
 		return err;
+	}
 
 	if (skip_describe_device)
 		goto setup_device;
@@ -893,8 +909,7 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 		priv->dev->max_mtu = PAGE_SIZE;
 		err = gve_adminq_set_mtu(priv, priv->dev->mtu);
 		if (err) {
-			dev_err(&priv->pdev->dev,
-				"Could not set mtu: err = %d\n", err);
+			netif_err(priv, drv, priv->dev, "Could not set mtu");
 			goto err;
 		}
 	}
@@ -1058,19 +1073,20 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	err = pci_set_dma_mask(pdev, DMA_BIT_MASK(64));
 	if (err) {
-		dev_err(&pdev->dev, "Failed to set dma mask: err= %d\n", err);
+		dev_err(&pdev->dev, "Failed to set dma mask: err=%d\n", err);
 		goto abort_with_pci_region;
 	}
 
 	err = pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(64));
 	if (err) {
 		dev_err(&pdev->dev,
-			"Failed to set consistent dma mask: err= %d\n", err);
+			"Failed to set consistent dma mask: err=%d\n", err);
 		goto abort_with_pci_region;
 	}
 
 	reg_bar = pci_iomap(pdev, GVE_REGISTER_BAR, 0);
 	if (!reg_bar) {
+		dev_err(&pdev->dev, "Failed to map pci bar!\n");
 		err = -ENOMEM;
 		goto abort_with_pci_region;
 	}
@@ -1122,7 +1138,7 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	gve_set_probe_in_progress(priv);
 	priv->gve_wq = alloc_ordered_workqueue("gve", 0);
 	if (!priv->gve_wq) {
-		dev_err(&pdev->dev, "could not allocate workqueue");
+		dev_err(&pdev->dev, "Could not allocate workqueue");
 		err = -ENOMEM;
 		goto abort_with_netdev;
 	}

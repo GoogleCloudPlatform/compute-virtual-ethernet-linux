@@ -30,8 +30,11 @@ static int gve_tx_fifo_init(struct gve_priv *priv, struct gve_tx_fifo *fifo)
 {
 	fifo->base = vmap(fifo->qpl->pages, fifo->qpl->num_entries, VM_MAP,
 			  PAGE_KERNEL);
-	if (unlikely(!fifo->base))
+	if (unlikely(!fifo->base)) {
+		netif_err(priv, drv, priv->dev, "Failed to vmap fifo, qpl_id = %d\n",
+			  fifo->qpl->id);
 		return -ENOMEM;
+	}
 
 	fifo->size = fifo->qpl->num_entries * PAGE_SIZE;
 	atomic_set(&fifo->available, fifo->size);
@@ -243,8 +246,9 @@ int gve_tx_alloc_rings(struct gve_priv *priv)
 	for (i = 0; i < priv->tx_cfg.num_queues; i++) {
 		err = gve_tx_alloc_ring(priv, i);
 		if (err) {
-			netdev_err(priv->dev, "alloc failed for tx ring=%d\n",
-				   i);
+			netif_err(priv, drv, priv->dev,
+				  "Failed to alloc tx ring=%d: err=%d\n",
+				  i, err);
 			break;
 		}
 	}
