@@ -20,7 +20,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		"0.1.0"
+#define GVE_VERSION		"1.0.0"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 const char gve_version_str[] = GVE_VERSION;
@@ -690,6 +690,7 @@ free_rings:
 free_qpls:
 	gve_free_qpls(priv);
 	return err;
+
 reset:
 	/* This must have been called from a reset due to the rtnl lock
 	 * so just return at this point.
@@ -724,6 +725,7 @@ static int gve_close(struct net_device *dev)
 	gve_free_rings(priv);
 	gve_free_qpls(priv);
 	return 0;
+
 err:
 	/* This must have been called from a reset due to the rtnl lock
 	 * so just return at this point.

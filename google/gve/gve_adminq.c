@@ -11,6 +11,7 @@
 #include "gve_register.h"
 
 #define GVE_MAX_ADMINQ_RELEASE_CHECK	500
+#define GVE_ADMINQ_SLEEP_LEN		20
 #define GVE_MAX_ADMINQ_EVENT_COUNTER_CHECK	100
 
 int gve_adminq_alloc(struct device *dev, struct gve_priv *priv)
@@ -44,7 +45,7 @@ void gve_adminq_release(struct gve_priv *priv)
 			gve_clear_admin_queue_ok(priv);
 			return;
 		}
-		msleep(20);
+		msleep(GVE_ADMINQ_SLEEP_LEN);
 	}
 	/* If this is reached the device is unrecoverable and still holding
 	 * memory. Anything other than a BUG risks memory corruption.
@@ -76,7 +77,7 @@ static bool gve_adminq_wait_for_cmd(struct gve_priv *priv, u32 prod_cnt)
 		if (be32_to_cpu(readl(&priv->reg_bar0->adminq_event_counter))
 		    == prod_cnt)
 			return true;
-		msleep(20);
+		msleep(GVE_ADMINQ_SLEEP_LEN);
 	}
 
 	return false;
@@ -149,9 +150,9 @@ int gve_adminq_execute_cmd(struct gve_priv *priv,
 	return gve_adminq_parse_err(&priv->pdev->dev, status);
 }
 
-/* The device specifies that the manegment vector can either be the first irq
+/* The device specifies that the managment vector can either be the first irq
  * or the last irq. ntfy_blk_msix_base_idx indicates the first irq assigned to
- * the ntfy blks. It if is 0 then the manegment vector is last, if it is 1 then
+ * the ntfy blks. It if is 0 then the managment vector is last, if it is 1 then
  * the management vector is first.
  *
  * gve arranges the msix vectors so that the management vector is last.
