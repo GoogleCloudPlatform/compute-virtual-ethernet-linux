@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (GPL-2.0 OR MIT)
  * Google virtual Ethernet (gve) driver
  *
- * Copyright (C) 2015-2018 Google, Inc.
+ * Copyright (C) 2015-2019 Google, Inc.
  */
 
 #ifndef _GVE_ADMINQ_H
@@ -10,38 +10,40 @@
 #include "gve_size_assert.h"
 
 /* Admin queue opcodes */
-#define GVE_ADMINQ_DESCRIBE_DEVICE		0x1
-#define GVE_ADMINQ_CONFIGURE_DEVICE_RESOURCES	0x2
-#define GVE_ADMINQ_REGISTER_PAGE_LIST		0x3
-#define GVE_ADMINQ_UNREGISTER_PAGE_LIST		0x4
-#define GVE_ADMINQ_CREATE_TX_QUEUE		0x5
-#define GVE_ADMINQ_CREATE_RX_QUEUE		0x6
-#define GVE_ADMINQ_DESTROY_TX_QUEUE		0x7
-#define GVE_ADMINQ_DESTROY_RX_QUEUE		0x8
-#define GVE_ADMINQ_DECONFIGURE_DEVICE_RESOURCES	0x9
+enum gve_adminq_opcodes {
+	GVE_ADMINQ_DESCRIBE_DEVICE		= 0x1,
+	GVE_ADMINQ_CONFIGURE_DEVICE_RESOURCES	= 0x2,
+	GVE_ADMINQ_REGISTER_PAGE_LIST		= 0x3,
+	GVE_ADMINQ_UNREGISTER_PAGE_LIST		= 0x4,
+	GVE_ADMINQ_CREATE_TX_QUEUE		= 0x5,
+	GVE_ADMINQ_CREATE_RX_QUEUE		= 0x6,
+	GVE_ADMINQ_DESTROY_TX_QUEUE		= 0x7,
+	GVE_ADMINQ_DESTROY_RX_QUEUE		= 0x8,
+	GVE_ADMINQ_DECONFIGURE_DEVICE_RESOURCES	= 0x9,
+	GVE_ADMINQ_SET_DRIVER_PARAMETER		= 0xB,
+};
 
 /* Admin queue status codes */
-#define GVE_ADMINQ_COMMAND_UNSET 0x0
-#define GVE_ADMINQ_COMMAND_PASSED 0x1
-#define GVE_ADMINQ_COMMAND_ABORTED_ERROR 0XFFFFFFF0
-#define GVE_ADMINQ_COMMAND_ALREADY_EXISTS_ERROR 0XFFFFFFF1
-#define GVE_ADMINQ_COMMAND_CANCELLED_ERROR 0XFFFFFFF2
-#define GVE_ADMINQ_COMMAND_DATALOSS_ERROR 0XFFFFFFF3
-#define GVE_ADMINQ_COMMAND_DEADLINE_EXCEEDED_ERROR 0xFFFFFFF4
-#define GVE_ADMINQ_COMMAND_FAILED_PRECONDITION_ERROR 0xFFFFFFF5
-#define GVE_ADMINQ_COMMAND_INTERNAL_ERROR 0XFFFFFFF6
-#define GVE_ADMINQ_COMMAND_INVALID_ARGUMENT_ERROR 0xFFFFFFF7
-#define GVE_ADMINQ_COMMAND_NOT_FOUND_ERROR 0XFFFFFFF8
-#define GVE_ADMINQ_COMMAND_OUT_OF_RANGE_ERROR 0XFFFFFFF9
-#define GVE_ADMINQ_COMMAND_PERMISSION_DENIED_ERROR 0xFFFFFFFA
-#define GVE_ADMINQ_COMMAND_UNAUTHENTICATED_ERROR 0xFFFFFFFB
-#define GVE_ADMINQ_COMMAND_RESOURCE_EXHAUSTED_ERROR 0xFFFFFFFC
-#define GVE_ADMINQ_COMMAND_UNAVAILABLE_ERROR 0XFFFFFFFD
-#define GVE_ADMINQ_COMMAND_UNIMPLEMENTED_ERROR 0XFFFFFFFE
-#define GVE_ADMINQ_COMMAND_UNKNOWN_ERROR 0XFFFFFFFF
-
-#define GVE_MAX_ADMINQ_EVENT_COUNTER_CHECK	100
-#define GVE_MAX_ADMINQ_RELEASE_CHECK	100
+enum gve_adminq_statuses {
+	GVE_ADMINQ_COMMAND_UNSET			= 0x0,
+	GVE_ADMINQ_COMMAND_PASSED			= 0x1,
+	GVE_ADMINQ_COMMAND_ERROR_ABORTED		= 0xFFFFFFF0,
+	GVE_ADMINQ_COMMAND_ERROR_ALREADY_EXISTS		= 0xFFFFFFF1,
+	GVE_ADMINQ_COMMAND_ERROR_CANCELLED		= 0xFFFFFFF2,
+	GVE_ADMINQ_COMMAND_ERROR_DATALOSS		= 0xFFFFFFF3,
+	GVE_ADMINQ_COMMAND_ERROR_DEADLINE_EXCEEDED	= 0xFFFFFFF4,
+	GVE_ADMINQ_COMMAND_ERROR_FAILED_PRECONDITION	= 0xFFFFFFF5,
+	GVE_ADMINQ_COMMAND_ERROR_INTERNAL_ERROR		= 0xFFFFFFF6,
+	GVE_ADMINQ_COMMAND_ERROR_INVALID_ARGUMENT	= 0xFFFFFFF7,
+	GVE_ADMINQ_COMMAND_ERROR_NOT_FOUND		= 0xFFFFFFF8,
+	GVE_ADMINQ_COMMAND_ERROR_OUT_OF_RANGE		= 0xFFFFFFF9,
+	GVE_ADMINQ_COMMAND_ERROR_PERMISSION_DENIED	= 0xFFFFFFFA,
+	GVE_ADMINQ_COMMAND_ERROR_UNAUTHENTICATED	= 0xFFFFFFFB,
+	GVE_ADMINQ_COMMAND_ERROR_RESOURCE_EXHAUSTED	= 0xFFFFFFFC,
+	GVE_ADMINQ_COMMAND_ERROR_UNAVAILABLE		= 0xFFFFFFFD,
+	GVE_ADMINQ_COMMAND_ERROR_UNIMPLEMENTED		= 0xFFFFFFFE,
+	GVE_ADMINQ_COMMAND_ERROR_UNKNOWN_ERROR		= 0xFFFFFFFF,
+};
 
 #define GVE_ADMINQ_DEVICE_DESCRIPTOR_VERSION 1
 
@@ -156,6 +158,18 @@ struct gve_adminq_destroy_rx_queue {
 
 GVE_ASSERT_SIZE(struct, gve_adminq_destroy_rx_queue, 4);
 
+/* GVE Set Driver Parameter Types */
+enum gve_set_driver_param_types {
+	GVE_SET_PARAM_MTU	= 0x1,
+};
+
+struct gve_adminq_set_driver_parameter {
+	__be32 parameter_type;
+	__be64 parameter_value;
+};
+
+GVE_ASSERT_SIZE(struct, gve_adminq_set_driver_parameter, 16);
+
 union gve_adminq_command {
 	struct {
 		__be32 opcode;
@@ -170,6 +184,7 @@ union gve_adminq_command {
 			struct gve_adminq_describe_device describe_device;
 			struct gve_adminq_register_page_list reg_page_list;
 			struct gve_adminq_unregister_page_list unreg_page_list;
+			struct gve_adminq_set_driver_parameter set_driver_param;
 		};
 	};
 	u8 reserved[64];
@@ -177,17 +192,17 @@ union gve_adminq_command {
 
 GVE_ASSERT_SIZE(union, gve_adminq_command, 64);
 
-int gve_alloc_adminq(struct device *dev, struct gve_priv *priv);
-void gve_free_adminq(struct device *dev, struct gve_priv *priv);
-void gve_release_adminq(struct gve_priv *priv);
-int gve_execute_adminq_cmd(struct gve_priv *priv,
+int gve_adminq_alloc(struct device *dev, struct gve_priv *priv);
+void gve_adminq_free(struct device *dev, struct gve_priv *priv);
+void gve_adminq_release(struct gve_priv *priv);
+int gve_adminq_execute_cmd(struct gve_priv *priv,
 			   union gve_adminq_command *cmd_orig);
 int gve_adminq_describe_device(struct gve_priv *priv);
 int gve_adminq_configure_device_resources(struct gve_priv *priv,
 					  dma_addr_t counter_array_bus_addr,
-					  int num_counters,
+					  u32 num_counters,
 					  dma_addr_t db_array_bus_addr,
-					  int num_ntfy_blks);
+					  u32 num_ntfy_blks);
 int gve_adminq_deconfigure_device_resources(struct gve_priv *priv);
 int gve_adminq_create_tx_queue(struct gve_priv *priv, u32 queue_id);
 int gve_adminq_destroy_tx_queue(struct gve_priv *priv, u32 queue_id);
@@ -196,4 +211,5 @@ int gve_adminq_destroy_rx_queue(struct gve_priv *priv, u32 queue_id);
 int gve_adminq_register_page_list(struct gve_priv *priv,
 				  struct gve_queue_page_list *qpl);
 int gve_adminq_unregister_page_list(struct gve_priv *priv, u32 page_list_id);
+int gve_adminq_set_mtu(struct gve_priv *priv, u64 mtu);
 #endif /* _GVE_ADMINQ_H */

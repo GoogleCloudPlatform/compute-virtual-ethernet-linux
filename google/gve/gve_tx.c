@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: (GPL-2.0 OR MIT)
 /* Google virtual Ethernet (gve) driver
  *
- * Copyright (C) 2015-2018 Google, Inc.
+ * Copyright (C) 2015-2019 Google, Inc.
  */
 
 #include "gve.h"
@@ -18,7 +18,7 @@ static inline void gve_tx_put_doorbell(struct gve_priv *priv,
 	writel(val, &priv->db_bar2[be32_to_cpu(q_resources->db_index)]);
 }
 
-/* gvnic can only transmit from a per-queue Registered Segment.
+/* gvnic can only transmit from a Registered Segment.
  * We copy skb payloads into the registered segment before writing Tx
  * descriptors and ringing the Tx doorbell.
  *
@@ -30,8 +30,11 @@ static int gve_tx_fifo_init(struct gve_priv *priv, struct gve_tx_fifo *fifo)
 {
 	fifo->base = vmap(fifo->qpl->pages, fifo->qpl->num_entries, VM_MAP,
 			  PAGE_KERNEL);
-	if (unlikely(!fifo->base))
+	if (unlikely(!fifo->base)) {
+		netif_err(priv, drv, priv->dev, "Failed to vmap fifo, qpl_id = %d\n",
+			  fifo->qpl->id);
 		return -ENOMEM;
+	}
 
 	fifo->size = fifo->qpl->num_entries * PAGE_SIZE;
 	atomic_set(&fifo->available, fifo->size);
@@ -58,8 +61,7 @@ static bool gve_tx_fifo_can_alloc(struct gve_tx_fifo *fifo, size_t bytes)
 	return (atomic_read(&fifo->available) <= bytes) ? false : true;
 }
 
-/**
- * gve_tx_alloc_fifo - Allocate fragment(s) from Tx FIFO
+/* gve_tx_alloc_fifo - Allocate fragment(s) from Tx FIFO
  * @fifo: FIFO to allocate from
  * @bytes: Allocation size
  * @iov: Scatter-gather elements to fill with allocation fragment base/len
@@ -120,8 +122,7 @@ static int gve_tx_alloc_fifo(struct gve_tx_fifo *fifo, size_t bytes,
 	return nfrags;
 }
 
-/**
- * gve_tx_free_fifo - Return space to Tx FIFO
+/* gve_tx_free_fifo - Return space to Tx FIFO
  * @fifo: FIFO to return fragments to
  * @bytes: Bytes to free
  */
@@ -133,25 +134,24 @@ static void gve_tx_free_fifo(struct gve_tx_fifo *fifo, size_t bytes)
 static void gve_tx_remove_from_block(struct gve_priv *priv, int queue_idx)
 {
 	struct gve_notify_block *block =
-			&priv->ntfy_blocks[gve_tx_ntfy_idx(priv, queue_idx)];
+			&priv->ntfy_blocks[gve_tx_idx_to_ntfy(priv, queue_idx)];
 
 	block->tx = NULL;
-
-	/* If there are no more rings in this block disable napi */
-	if (!block->rx)
-		gve_remove_napi(block);
 }
+
+static int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
+			     u32 to_do, bool try_to_wake);
 
 void gve_tx_free_ring(struct gve_priv *priv, int idx)
 {
 	struct gve_tx_ring *tx = &priv->tx[idx];
 	struct device *hdev = &priv->pdev->dev;
 	size_t bytes;
-	int slots;
+	u32 slots;
 
 	gve_tx_remove_from_block(priv, idx);
 	slots = tx->mask + 1;
-	gve_clean_tx_done(priv, tx, tx->req);
+	gve_clean_tx_done(priv, tx, tx->req, false);
 	netdev_tx_reset_queue(tx->netdev_txq);
 
 	dma_free_coherent(hdev, sizeof(*tx->q_resources),
@@ -174,20 +174,19 @@ void gve_tx_free_ring(struct gve_priv *priv, int idx)
 
 static void gve_tx_add_to_block(struct gve_priv *priv, int queue_idx)
 {
-	int ntfy_idx = gve_tx_ntfy_idx(priv, queue_idx);
+	int ntfy_idx = gve_tx_idx_to_ntfy(priv, queue_idx);
 	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 	struct gve_tx_ring *tx = &priv->tx[queue_idx];
 
 	block->tx = tx;
 	tx->ntfy_id = ntfy_idx;
-	gve_add_napi(priv, block);
 }
 
 static int gve_tx_alloc_ring(struct gve_priv *priv, int idx)
 {
 	struct gve_tx_ring *tx = &priv->tx[idx];
 	struct device *hdev = &priv->pdev->dev;
-	int slots = priv->tx_desc_cnt;
+	u32 slots = priv->tx_desc_cnt;
 	size_t bytes;
 
 	/* Make sure everything is zeroed to start */
@@ -203,7 +202,7 @@ static int gve_tx_alloc_ring(struct gve_priv *priv, int idx)
 
 	/* alloc tx queue */
 	bytes = sizeof(*tx->desc) * slots;
-	tx->desc = dma_zalloc_coherent(hdev, bytes, &tx->bus, GFP_KERNEL);
+	tx->desc = dma_alloc_coherent(hdev, bytes, &tx->bus, GFP_KERNEL);
 	if (!tx->desc)
 		goto abort_with_info;
 
@@ -214,10 +213,10 @@ static int gve_tx_alloc_ring(struct gve_priv *priv, int idx)
 		goto abort_with_desc;
 
 	tx->q_resources =
-		dma_zalloc_coherent(hdev,
-				    sizeof(*tx->q_resources),
-				    &tx->q_resources_bus,
-				    GFP_KERNEL);
+		dma_alloc_coherent(hdev,
+				   sizeof(*tx->q_resources),
+				   &tx->q_resources_bus,
+				   GFP_KERNEL);
 	if (!tx->q_resources)
 		goto abort_with_fifo;
 
@@ -247,8 +246,9 @@ int gve_tx_alloc_rings(struct gve_priv *priv)
 	for (i = 0; i < priv->tx_cfg.num_queues; i++) {
 		err = gve_tx_alloc_ring(priv, i);
 		if (err) {
-			netdev_err(priv->dev, "alloc failed for tx ring=%d\n",
-				   i);
+			netif_err(priv, drv, priv->dev,
+				  "Failed to alloc tx ring=%d: err=%d\n",
+				  i, err);
 			break;
 		}
 	}
@@ -270,15 +270,14 @@ void gve_tx_free_rings(struct gve_priv *priv)
 		gve_tx_free_ring(priv, i);
 }
 
-/**
- * gve_tx_avail - Calculates the number of slots available in the ring
+/* gve_tx_avail - Calculates the number of slots available in the ring
  * @tx: tx ring to check
  *
  * Returns the number of slots available
  *
  * The capacity of the queue is mask + 1. We don't need to reserve an entry.
  **/
-static inline int gve_tx_avail(struct gve_tx_ring *tx)
+static inline u32 gve_tx_avail(struct gve_tx_ring *tx)
 {
 	return tx->mask + 1 - (tx->req - tx->done);
 }
@@ -302,19 +301,28 @@ static inline int gve_skb_fifo_bytes_required(struct gve_tx_ring *tx,
 	return bytes;
 }
 
-/* Check if sufficient resources (descriptor ring space, FIFO space) are
- * available to transmit an SKB.
+/* The most descriptors we could need are 3 - 1 for the headers, 1 for
+ * the beginning of the payload at the end of the FIFO, and 1 if the
+ * payload wraps to the beginning of the FIFO.
  */
+#define MAX_TX_DESC_NEEDED	3
+
+/* Check if sufficient resources (descriptor ring space, FIFO space) are
+ * available to transmit the given number of bytes.
+ */
+static inline bool gve_can_tx(struct gve_tx_ring *tx, int bytes_required)
+{
+	return (gve_tx_avail(tx) >= MAX_TX_DESC_NEEDED &&
+		gve_tx_fifo_can_alloc(&tx->tx_fifo, bytes_required));
+}
+
+/* Stops the queue if the skb cannot be transmitted. */
 static int gve_maybe_stop_tx(struct gve_tx_ring *tx, struct sk_buff *skb)
 {
-	int nsegs_required = 3;
 	int bytes_required;
-	bool can_alloc;
 
 	bytes_required = gve_skb_fifo_bytes_required(tx, skb);
-	can_alloc = gve_tx_fifo_can_alloc(&tx->tx_fifo, bytes_required);
-
-	if (likely(gve_tx_avail(tx) >= nsegs_required) && likely(can_alloc))
+	if (likely(gve_can_tx(tx, bytes_required)))
 		return 0;
 
 	/* No space, so stop the queue */
@@ -334,8 +342,7 @@ static int gve_maybe_stop_tx(struct gve_tx_ring *tx, struct sk_buff *skb)
 	 *   netif_tx_stop_queue()
 	 *   Need to check again for space here!
 	 */
-	can_alloc = gve_tx_fifo_can_alloc(&tx->tx_fifo, bytes_required);
-	if (likely(gve_tx_avail(tx) < nsegs_required) || likely(!can_alloc))
+	if (likely(!gve_can_tx(tx, bytes_required)))
 		return -EBUSY;
 
 	netif_tx_start_queue(tx->netdev_txq);
@@ -343,17 +350,56 @@ static int gve_maybe_stop_tx(struct gve_tx_ring *tx, struct sk_buff *skb)
 	return 0;
 }
 
+static void gve_tx_fill_pkt_desc(union gve_tx_desc *pkt_desc,
+				 struct sk_buff *skb, bool is_gso,
+				 int l4_hdr_offset, u32 desc_cnt,
+				 u16 hlen, u64 addr)
+{
+	/* l4_hdr_offset and csum_offset are in units of 16-bit words */
+	if (is_gso) {
+		pkt_desc->pkt.type_flags = GVE_TXD_TSO | GVE_TXF_L4CSUM;
+		pkt_desc->pkt.l4_csum_offset = skb->csum_offset >> 1;
+		pkt_desc->pkt.l4_hdr_offset = l4_hdr_offset >> 1;
+	} else if (likely(skb->ip_summed == CHECKSUM_PARTIAL)) {
+		pkt_desc->pkt.type_flags = GVE_TXD_STD | GVE_TXF_L4CSUM;
+		pkt_desc->pkt.l4_csum_offset = skb->csum_offset >> 1;
+		pkt_desc->pkt.l4_hdr_offset = l4_hdr_offset >> 1;
+	} else {
+		pkt_desc->pkt.type_flags = GVE_TXD_STD;
+		pkt_desc->pkt.l4_csum_offset = 0;
+		pkt_desc->pkt.l4_hdr_offset = 0;
+	}
+	pkt_desc->pkt.desc_cnt = desc_cnt;
+	pkt_desc->pkt.len = cpu_to_be16(skb->len);
+	pkt_desc->pkt.seg_len = cpu_to_be16(hlen);
+	pkt_desc->pkt.seg_addr = cpu_to_be64(addr);
+}
+
+static void gve_tx_fill_seg_desc(union gve_tx_desc *seg_desc,
+				 struct sk_buff *skb, bool is_gso,
+				 u16 len, u64 addr)
+{
+	seg_desc->seg.type_flags = GVE_TXD_SEG;
+	if (is_gso) {
+		if (skb_is_gso_v6(skb))
+			seg_desc->seg.type_flags |= GVE_TXSF_IPV6;
+		seg_desc->seg.l3_offset = skb_network_offset(skb) >> 1;
+		seg_desc->seg.mss = cpu_to_be16(skb_shinfo(skb)->gso_size);
+	}
+	seg_desc->seg.seg_len = cpu_to_be16(len);
+	seg_desc->seg.seg_addr = cpu_to_be64(addr);
+}
+
 static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 {
-	int pad_bytes, hlen, hdr_nfrags, payload_nfrags;
+	int pad_bytes, hlen, hdr_nfrags, payload_nfrags, l4_hdr_offset;
 	union gve_tx_desc *pkt_desc, *seg_desc;
 	struct gve_tx_buffer_state *info;
 	bool is_gso = skb_is_gso(skb);
-	int idx = tx->req & tx->mask;
+	u32 idx = tx->req & tx->mask;
 	int payload_iov = 2;
-	int l4_hdr_offset;
 	int copy_offset;
-	int next_idx;
+	u32 next_idx;
 	int i;
 
 	info = &tx->info[idx];
@@ -379,27 +425,12 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 	payload_nfrags = gve_tx_alloc_fifo(&tx->tx_fifo, skb->len - hlen,
 					   &info->iov[payload_iov]);
 
-	/* l4_hdr_offset and csum_offset are in units of 16-bit words */
-	if (is_gso) {
-		pkt_desc->pkt.type_flags = GVE_TXD_TSO | GVE_TXF_L4CSUM;
-		pkt_desc->pkt.l4_csum_offset = skb->csum_offset >> 1;
-		pkt_desc->pkt.l4_hdr_offset = l4_hdr_offset >> 1;
-	} else if (likely(skb->ip_summed == CHECKSUM_PARTIAL)) {
-		pkt_desc->pkt.type_flags = GVE_TXD_STD | GVE_TXF_L4CSUM;
-		pkt_desc->pkt.l4_csum_offset = skb->csum_offset >> 1;
-		pkt_desc->pkt.l4_hdr_offset = l4_hdr_offset >> 1;
-	} else {
-		pkt_desc->pkt.type_flags = GVE_TXD_STD;
-		pkt_desc->pkt.l4_csum_offset = 0;
-		pkt_desc->pkt.l4_hdr_offset = 0;
-	}
-	pkt_desc->pkt.desc_cnt = 1 + payload_nfrags;
-	pkt_desc->pkt.len = cpu_to_be16(skb->len);
-	pkt_desc->pkt.seg_len = cpu_to_be16(hlen);
-	pkt_desc->pkt.seg_addr =
-		cpu_to_be64(info->iov[hdr_nfrags - 1].iov_offset);
+	gve_tx_fill_pkt_desc(pkt_desc, skb, is_gso, l4_hdr_offset,
+			     1 + payload_nfrags, hlen,
+			     info->iov[hdr_nfrags - 1].iov_offset);
 
-	skb_copy_bits(skb, 0, tx->tx_fifo.base + info->iov[hdr_nfrags - 1].iov_offset,
+	skb_copy_bits(skb, 0,
+		      tx->tx_fifo.base + info->iov[hdr_nfrags - 1].iov_offset,
 		      hlen);
 	copy_offset = hlen;
 
@@ -407,17 +438,9 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 		next_idx = (tx->req + 1 + i - payload_iov) & tx->mask;
 		seg_desc = &tx->desc[next_idx];
 
-		seg_desc->seg.type_flags = GVE_TXD_SEG;
-		if (is_gso) {
-			if (skb_is_gso_v6(skb))
-				seg_desc->seg.type_flags |= GVE_TXSF_IPV6;
-			seg_desc->seg.l3_offset = skb_network_offset(skb) >> 1;
-			seg_desc->seg.mss =
-					 cpu_to_be16(skb_shinfo(skb)->gso_size);
-		}
-		seg_desc->seg.seg_len = cpu_to_be16(info->iov[i].iov_len);
-		seg_desc->seg.seg_addr =
-			cpu_to_be64(info->iov[i].iov_offset);
+		gve_tx_fill_seg_desc(seg_desc, skb, is_gso,
+				     info->iov[i].iov_len,
+				     info->iov[i].iov_offset);
 
 		skb_copy_bits(skb, copy_offset,
 			      tx->tx_fifo.base + info->iov[i].iov_offset,
@@ -447,7 +470,8 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 		 * ringing doorbell.
 		 */
 		dma_wmb();
-		gve_tx_put_doorbell(priv, tx->q_resources, cpu_to_be32(tx->req));
+		gve_tx_put_doorbell(priv, tx->q_resources,
+				    cpu_to_be32(tx->req));
 		return NETDEV_TX_BUSY;
 	}
 	nsegs = gve_tx_add_skb(tx, skb);
@@ -457,24 +481,28 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 
 	/* give packets to NIC */
 	tx->req += nsegs;
-	netif_info(priv, tx_queued, priv->dev, "[%d] %s: req=%u done=%u\n",
-		   tx->q_num, __func__, tx->req, tx->done);
-	if (!skb->xmit_more || netif_xmit_stopped(tx->netdev_txq)) {
-		/* Ensure tx descs are visible before ringing doorbell */
-		dma_wmb();
-		gve_tx_put_doorbell(priv, tx->q_resources, cpu_to_be32(tx->req));
-	}
+
+	if (!netif_xmit_stopped(tx->netdev_txq) && netdev_xmit_more())
+		return NETDEV_TX_OK;
+
+	/* Ensure tx descs are visible before ringing doorbell */
+	dma_wmb();
+	gve_tx_put_doorbell(priv, tx->q_resources,
+			    cpu_to_be32(tx->req));
 	return NETDEV_TX_OK;
 }
 
-int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx, u32 to_do)
+#define GVE_TX_START_THRESH	PAGE_SIZE
+
+static int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
+			     u32 to_do, bool try_to_wake)
 {
 	struct gve_tx_buffer_state *info;
 	u64 pkts = 0, bytes = 0;
 	size_t space_freed = 0;
 	struct sk_buff *skb;
 	int i, j;
-	int idx;
+	u32 idx;
 
 	for (j = 0; j < to_do; j++) {
 		idx = tx->done & tx->mask;
@@ -511,8 +539,8 @@ int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx, u32 to_do)
 	/* Make sure that the doorbells are synced */
 	smp_mb();
 #endif
-	if (netif_tx_queue_stopped(tx->netdev_txq) &&
-	    netif_running(priv->dev)) {
+	if (try_to_wake && netif_tx_queue_stopped(tx->netdev_txq) &&
+	    likely(gve_can_tx(tx, GVE_TX_START_THRESH))) {
 		tx->wake_queue++;
 		netif_tx_wake_queue(tx->netdev_txq);
 	}
@@ -548,7 +576,7 @@ bool gve_tx_poll(struct gve_notify_block *block, int budget)
 		 * allow
 		 */
 		to_do = min_t(u32, (nic_done - tx->done), budget);
-		gve_clean_tx_done(priv, tx, to_do);
+		gve_clean_tx_done(priv, tx, to_do, true);
 	}
 	/* If we still have work we want to repoll */
 	repoll |= (nic_done != tx->done);

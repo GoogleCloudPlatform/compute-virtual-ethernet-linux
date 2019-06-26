@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (GPL-2.0 OR MIT)
  * Google virtual Ethernet (gve) driver
  *
- * Copyright (C) 2015-2018 Google, Inc.
+ * Copyright (C) 2015-2019 Google, Inc.
  */
 
 /* GVE Transmit Descriptor formats */
@@ -24,7 +24,7 @@
 struct gve_tx_pkt_desc {
 	u8	type_flags;  /* desc type is lower 4 bits, flags upper */
 	u8	l4_csum_offset;  /* relative offset of L4 csum word */
-	u8	l4_hdr_offset;  /* Offset of start of L4 headers within packet */
+	u8	l4_hdr_offset;  /* Offset of start of L4 headers in packet */
 	u8	desc_cnt;  /* Total descriptors for this packet */
 	__be16	len;  /* Total length of this packet (in bytes) */
 	__be16	seg_len;  /* Length of this descriptor's segment */
@@ -53,9 +53,9 @@ struct gve_tx_seg_desc {
 #define	GVE_TXSF_IPV6	BIT(1)	/* IPv6 TSO */
 
 /* GVE Receive Packet Descriptor */
-/* The start of an ethernet packet comes 2 bytes into
- * the rx buffer.  This way, both the DMA and the L3/4 protocol
- * header access is aligned
+/* The start of an ethernet packet comes 2 bytes into the rx buffer.
+ * gVNIC adds this padding so that both the DMA and the L3/4 protocol header
+ * access is aligned.
  */
 #define GVE_RX_PAD 2
 
@@ -75,7 +75,6 @@ GVE_ASSERT_SIZE(struct, gve_rx_desc, 64);
 /* As with the Tx ring format, the qpl_offset entries below are offsets into an
  * ordered list of registered pages.
  */
-
 struct gve_rx_data_slot {
 	/* byte offset into the rx registered segment of this slot */
 	__be64 qpl_offset;
@@ -103,7 +102,7 @@ struct gve_rx_data_slot {
 #define GVE_IRQ_MASK	BIT(30)
 #define GVE_IRQ_EVENT	BIT(29)
 
-static inline bool gve_rss_valid(__be16 flag)
+static inline bool gve_needs_rss(__be16 flag)
 {
 	if (flag & GVE_RXF_FRAG)
 		return false;

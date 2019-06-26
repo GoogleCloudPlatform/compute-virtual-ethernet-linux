@@ -11,11 +11,13 @@ endif
 obj-m += gve.o
 gve-objs := gve_main.o gve_tx.o gve_rx.o gve_ethtool.o gve_adminq.o
 
-KDIR := /lib/modules/$(BUILD_KERNEL)/build
+ifeq (,$(KERNELDIR))
+KERNELDIR := /lib/modules/$(BUILD_KERNEL)/build
+endif
 
 
 default:
-	$(MAKE) -C $(KDIR) M=$$PWD
+	$(MAKE) -C $(KERNELDIR) M=$$PWD
 
 clean:
 	@-rm -rf gve_main.o gve_tx.o gve_rx.o gve_ethtool.o gve_adminq.o gve.o \

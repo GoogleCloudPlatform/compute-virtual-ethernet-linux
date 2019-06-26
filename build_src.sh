@@ -74,6 +74,9 @@ case $var in
 esac
 done
 
+set -e
+set -x
+
 # Check release and version weren't both set
 if [ "$RELEASE" == "yes" ] && [ -n "$GIVEN_VERSION" ]; then
  echo "Cannot set release and version options at the same time."
@@ -89,7 +92,12 @@ fi
 if [ -z "$RELEASE" ] && [ -z "${GIVEN_VERSION}" ]; then
  pushd $MAINDIR > /dev/null
  if [ `git rev-parse --git-dir` ]; then
-  CALC_VERSION=`git log --oneline origin/master..HEAD | wc -l`"-"`git log --oneline -1 origin/master --pretty=%h`"-"`git log --oneline -1 --pretty=%h`
+  BRANCH=`git branch | sed -n '/\* /s///p'`
+  ISREMOTE=`git ls-remote origin "$BRANCH"`
+  if [ -z "$ISREMOTE" ]; then
+    BRANCH="master"
+  fi
+  CALC_VERSION=`git log --oneline origin/"$BRANCH"..HEAD | wc -l`"-"`git log --oneline -1 origin/"$BRANCH" --pretty=%h`"-"`git log --oneline -1 --pretty=%h`
  else
   CALC_VERSION=`date +%F`
  fi
@@ -159,8 +167,8 @@ cp "$MAINDIR"/"$MAKEFILE" "$DESTDIR"/Makefile;
 
 if [ "$TARGET" == "oot" ] || [ "$TARGET" == "cos" ]; then
  for f in $(ls "$PATCHDIR"/*.cocci); do
-  $SPATCH "$f" "$DESTDIR"/*.c --in-place;
-  $SPATCH "$f" "$DESTDIR"/*.h --in-place;
+  $SPATCH "$f" "$DESTDIR"/*.c --in-place --no-includes;
+  $SPATCH "$f" "$DESTDIR"/*.h --in-place --no-includes;
  done
  cp "$MAINDIR"/LICENSE "$DESTDIR"/LICENSE
 fi
@@ -202,7 +210,7 @@ if [ "$DEB" == "yes" ]; then
  pushd "$DEBDIR"
  tar xvzf gve-dkms_"$VERSION".tar.gz
  pushd gve-dkms-"$VERSION"
- debuild
+ debuild -uc -us
  popd
  cp gve-dkms_"$VERSION"_all.deb "$MAINDIR"
  popd

@@ -1,18 +1,15 @@
 /* SPDX-License-Identifier: (GPL-2.0 OR MIT)
  * Google virtual Ethernet (gve) driver
  *
- * Copyright (C) 2015-2018 Google, Inc.
+ * Copyright (C) 2015-2019 Google, Inc.
  */
 
 #ifndef _GVE_H_
 #define _GVE_H_
 
-#include <linux/atomic.h>
-#include <linux/netdevice.h>
 #include <linux/dma-mapping.h>
+#include <linux/netdevice.h>
 #include <linux/pci.h>
-#include <linux/rtnetlink.h>
-#include <net/tcp.h>
 #include "gve_desc.h"
 
 #ifndef PCI_VENDOR_ID_GOOGLE
@@ -24,138 +21,143 @@
 #define GVE_REGISTER_BAR	0
 #define GVE_DOORBELL_BAR	2
 
-#define GVE_MAX_NUM_TX_QUEUES	1024
-#define GVE_MAX_NUM_RX_QUEUES	256
-#define GVE_TX_QPL_MAX_PAGES	512
-#define GVE_RX_QPL_MAX_PAGES	1024
+/* Driver can alloc up to 2 segments for the header and 2 for the payload. */
+#define GVE_TX_MAX_IOVEC	4
+/* 1 for management, 1 for rx, 1 for tx */
+#define GVE_MIN_MSIX 3
 
-#define GVE_MIN_MTU			(68)
-
+/* Each slot in the desc ring has a 1:1 mapping to a slot in the data ring */
 struct gve_rx_desc_queue {
-	struct gve_rx_desc *desc_ring;
-	dma_addr_t bus;
-	int cnt;
-	u32 fill_cnt;
-	int mask;
-	u8 seqno;
+	struct gve_rx_desc *desc_ring; /* the descriptor ring */
+	dma_addr_t bus; /* the bus for the desc_ring */
+	u32 cnt; /* free-running total number of completed packets */
+	u32 fill_cnt; /* free-running total number of descriptors posted */
+	u32 mask; /* masks the cnt to the size of the ring */
+	u8 seqno; /* the next expected seqno for this desc*/
 };
 
+/* The page info for a single slot in the RX data queue */
 struct gve_rx_slot_page_info {
 	struct page *page;
 	void *page_address;
-	unsigned int page_offset;
+	u32 page_offset; /* offset to write to in page */
 };
 
+/* A list of pages registered with the device during setup and used by a queue
+ * as buffers
+ */
 struct gve_queue_page_list {
-	u32 id;
+	u32 id; /* unique id */
 	u32 num_entries;
-	struct page **pages;
-	dma_addr_t *page_buses;
-	void **page_ptrs;
+	struct page **pages; /* list of num_entries pages */
+	dma_addr_t *page_buses; /* the dma addrs of the pages */
 };
 
+/* Each slot in the data ring has a 1:1 mapping to a slot in the desc ring */
 struct gve_rx_data_queue {
-	struct gve_rx_data_slot *data_ring;
+	struct gve_rx_data_slot *data_ring; /* read by NIC */
 	dma_addr_t data_bus; /* dma mapping of the slots */
-	struct gve_rx_slot_page_info *page_info;
-	struct gve_queue_page_list *qpl;
-	int mask;
-	int cnt;
+	struct gve_rx_slot_page_info *page_info; /* page info of the buffers */
+	struct gve_queue_page_list *qpl; /* qpl assigned to this queue */
+	u32 mask; /* masks the cnt to the size of the ring */
+	u32 cnt; /* free-running total number of completed packets */
 };
 
 struct gve_priv;
 
+/* An RX ring that contains a power-of-two sized desc and data ring. */
 struct gve_rx_ring {
 	struct gve_priv *gve;
 	struct gve_rx_desc_queue desc;
 	struct gve_rx_data_queue data;
-	unsigned long rbytes;
-	unsigned long rpackets;
-	int q_num;
-	u32 ntfy_id;
-	struct gve_queue_resources *q_resources;
-	dma_addr_t q_resources_bus;
+	u64 rbytes; /* free-running bytes received */
+	u64 rpackets; /* free-running packets received */
+	u32 q_num; /* queue index */
+	u32 ntfy_id; /* notification block index */
+	struct gve_queue_resources *q_resources; /* head and tail pointer idx */
+	dma_addr_t q_resources_bus; /* dma address for the queue resources */
 };
 
+/* A TX desc ring entry */
 union gve_tx_desc {
-	struct gve_tx_pkt_desc pkt;
-	struct gve_tx_seg_desc seg;
+	struct gve_tx_pkt_desc pkt; /* first desc for a packet */
+	struct gve_tx_seg_desc seg; /* subsequent descs for a packet */
 };
 
+/* Tracks the memory in the fifo occupied by a segment of a packet */
 struct gve_tx_iovec {
-	/* Offset into this segment */
-	u32 iov_offset;
-	u32 iov_len;
-	u32 iov_padding;
+	u32 iov_offset; /* offset into this segment */
+	u32 iov_len; /* length */
+	u32 iov_padding; /* padding associated with this segment */
 };
 
+/* Tracks the memory in the fifo occupied by the skb. Mapped 1:1 to a desc
+ * ring entry but only used for a pkt_desc not a seg_desc
+ */
 struct gve_tx_buffer_state {
-	struct sk_buff *skb;
-	struct gve_tx_iovec iov[4];
+	struct sk_buff *skb; /* skb for this pkt */
+	struct gve_tx_iovec iov[GVE_TX_MAX_IOVEC]; /* segments of this pkt */
 };
 
+/* A TX buffer - each queue has one */
 struct gve_tx_fifo {
-	void *base;
-	u32 size;
-	atomic_t available;
-	u32 head;
-	struct gve_queue_page_list *qpl;
+	void *base; /* address of base of FIFO */
+	u32 size; /* total size */
+	atomic_t available; /* how much space is still available */
+	u32 head; /* offset to write at */
+	struct gve_queue_page_list *qpl; /* QPL mapped into this FIFO */
 };
 
+/* A TX ring that contains a power-of-two sized desc ring and a FIFO buffer */
 struct gve_tx_ring {
 	/* Cacheline 0 -- Accessed & dirtied during transmit */
 	struct gve_tx_fifo tx_fifo;
-	u32 req;
-	u32 done;
+	u32 req; /* driver tracked head pointer */
+	u32 done; /* driver tracked tail pointer */
 
 	/* Cacheline 1 -- Accessed & dirtied during gve_clean_tx_done */
-	__be32 last_nic_done ____cacheline_aligned;
-	unsigned long pkt_done;
-	unsigned long bytes_done;
+	__be32 last_nic_done ____cacheline_aligned; /* NIC tail pointer */
+	u64 pkt_done; /* free-running - total packets completed */
+	u64 bytes_done; /* free-running - total bytes completed */
 
 	/* Cacheline 2 -- Read-mostly fields */
 	union gve_tx_desc *desc ____cacheline_aligned;
-	struct gve_tx_buffer_state *info;
+	struct gve_tx_buffer_state *info; /* Maps 1:1 to a desc */
 	struct netdev_queue *netdev_txq;
-	struct gve_queue_resources *q_resources;
-	u32 mask;
+	struct gve_queue_resources *q_resources; /* head and tail pointer idx */
+	u32 mask; /* masks req and done down to queue size */
 
 	/* Slow-path fields */
-	int q_num ____cacheline_aligned;
-	int stop_queue;
-	int wake_queue;
-	u32 ntfy_id;
-	dma_addr_t bus;
-	dma_addr_t q_resources_bus;
+	u32 q_num ____cacheline_aligned; /* queue idx */
+	u32 stop_queue; /* count of queue stops */
+	u32 wake_queue; /* count of queue wakes */
+	u32 ntfy_id; /* notification block index */
+	dma_addr_t bus; /* dma address of the descr ring */
+	dma_addr_t q_resources_bus; /* dma address of the queue resources */
 } ____cacheline_aligned;
 
-/* 1 for management, 1 for rx, 1 for tx */
-#define GVE_MIN_MSIX 3
-
+/* Wraps the info for one irq including the napi struct and the queues
+ * associated with that irq.
+ */
 struct gve_notify_block {
-	/* the irq_db_index is the index into db_bar2 where this block's irq
-	 * db can be found
-	 */
-	__be32 irq_db_index; /* Set by device - must be first field */
-	/* the name registered with the kernel for this irq */
-	char name[IFNAMSIZ + 16];
-	/* the kernel napi struct for this block */
-	struct napi_struct napi;
+	__be32 irq_db_index; /* idx into Bar2 - set by device, must be 1st */
+	char name[IFNAMSIZ + 16]; /* name registered with the kernel */
+	struct napi_struct napi; /* kernel napi struct for this block */
 	struct gve_priv *priv;
-	/* the tx rings on this notification block */
-	struct gve_tx_ring *tx;
-	/* the rx rings on this notification block */
-	struct gve_rx_ring *rx;
+	struct gve_tx_ring *tx; /* tx rings on this block */
+	struct gve_rx_ring *rx; /* rx rings on this block */
 } ____cacheline_aligned;
 
+/* Tracks allowed and current queue settings */
 struct gve_queue_config {
-	int max_queues;
-	int num_queues;
+	u16 max_queues;
+	u16 num_queues; /* current */
 };
 
+/* Tracks the available and used qpl IDs */
 struct gve_qpl_config {
-	int qpl_map_size;
-	unsigned long *qpl_id_map;
+	u32 qpl_map_size; /* map memory size */
+	unsigned long *qpl_id_map; /* bitmap of used qpl ids */
 };
 
 struct gve_priv {
@@ -167,38 +169,38 @@ struct gve_priv {
 	dma_addr_t ntfy_block_bus;
 	struct msix_entry *msix_vectors; /* array of num_ntfy_blks + 1 */
 	char mgmt_msix_name[IFNAMSIZ + 16];
-	int mgmt_msix_idx;
-	int ntfy_blk_msix_base_idx;
+	u32 mgmt_msix_idx;
 	__be32 *counter_array; /* array of num_event_counters */
 	dma_addr_t counter_array_bus;
 
-	int num_event_counters;
-	int tx_desc_cnt;
-	int rx_desc_cnt;
-	int tx_pages_per_qpl;
-	int rx_pages_per_qpl;
+	u16 num_event_counters;
+	u16 tx_desc_cnt; /* num desc per ring */
+	u16 rx_desc_cnt; /* num desc per ring */
+	u16 tx_pages_per_qpl; /* tx buffer length */
+	u16 rx_pages_per_qpl; /* rx buffer length */
 	u64 max_registered_pages;
-	u64 num_registered_pages;
-	int rx_copybreak;
-	int max_mtu;
-	int default_num_queues;
+	u64 num_registered_pages; /* num pages registered with NIC */
+	u32 rx_copybreak; /* copy packets smaller than this */
+	u16 default_num_queues; /* default num queues to set up */
 
 	struct gve_queue_config tx_cfg;
 	struct gve_queue_config rx_cfg;
-	struct gve_qpl_config qpl_cfg;
-	int num_ntfy_blks;
+	struct gve_qpl_config qpl_cfg; /* map used QPL ids */
+	u32 num_ntfy_blks; /* spilt between TX and RX so must be even */
 
-	void __iomem *reg_bar0;
+	struct gve_registers __iomem *reg_bar0; /* see gve_register.h */
 	__be32 __iomem *db_bar2; /* "array" of doorbells */
 	u32 msg_enable;	/* level for netif* netdev print macros	*/
 	struct pci_dev *pdev;
 
-	/* Admin queue */
-	spinlock_t adminq_lock;
+	/* metrics */
+	u32 tx_timeo_cnt;
+
+	/* Admin queue - see gve_adminq.h*/
 	union gve_adminq_command *adminq;
 	dma_addr_t adminq_bus_addr;
-	int adminq_mask;
-	u32 adminq_prod_cnt;
+	u32 adminq_mask; /* masks prod_cnt to adminq size */
+	u32 adminq_prod_cnt; /* free-running count of AQ cmds executed */
 
 	struct workqueue_struct *gve_wq;
 	struct work_struct service_task;
@@ -206,59 +208,164 @@ struct gve_priv {
 	unsigned long state_flags;
 };
 
-/* service_task_flags bits */
-#define GVE_PRIV_FLAGS_DO_RESET			BIT(1)
-#define GVE_PRIV_FLAGS_RESET_IN_PROGRESS	BIT(2)
-#define GVE_PRIV_FLAGS_PROBE_IN_PROGRESS	BIT(3)
+enum gve_service_task_flags {
+	GVE_PRIV_FLAGS_DO_RESET			= BIT(1),
+	GVE_PRIV_FLAGS_RESET_IN_PROGRESS	= BIT(2),
+	GVE_PRIV_FLAGS_PROBE_IN_PROGRESS	= BIT(3),
+};
 
-/* state_flags bits */
-#define GVE_PRIV_FLAGS_ADMIN_QUEUE_OK		BIT(1)
-#define GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK	BIT(2)
-#define GVE_PRIV_FLAGS_DEVICE_RINGS_OK		BIT(3)
-#define GVE_PRIV_FLAGS_NAPI_ENABLED		BIT(4)
+enum gve_state_flags {
+	GVE_PRIV_FLAGS_ADMIN_QUEUE_OK		= BIT(1),
+	GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK	= BIT(2),
+	GVE_PRIV_FLAGS_DEVICE_RINGS_OK		= BIT(3),
+	GVE_PRIV_FLAGS_NAPI_ENABLED		= BIT(4),
+};
 
+static inline bool gve_get_do_reset(struct gve_priv *priv)
+{
+	return test_bit(GVE_PRIV_FLAGS_DO_RESET, &priv->service_task_flags);
+}
 
+static inline void gve_set_do_reset(struct gve_priv *priv)
+{
+	set_bit(GVE_PRIV_FLAGS_DO_RESET, &priv->service_task_flags);
+}
+
+static inline void gve_clear_do_reset(struct gve_priv *priv)
+{
+	clear_bit(GVE_PRIV_FLAGS_DO_RESET, &priv->service_task_flags);
+}
+
+static inline bool gve_get_reset_in_progress(struct gve_priv *priv)
+{
+	return test_bit(GVE_PRIV_FLAGS_RESET_IN_PROGRESS,
+			&priv->service_task_flags);
+}
+
+static inline void gve_set_reset_in_progress(struct gve_priv *priv)
+{
+	set_bit(GVE_PRIV_FLAGS_RESET_IN_PROGRESS, &priv->service_task_flags);
+}
+
+static inline void gve_clear_reset_in_progress(struct gve_priv *priv)
+{
+	clear_bit(GVE_PRIV_FLAGS_RESET_IN_PROGRESS, &priv->service_task_flags);
+}
+
+static inline bool gve_get_probe_in_progress(struct gve_priv *priv)
+{
+	return test_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS,
+			&priv->service_task_flags);
+}
+
+static inline void gve_set_probe_in_progress(struct gve_priv *priv)
+{
+	set_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS, &priv->service_task_flags);
+}
+
+static inline void gve_clear_probe_in_progress(struct gve_priv *priv)
+{
+	clear_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS, &priv->service_task_flags);
+}
+
+static inline bool gve_get_admin_queue_ok(struct gve_priv *priv)
+{
+	return test_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags);
+}
+
+static inline void gve_set_admin_queue_ok(struct gve_priv *priv)
+{
+	set_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags);
+}
+
+static inline void gve_clear_admin_queue_ok(struct gve_priv *priv)
+{
+	clear_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags);
+}
+
+static inline bool gve_get_device_resources_ok(struct gve_priv *priv)
+{
+	return test_bit(GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK, &priv->state_flags);
+}
+
+static inline void gve_set_device_resources_ok(struct gve_priv *priv)
+{
+	set_bit(GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK, &priv->state_flags);
+}
+
+static inline void gve_clear_device_resources_ok(struct gve_priv *priv)
+{
+	clear_bit(GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK, &priv->state_flags);
+}
+
+static inline bool gve_get_device_rings_ok(struct gve_priv *priv)
+{
+	return test_bit(GVE_PRIV_FLAGS_DEVICE_RINGS_OK, &priv->state_flags);
+}
+
+static inline void gve_set_device_rings_ok(struct gve_priv *priv)
+{
+	set_bit(GVE_PRIV_FLAGS_DEVICE_RINGS_OK, &priv->state_flags);
+}
+
+static inline void gve_clear_device_rings_ok(struct gve_priv *priv)
+{
+	clear_bit(GVE_PRIV_FLAGS_DEVICE_RINGS_OK, &priv->state_flags);
+}
+
+static inline bool gve_get_napi_enabled(struct gve_priv *priv)
+{
+	return test_bit(GVE_PRIV_FLAGS_NAPI_ENABLED, &priv->state_flags);
+}
+
+static inline void gve_set_napi_enabled(struct gve_priv *priv)
+{
+	set_bit(GVE_PRIV_FLAGS_NAPI_ENABLED, &priv->state_flags);
+}
+
+static inline void gve_clear_napi_enabled(struct gve_priv *priv)
+{
+	clear_bit(GVE_PRIV_FLAGS_NAPI_ENABLED, &priv->state_flags);
+}
+
+/* Returns the address of the ntfy_blocks irq doorbell
+ */
 static inline __be32 __iomem *gve_irq_doorbell(struct gve_priv *priv,
 					       struct gve_notify_block *block)
 {
 	return &priv->db_bar2[be32_to_cpu(block->irq_db_index)];
 }
 
-/**
- * Returns the index into ntfy_blocks of the given tx ring's block
- **/
-static inline u32 gve_tx_ntfy_idx(struct gve_priv *priv, u32 queue_idx)
+/* Returns the index into ntfy_blocks of the given tx ring's block
+ */
+static inline u32 gve_tx_idx_to_ntfy(struct gve_priv *priv, u32 queue_idx)
 {
 	return queue_idx;
 }
 
-/**
- * Returns the index into ntfy_blocks of the given rx ring's block
- **/
-static inline u32 gve_rx_ntfy_idx(struct gve_priv *priv, u32 queue_idx)
+/* Returns the index into ntfy_blocks of the given rx ring's block
+ */
+static inline u32 gve_rx_idx_to_ntfy(struct gve_priv *priv, u32 queue_idx)
 {
 	return (priv->num_ntfy_blks / 2) + queue_idx;
 }
 
-/**
- * Returns the number of tx queue page lists
- **/
+/* Returns the number of tx queue page lists
+ */
 static inline u32 gve_num_tx_qpls(struct gve_priv *priv)
 {
 	return priv->tx_cfg.num_queues;
 }
 
-/**
- * Returns the number of rx queue page lists
- **/
+/* Returns the number of rx queue page lists
+ */
 static inline u32 gve_num_rx_qpls(struct gve_priv *priv)
 {
 	return priv->rx_cfg.num_queues;
 }
 
-/**
- * Returns a pointer to the next available tx qpl in the list of qpls
- **/
+/* Returns a pointer to the next available tx qpl in the list of qpls
+ */
 static inline
 struct gve_queue_page_list *gve_assign_tx_qpl(struct gve_priv *priv)
 {
@@ -273,9 +380,8 @@ struct gve_queue_page_list *gve_assign_tx_qpl(struct gve_priv *priv)
 	return &priv->qpls[id];
 }
 
-/**
- * Returns a pointer to the next available rx qpl in the list of qpls
- **/
+/* Returns a pointer to the next available rx qpl in the list of qpls
+ */
 static inline
 struct gve_queue_page_list *gve_assign_rx_qpl(struct gve_priv *priv)
 {
@@ -291,20 +397,40 @@ struct gve_queue_page_list *gve_assign_rx_qpl(struct gve_priv *priv)
 	return &priv->qpls[id];
 }
 
-/**
- * Unassigns the qpl with the given id
- **/
+/* Unassigns the qpl with the given id
+ */
 static inline void gve_unassign_qpl(struct gve_priv *priv, int id)
 {
 	clear_bit(id, priv->qpl_cfg.qpl_id_map);
 }
 
-void gve_add_napi(struct gve_priv *priv, struct gve_notify_block *block);
-void gve_remove_napi(struct gve_notify_block *block);
+/* Returns the correct dma direction for tx and rx qpls
+ */
+static inline enum dma_data_direction gve_qpl_dma_dir(struct gve_priv *priv,
+						      int id)
+{
+	if (id < gve_num_tx_qpls(priv))
+		return DMA_TO_DEVICE;
+	else
+		return DMA_FROM_DEVICE;
+}
+
+/* Returns true if the max mtu allows page recycling */
+static inline bool gve_can_recycle_pages(struct net_device *dev)
+{
+	/* We can't recycle the pages if we can't fit a packet into half a
+	 * page.
+	 */
+	return dev->max_mtu <= PAGE_SIZE / 2;
+}
+
+/* buffers */
+int gve_alloc_page(struct device *dev, struct page **page, dma_addr_t *dma,
+		   enum dma_data_direction);
+void gve_free_page(struct device *dev, struct page *page, dma_addr_t dma,
+		   enum dma_data_direction);
 /* tx handling */
 netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev);
-int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
-		      u32 nic_done);
 bool gve_tx_poll(struct gve_notify_block *block, int budget);
 int gve_tx_alloc_rings(struct gve_priv *priv);
 void gve_tx_free_rings(struct gve_priv *priv);

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: (GPL-2.0 OR MIT)
 /* Google virtual Ethernet (gve) driver
  *
- * Copyright (C) 2015-2018 Google, Inc.
+ * Copyright (C) 2015-2019 Google, Inc.
  */
 
+#include <linux/rtnetlink.h>
 #include "gve.h"
 
 static void gve_get_drvinfo(struct net_device *netdev,
@@ -32,7 +33,7 @@ static u32 gve_get_msglevel(struct net_device *netdev)
 
 static const char gve_gstrings_main_stats[][ETH_GSTRING_LEN] = {
 	"rx_packets", "tx_packets", "rx_bytes", "tx_bytes",
-	"rx_dropped", "tx_dropped",
+	"rx_dropped", "tx_dropped", "tx_timeouts",
 };
 
 #define GVE_MAIN_STATS_LEN  ARRAY_SIZE(gve_gstrings_main_stats)
@@ -79,11 +80,10 @@ static int gve_get_sset_count(struct net_device *netdev, int sset)
 		return 0;
 
 	switch (sset) {
-	case ETH_SS_STATS:{
+	case ETH_SS_STATS:
 		return GVE_MAIN_STATS_LEN +
 		       (priv->rx_cfg.num_queues * NUM_GVE_RX_CNTS) +
 		       (priv->tx_cfg.num_queues * NUM_GVE_TX_CNTS);
-	}
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -94,9 +94,9 @@ gve_get_ethtool_stats(struct net_device *netdev,
 		      struct ethtool_stats *stats, u64 *data)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
+	u64 rx_pkts, rx_bytes, tx_pkts, tx_bytes;
 	int ring;
 	int i;
-	u64 rx_pkts, rx_bytes, tx_pkts, tx_bytes;
 
 	ASSERT_RTNL();
 
@@ -120,6 +120,9 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	data[i++] = tx_pkts;
 	data[i++] = rx_bytes;
 	data[i++] = tx_bytes;
+	/* Skip rx_dropped and tx_dropped */
+	i += 2;
+	data[i++] = priv->tx_timeo_cnt;
 	i = GVE_MAIN_STATS_LEN;
 
 	/* walk RX rings */
@@ -148,13 +151,11 @@ void gve_get_channels(struct net_device *netdev, struct ethtool_channels *cmd)
 	cmd->max_rx = priv->rx_cfg.max_queues;
 	cmd->max_tx = priv->tx_cfg.max_queues;
 	cmd->max_other = 0;
-	cmd->max_combined = min_t(u32, priv->rx_cfg.max_queues,
-				  priv->tx_cfg.max_queues);
+	cmd->max_combined = 0;
 	cmd->rx_count = priv->rx_cfg.num_queues;
 	cmd->tx_count = priv->tx_cfg.num_queues;
 	cmd->other_count = 0;
-	cmd->combined_count = min_t(int, priv->rx_cfg.num_queues,
-				    priv->tx_cfg.num_queues);
+	cmd->combined_count = 0;
 }
 
 int gve_set_channels(struct net_device *netdev, struct ethtool_channels *cmd)
@@ -167,16 +168,10 @@ int gve_set_channels(struct net_device *netdev, struct ethtool_channels *cmd)
 	int new_rx = cmd->rx_count;
 
 	gve_get_channels(netdev, &old_settings);
-	if (cmd->combined_count != old_settings.combined_count) {
-		/* Changing combined at the same time as rx and tx isn't
-		 * allowed
-		 */
-		if (new_tx != priv->tx_cfg.num_queues ||
-		    new_rx != priv->rx_cfg.num_queues)
-			return -EINVAL;
-		new_rx = cmd->combined_count;
-		new_tx = cmd->combined_count;
-	}
+
+	/* Changing combined is not allowed allowed */
+	if (cmd->combined_count != old_settings.combined_count)
+		return -EINVAL;
 
 	if (!new_rx || !new_tx)
 		return -EINVAL;
