@@ -9,7 +9,7 @@
 #ifndef _GVE_DESC_H_
 #define _GVE_DESC_H_
 
-#include "gve_size_assert.h"
+#include <linux/build_bug.h>
 
 /* A note on seg_addrs
  *
@@ -70,7 +70,7 @@ struct gve_rx_desc {
 	__be16	len;  /* Length of the received packet */
 	__be16	flags_seq;  /* Flags [15:3] and sequence number [2:0] (1-7) */
 } __packed;
-GVE_ASSERT_SIZE(struct, gve_rx_desc, 64);
+static_assert(sizeof(struct gve_rx_desc) == 64);
 
 /* As with the Tx ring format, the qpl_offset entries below are offsets into an
  * ordered list of registered pages.

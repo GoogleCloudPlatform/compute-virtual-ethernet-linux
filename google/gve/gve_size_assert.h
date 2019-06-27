@@ -6,10 +6,5 @@
 
 #ifndef _GVE_ASSERT_H_
 #define _GVE_ASSERT_H_
-#define GVE_ASSERT_SIZE(tag, type, size) \
-	static void gve_assert_size_ ## type(void) __attribute__((used)); \
-	static inline void gve_assert_size_ ## type(void) \
-	{ \
-		BUILD_BUG_ON(sizeof(tag type) != (size)); \
-	}
+#define static_assert(expr, ...) _Static_assert(expr, #expr)
 #endif /* _GVE_ASSERT_H_ */
