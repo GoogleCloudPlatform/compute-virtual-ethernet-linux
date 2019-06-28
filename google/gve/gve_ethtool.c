@@ -111,7 +111,6 @@ gve_get_ethtool_stats(struct net_device *netdev,
 			tx_bytes += priv->tx[ring].bytes_done;
 		}
 	}
-	memset(data, 0, GVE_MAIN_STATS_LEN * sizeof(*data));
 
 	i = 0;
 	data[i++] = rx_pkts;
@@ -132,10 +131,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 			data[i++] = rx->desc.fill_cnt;
 		}
 	} else {
-		int num_entries = priv->rx_cfg.num_queues * NUM_GVE_RX_CNTS;
-
-		memset(data + i, 0, num_entries * sizeof(*data));
-		i += num_entries;
+		i += priv->rx_cfg.num_queues * NUM_GVE_RX_CNTS;
 	}
 	/* walk TX rings */
 	if (priv->tx) {
@@ -150,10 +146,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 									  tx));
 		}
 	} else {
-		int num_entries = priv->tx_cfg.num_queues * NUM_GVE_TX_CNTS;
-
-		memset(data + i, 0, num_entries * sizeof(*data));
-		i += num_entries;
+		i += priv->tx_cfg.num_queues * NUM_GVE_TX_CNTS;
 	}
 }
 
