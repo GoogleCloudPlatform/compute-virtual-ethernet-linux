@@ -34,24 +34,23 @@ int gve_adminq_alloc(struct device *dev, struct gve_priv *priv)
 
 void gve_adminq_release(struct gve_priv *priv)
 {
-	int i;
+	int i = 0;
 
 	/* Tell the device the adminq is leaving */
 	writel(0x0, &priv->reg_bar0->adminq_pfn);
-	for (i = 0; i < GVE_MAX_ADMINQ_RELEASE_CHECK; i++) {
-		if (!readl(&priv->reg_bar0->adminq_pfn)) {
-			gve_clear_device_rings_ok(priv);
-			gve_clear_device_resources_ok(priv);
-			gve_clear_admin_queue_ok(priv);
-			return;
-		}
+	while(readl(&priv->reg_bar0->adminq_pfn)) {
+		/* If this is reached the device is unrecoverable and still
+		 * holding memory. Continue looping to avoid memory corruption,
+		 * but WARN so it is visible what is going on.
+		 */
+		if (i == GVE_MAX_ADMINQ_RELEASE_CHECK)
+			WARN(1, "Unrecoverable platform error!");
+		i++;
 		msleep(GVE_ADMINQ_SLEEP_LEN);
 	}
-	/* If this is reached the device is unrecoverable and still holding
-	 * memory. Anything other than a BUG risks memory corruption.
-	 */
-	WARN(1, "Unrecoverable platform error!");
-	BUG();
+	gve_clear_device_rings_ok(priv);
+	gve_clear_device_resources_ok(priv);
+	gve_clear_admin_queue_ok(priv);
 }
 
 void gve_adminq_free(struct device *dev, struct gve_priv *priv)
