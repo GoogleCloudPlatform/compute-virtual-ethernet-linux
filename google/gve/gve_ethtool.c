@@ -76,9 +76,6 @@ static int gve_get_sset_count(struct net_device *netdev, int sset)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 
-	if (!netif_carrier_ok(netdev))
-		return 0;
-
 	switch (sset) {
 	case ETH_SS_STATS:
 		return GVE_MAIN_STATS_LEN +
@@ -100,18 +97,19 @@ gve_get_ethtool_stats(struct net_device *netdev,
 
 	ASSERT_RTNL();
 
-	if (!netif_carrier_ok(netdev))
-		return;
-
 	for (rx_pkts = 0, rx_bytes = 0, ring = 0;
 	     ring < priv->rx_cfg.num_queues; ring++) {
-		rx_pkts += priv->rx[ring].rpackets;
-		rx_bytes += priv->rx[ring].rbytes;
+		if (priv->rx) {
+			rx_pkts += priv->rx[ring].rpackets;
+			rx_bytes += priv->rx[ring].rbytes;
+		}
 	}
 	for (tx_pkts = 0, tx_bytes = 0, ring = 0;
 	     ring < priv->tx_cfg.num_queues; ring++) {
-		tx_pkts += priv->tx[ring].pkt_done;
-		tx_bytes += priv->tx[ring].bytes_done;
+		if (priv->tx) {
+			tx_pkts += priv->tx[ring].pkt_done;
+			tx_bytes += priv->tx[ring].bytes_done;
+		}
 	}
 	memset(data, 0, GVE_MAIN_STATS_LEN * sizeof(*data));
 
@@ -126,21 +124,36 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	i = GVE_MAIN_STATS_LEN;
 
 	/* walk RX rings */
-	for (ring = 0; ring < priv->rx_cfg.num_queues; ring++) {
-		struct gve_rx_ring *rx = &priv->rx[ring];
+	if (priv->rx) {
+		for (ring = 0; ring < priv->rx_cfg.num_queues; ring++) {
+			struct gve_rx_ring *rx = &priv->rx[ring];
 
-		data[i++] = rx->desc.cnt;
-		data[i++] = rx->desc.fill_cnt;
+			data[i++] = rx->desc.cnt;
+			data[i++] = rx->desc.fill_cnt;
+		}
+	} else {
+		int num_entries = priv->rx_cfg.num_queues * NUM_GVE_RX_CNTS;
+
+		memset(data + i, 0, num_entries * sizeof(*data));
+		i += num_entries;
 	}
 	/* walk TX rings */
-	for (ring = 0; ring < priv->tx_cfg.num_queues; ring++) {
-		struct gve_tx_ring *tx = &priv->tx[ring];
+	if (priv->tx) {
+		for (ring = 0; ring < priv->tx_cfg.num_queues; ring++) {
+			struct gve_tx_ring *tx = &priv->tx[ring];
 
-		data[i++] = tx->req;
-		data[i++] = tx->done;
-		data[i++] = tx->wake_queue;
-		data[i++] = tx->stop_queue;
-		data[i++] = be32_to_cpu(gve_tx_load_event_counter(priv, tx));
+			data[i++] = tx->req;
+			data[i++] = tx->done;
+			data[i++] = tx->wake_queue;
+			data[i++] = tx->stop_queue;
+			data[i++] = be32_to_cpu(gve_tx_load_event_counter(priv,
+									  tx));
+		}
+	} else {
+		int num_entries = priv->tx_cfg.num_queues * NUM_GVE_TX_CNTS;
+
+		memset(data + i, 0, num_entries * sizeof(*data));
+		i += num_entries;
 	}
 }
 

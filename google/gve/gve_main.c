@@ -433,10 +433,12 @@ static int gve_alloc_rings(struct gve_priv *priv)
 
 free_rx:
 	kfree(priv->rx);
+	priv->rx = NULL;
 free_tx_queue:
 	gve_tx_free_rings(priv);
 free_tx:
 	kfree(priv->tx);
+	priv->tx = NULL;
 	return err;
 }
 
@@ -486,6 +488,7 @@ static void gve_free_rings(struct gve_priv *priv)
 		}
 		gve_tx_free_rings(priv);
 		kfree(priv->tx);
+		priv->tx = NULL;
 	}
 	if (priv->rx) {
 		for (i = 0; i < priv->rx_cfg.num_queues; i++) {
@@ -494,6 +497,7 @@ static void gve_free_rings(struct gve_priv *priv)
 		}
 		gve_rx_free_rings(priv);
 		kfree(priv->rx);
+		priv->rx = NULL;
 	}
 }
 
