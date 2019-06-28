@@ -647,12 +647,6 @@ void gve_schedule_reset(struct gve_priv *priv)
 	queue_work(priv->gve_wq, &priv->service_task);
 }
 
-static int gve_change_mtu(struct net_device *dev, int new_mtu)
-{
-	dev->mtu = new_mtu;
-	return 0;
-}
-
 static void gve_reset_and_teardown(struct gve_priv *priv, bool was_up);
 static int gve_reset_recovery(struct gve_priv *priv, bool was_up);
 static void gve_turndown(struct gve_priv *priv);
@@ -848,7 +842,6 @@ static const struct net_device_ops gve_netdev_ops = {
 	.ndo_open		=	gve_open,
 	.ndo_stop		=	gve_close,
 	.ndo_get_stats64	=	gve_get_stats,
-	.ndo_change_mtu		=	gve_change_mtu,
 	.ndo_tx_timeout         =       gve_tx_timeout,
 };
 
@@ -1215,18 +1208,7 @@ static struct pci_driver gvnic_driver = {
 	.remove		= gve_remove,
 };
 
-static int __init gvnic_init_module(void)
-{
-	return pci_register_driver(&gvnic_driver);
-}
-
-static void __exit gvnic_exit_module(void)
-{
-	pci_unregister_driver(&gvnic_driver);
-}
-
-module_init(gvnic_init_module);
-module_exit(gvnic_exit_module);
+module_pci_driver(gvnic_driver);
 
 MODULE_DEVICE_TABLE(pci, gve_id_table);
 MODULE_AUTHOR("Google, Inc.");

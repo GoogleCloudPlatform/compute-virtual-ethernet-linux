@@ -81,12 +81,7 @@ struct gve_rx_data_slot {
 };
 
 /* GVE Recive Packet Descriptor Seq No */
-
-#ifdef __LITTLE_ENDIAN
-#define GVE_SEQNO(x) ((((__force u16)x) >> 8) & 0x7)
-#else
-#define	GVE_SEQNO(x) ((__force u16)(x) & 0x7)
-#endif
+#define GVE_SEQNO(x) (be16_to_cpu(x) & 0x7)
 
 /* GVE Recive Packet Descriptor Flags */
 #define GVE_RXFLG(x)	cpu_to_be16(1 << (3 + (x)))
