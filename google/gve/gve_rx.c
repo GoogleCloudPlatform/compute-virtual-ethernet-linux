@@ -414,8 +414,10 @@ bool gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 	if (!work_done)
 		return false;
 
+	u64_stats_update_begin(&rx->statss);
 	rx->rpackets += work_done;
 	rx->rbytes += bytes;
+	u64_stats_update_end(&rx->statss);
 	rx->desc.cnt = cnt;
 	rx->desc.fill_cnt += work_done;
 

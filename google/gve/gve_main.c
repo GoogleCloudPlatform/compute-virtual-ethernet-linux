@@ -29,18 +29,29 @@ const char gve_version_prefix[] = GVE_VERSION_PREFIX;
 static void gve_get_stats(struct net_device *dev, struct rtnl_link_stats64 *s)
 {
 	struct gve_priv *priv = netdev_priv(dev);
+	unsigned int start;
 	int ring;
 
 	if (priv->rx) {
 		for (ring = 0; ring < priv->rx_cfg.num_queues; ring++) {
-			s->rx_packets += priv->rx[ring].rpackets;
-			s->rx_bytes += priv->rx[ring].rbytes;
+			do {
+				start =
+				  u64_stats_fetch_begin(&priv->rx[ring].statss);
+				s->rx_packets += priv->rx[ring].rpackets;
+				s->rx_bytes += priv->rx[ring].rbytes;
+			} while (u64_stats_fetch_retry(&priv->rx[ring].statss,
+						       start));
 		}
 	}
 	if (priv->tx) {
 		for (ring = 0; ring < priv->tx_cfg.num_queues; ring++) {
-			s->tx_packets += priv->tx[ring].pkt_done;
-			s->tx_bytes += priv->tx[ring].bytes_done;
+			do {
+				start =
+				  u64_stats_fetch_begin(&priv->tx[ring].statss);
+				s->tx_packets += priv->tx[ring].pkt_done;
+				s->tx_bytes += priv->tx[ring].bytes_done;
+			} while (u64_stats_fetch_retry(&priv->rx[ring].statss,
+						       start));
 		}
 	}
 }
@@ -418,13 +429,15 @@ static int gve_alloc_rings(struct gve_priv *priv)
 	err = gve_rx_alloc_rings(priv);
 	if (err)
 		goto free_rx;
-	/* Add tx napi */
+	/* Add tx napi & init sync stats*/
 	for (i = 0; i < priv->tx_cfg.num_queues; i++) {
+		u64_stats_init(&priv->tx[i].statss);
 		ntfy_idx = gve_tx_idx_to_ntfy(priv, i);
 		gve_add_napi(priv, ntfy_idx);
 	}
-	/* Add rx napi */
+	/* Add rx napi  & init sync stats*/
 	for (i = 0; i < priv->rx_cfg.num_queues; i++) {
+		u64_stats_init(&priv->rx[i].statss);
 		ntfy_idx = gve_rx_idx_to_ntfy(priv, i);
 		gve_add_napi(priv, ntfy_idx);
 	}

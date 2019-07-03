@@ -10,6 +10,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/netdevice.h>
 #include <linux/pci.h>
+#include <linux/u64_stats_sync.h>
 #include "gve_desc.h"
 
 #ifndef PCI_VENDOR_ID_GOOGLE
@@ -76,6 +77,7 @@ struct gve_rx_ring {
 	u32 ntfy_id; /* notification block index */
 	struct gve_queue_resources *q_resources; /* head and tail pointer idx */
 	dma_addr_t q_resources_bus; /* dma address for the queue resources */
+	struct u64_stats_sync statss; /* sync stats for 32bit archs */
 };
 
 /* A TX desc ring entry */
@@ -134,6 +136,7 @@ struct gve_tx_ring {
 	u32 ntfy_id; /* notification block index */
 	dma_addr_t bus; /* dma address of the descr ring */
 	dma_addr_t q_resources_bus; /* dma address of the queue resources */
+	struct u64_stats_sync statss; /* sync stats for 32bit archs */
 } ____cacheline_aligned;
 
 /* Wraps the info for one irq including the napi struct and the queues

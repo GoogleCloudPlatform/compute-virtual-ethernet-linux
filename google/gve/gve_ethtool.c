@@ -92,6 +92,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 	u64 rx_pkts, rx_bytes, tx_pkts, tx_bytes;
+	unsigned int start;
 	int ring;
 	int i;
 
@@ -100,15 +101,25 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	for (rx_pkts = 0, rx_bytes = 0, ring = 0;
 	     ring < priv->rx_cfg.num_queues; ring++) {
 		if (priv->rx) {
-			rx_pkts += priv->rx[ring].rpackets;
-			rx_bytes += priv->rx[ring].rbytes;
+			do {
+				start =
+				  u64_stats_fetch_begin(&priv->rx[ring].statss);
+				rx_pkts += priv->rx[ring].rpackets;
+				rx_bytes += priv->rx[ring].rbytes;
+			} while (u64_stats_fetch_retry(&priv->rx[ring].statss,
+						       start));
 		}
 	}
 	for (tx_pkts = 0, tx_bytes = 0, ring = 0;
 	     ring < priv->tx_cfg.num_queues; ring++) {
 		if (priv->tx) {
-			tx_pkts += priv->tx[ring].pkt_done;
-			tx_bytes += priv->tx[ring].bytes_done;
+			do {
+				start =
+				  u64_stats_fetch_begin(&priv->tx[ring].statss);
+				tx_pkts += priv->tx[ring].pkt_done;
+				tx_bytes += priv->tx[ring].bytes_done;
+			} while (u64_stats_fetch_retry(&priv->tx[ring].statss,
+						       start));
 		}
 	}
 

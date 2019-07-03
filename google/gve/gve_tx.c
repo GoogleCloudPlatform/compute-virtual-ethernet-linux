@@ -530,8 +530,10 @@ static int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
 	}
 
 	gve_tx_free_fifo(&tx->tx_fifo, space_freed);
+	u64_stats_update_begin(&tx->statss);
 	tx->bytes_done += bytes;
 	tx->pkt_done += pkts;
+	u64_stats_update_end(&tx->statss);
 	netdev_tx_completed_queue(tx->netdev_txq, pkts, bytes);
 
 	/* start the queue if we've stopped it */
