@@ -161,7 +161,8 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	}
 }
 
-void gve_get_channels(struct net_device *netdev, struct ethtool_channels *cmd)
+static void gve_get_channels(struct net_device *netdev,
+			     struct ethtool_channels *cmd)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 
@@ -175,7 +176,8 @@ void gve_get_channels(struct net_device *netdev, struct ethtool_channels *cmd)
 	cmd->combined_count = 0;
 }
 
-int gve_set_channels(struct net_device *netdev, struct ethtool_channels *cmd)
+static int gve_set_channels(struct net_device *netdev,
+			    struct ethtool_channels *cmd)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 	struct gve_queue_config new_tx_cfg = priv->tx_cfg;
@@ -205,8 +207,8 @@ int gve_set_channels(struct net_device *netdev, struct ethtool_channels *cmd)
 	return gve_adjust_queues(priv, new_rx_cfg, new_tx_cfg);
 }
 
-void gve_get_ringparam(struct net_device *netdev,
-		       struct ethtool_ringparam *cmd)
+static void gve_get_ringparam(struct net_device *netdev,
+			      struct ethtool_ringparam *cmd)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 
@@ -216,7 +218,7 @@ void gve_get_ringparam(struct net_device *netdev,
 	cmd->tx_pending = priv->tx_desc_cnt;
 }
 
-int gve_user_reset(struct net_device *netdev, u32 *flags)
+static int gve_user_reset(struct net_device *netdev, u32 *flags)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 

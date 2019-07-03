@@ -24,7 +24,7 @@
 #define GVE_VERSION_PREFIX	"GVE-"
 
 const char gve_version_str[] = GVE_VERSION;
-const char gve_version_prefix[] = GVE_VERSION_PREFIX;
+static const char gve_version_prefix[] = GVE_VERSION_PREFIX;
 
 static void gve_get_stats(struct net_device *dev, struct rtnl_link_stats64 *s)
 {
@@ -91,12 +91,12 @@ static irqreturn_t gve_intr(int irq, void *arg)
 	struct gve_notify_block *block = arg;
 	struct gve_priv *priv = block->priv;
 
-	writel(cpu_to_be32(GVE_IRQ_MASK), gve_irq_doorbell(priv, block));
+	iowrite32be(GVE_IRQ_MASK, gve_irq_doorbell(priv, block));
 	napi_schedule_irqoff(&block->napi);
 	return IRQ_HANDLED;
 }
 
-int gve_napi_poll(struct napi_struct *napi, int budget)
+static int gve_napi_poll(struct napi_struct *napi, int budget)
 {
 	struct gve_notify_block *block;
 	__be32 __iomem *irq_doorbell;
@@ -116,7 +116,7 @@ int gve_napi_poll(struct napi_struct *napi, int budget)
 
 	napi_complete(napi);
 	irq_doorbell = gve_irq_doorbell(priv, block);
-	writel(cpu_to_be32(GVE_IRQ_ACK | GVE_IRQ_EVENT), irq_doorbell);
+	iowrite32be(GVE_IRQ_ACK | GVE_IRQ_EVENT, irq_doorbell);
 
 	/* Double check we have no extra work.
 	 * Ensure unmask synchronizes with checking for work.
@@ -127,7 +127,7 @@ int gve_napi_poll(struct napi_struct *napi, int budget)
 	if (block->rx)
 		reschedule |= gve_rx_poll(block, -1);
 	if (reschedule && napi_reschedule(napi))
-		writel(cpu_to_be32(GVE_IRQ_MASK), irq_doorbell);
+		iowrite32be(GVE_IRQ_MASK, irq_doorbell);
 
 	return 0;
 }
@@ -311,7 +311,7 @@ static void gve_teardown_device_resources(struct gve_priv *priv)
 	gve_clear_device_resources_ok(priv);
 }
 
-void gve_add_napi(struct gve_priv *priv, int ntfy_idx)
+static void gve_add_napi(struct gve_priv *priv, int ntfy_idx)
 {
 	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 
@@ -319,7 +319,7 @@ void gve_add_napi(struct gve_priv *priv, int ntfy_idx)
 		       NAPI_POLL_WEIGHT);
 }
 
-void gve_remove_napi(struct gve_priv *priv, int ntfy_idx)
+static void gve_remove_napi(struct gve_priv *priv, int ntfy_idx)
 {
 	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 
@@ -829,14 +829,14 @@ static void gve_turnup(struct gve_priv *priv)
 		struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 
 		napi_enable(&block->napi);
-		writel(cpu_to_be32(0), gve_irq_doorbell(priv, block));
+		iowrite32be(0, gve_irq_doorbell(priv, block));
 	}
 	for (idx = 0; idx < priv->rx_cfg.num_queues; idx++) {
 		int ntfy_idx = gve_rx_idx_to_ntfy(priv, idx);
 		struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 
 		napi_enable(&block->napi);
-		writel(cpu_to_be32(0), gve_irq_doorbell(priv, block));
+		iowrite32be(0, gve_irq_doorbell(priv, block));
 	}
 
 	gve_set_napi_enabled(priv);
@@ -889,7 +889,7 @@ static void gve_service_task(struct work_struct *work)
 					     service_task);
 
 	gve_handle_status(priv,
-			  be32_to_cpu(readl(&priv->reg_bar0->device_status)));
+			  ioread32be(&priv->reg_bar0->device_status));
 
 	gve_handle_reset(priv);
 }
@@ -1112,8 +1112,8 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	gve_write_version(&reg_bar->driver_version);
 	/* Get max queues to alloc etherdev */
-	max_rx_queues = be32_to_cpu(readl(&reg_bar->max_tx_queues));
-	max_tx_queues = be32_to_cpu(readl(&reg_bar->max_rx_queues));
+	max_rx_queues = ioread32be(&reg_bar->max_tx_queues);
+	max_tx_queues = ioread32be(&reg_bar->max_rx_queues);
 	/* Alloc and setup the netdev and priv */
 	dev = alloc_etherdev_mqs(sizeof(*priv), max_tx_queues, max_rx_queues);
 	if (!dev) {

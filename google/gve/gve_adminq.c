@@ -25,8 +25,8 @@ int gve_adminq_alloc(struct device *dev, struct gve_priv *priv)
 	priv->adminq_prod_cnt = 0;
 
 	/* Setup Admin queue with the device */
-	writel(cpu_to_be32(priv->adminq_bus_addr / PAGE_SIZE),
-	       &priv->reg_bar0->adminq_pfn);
+	iowrite32be(priv->adminq_bus_addr / PAGE_SIZE,
+		    &priv->reg_bar0->adminq_pfn);
 
 	gve_set_admin_queue_ok(priv);
 	return 0;
@@ -37,8 +37,8 @@ void gve_adminq_release(struct gve_priv *priv)
 	int i = 0;
 
 	/* Tell the device the adminq is leaving */
-	writel(0x0, &priv->reg_bar0->adminq_pfn);
-	while(readl(&priv->reg_bar0->adminq_pfn)) {
+	iowrite32be(0x0, &priv->reg_bar0->adminq_pfn);
+	while (ioread32be(&priv->reg_bar0->adminq_pfn)) {
 		/* If this is reached the device is unrecoverable and still
 		 * holding memory. Continue looping to avoid memory corruption,
 		 * but WARN so it is visible what is going on.
@@ -64,8 +64,7 @@ void gve_adminq_free(struct device *dev, struct gve_priv *priv)
 
 static void gve_adminq_kick_cmd(struct gve_priv *priv, u32 prod_cnt)
 {
-	writel(cpu_to_be32(prod_cnt),
-	       &priv->reg_bar0->adminq_doorbell);
+	iowrite32be(prod_cnt, &priv->reg_bar0->adminq_doorbell);
 }
 
 static bool gve_adminq_wait_for_cmd(struct gve_priv *priv, u32 prod_cnt)
@@ -73,7 +72,7 @@ static bool gve_adminq_wait_for_cmd(struct gve_priv *priv, u32 prod_cnt)
 	int i;
 
 	for (i = 0; i < GVE_MAX_ADMINQ_EVENT_COUNTER_CHECK; i++) {
-		if (be32_to_cpu(readl(&priv->reg_bar0->adminq_event_counter))
+		if (ioread32be(&priv->reg_bar0->adminq_event_counter)
 		    == prod_cnt)
 			return true;
 		msleep(GVE_ADMINQ_SLEEP_LEN);
