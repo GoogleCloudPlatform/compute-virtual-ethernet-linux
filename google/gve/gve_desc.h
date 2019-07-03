@@ -66,7 +66,7 @@ struct gve_rx_desc {
 	__be16	reserved;  /* Reserved to zero */
 	u8	hdr_len;  /* Header length (L2-L4) including padding */
 	u8	hdr_off;  /* 64-byte-scaled offset into RX_DATA entry */
-	__be16	csum;  /* 1's-complement partial checksum of L3+ bytes */
+	__sum16	csum;  /* 1's-complement partial checksum of L3+ bytes */
 	__be16	len;  /* Length of the received packet */
 	__be16	flags_seq;  /* Flags [15:3] and sequence number [2:0] (1-7) */
 } __packed;

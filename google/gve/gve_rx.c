@@ -8,7 +8,7 @@
 #include "gve_adminq.h"
 #include <linux/etherdevice.h>
 
-void gve_rx_remove_from_block(struct gve_priv *priv, int queue_idx)
+static void gve_rx_remove_from_block(struct gve_priv *priv, int queue_idx)
 {
 	struct gve_notify_block *block =
 			&priv->ntfy_blocks[gve_rx_idx_to_ntfy(priv, queue_idx)];
@@ -58,14 +58,13 @@ static void gve_setup_rx_buffer(struct gve_rx_slot_page_info *page_info,
 static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 {
 	struct gve_priv *priv = rx->gve;
-	u32 slots, size;
+	u32 slots;
 	int i;
 
 	/* Allocate one page per Rx queue slot. Each page is split into two
 	 * packet buffers, when possible we "page flip" between the two.
 	 */
 	slots = rx->data.mask + 1;
-	size = slots * PAGE_SIZE;
 
 	rx->data.page_info = kvzalloc(slots *
 				      sizeof(*rx->data.page_info), GFP_KERNEL);
@@ -99,7 +98,8 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 {
 	struct gve_rx_ring *rx = &priv->rx[idx];
 	struct device *hdev = &priv->pdev->dev;
-	u32 slots, npages, gve_desc_per_page;
+	u32 slots, npages;
+	int filled_pages;
 	size_t bytes;
 	int err;
 
@@ -120,12 +120,12 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 						GFP_KERNEL);
 	if (!rx->data.data_ring)
 		return -ENOMEM;
-	rx->desc.fill_cnt = gve_prefill_rx_pages(rx);
-	if (rx->desc.fill_cnt < 0) {
-		rx->desc.fill_cnt = 0;
+	filled_pages = gve_prefill_rx_pages(rx);
+	if (filled_pages < 0) {
 		err = -ENOMEM;
 		goto abort_with_slots;
 	}
+	rx->desc.fill_cnt = filled_pages;
 	/* Ensure data ring slots (packet buffers) are visible. */
 	dma_wmb();
 
@@ -143,7 +143,6 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 		  (unsigned long)rx->data.data_bus);
 
 	/* alloc rx desc ring */
-	gve_desc_per_page = PAGE_SIZE / sizeof(struct gve_rx_desc);
 	bytes = sizeof(struct gve_rx_desc) * priv->rx_desc_cnt;
 	npages = bytes / PAGE_SIZE;
 	if (npages * PAGE_SIZE != bytes) {
@@ -214,7 +213,7 @@ void gve_rx_write_doorbell(struct gve_priv *priv, struct gve_rx_ring *rx)
 {
 	u32 db_idx = be32_to_cpu(rx->q_resources->db_index);
 
-	writel(cpu_to_be32(rx->desc.fill_cnt), &priv->db_bar2[db_idx]);
+	iowrite32be(rx->desc.fill_cnt, &priv->db_bar2[db_idx]);
 }
 
 static enum pkt_hash_types gve_rss_type(__be16 pkt_flags)
@@ -349,7 +348,7 @@ have_skb:
 			skb->ip_summed = CHECKSUM_COMPLETE;
 		else
 			skb->ip_summed = CHECKSUM_NONE;
-		skb->csum = rx_desc->csum;
+		skb->csum = csum_unfold(rx_desc->csum);
 	}
 
 	/* parse flags & pass relevant info up */
@@ -368,7 +367,7 @@ have_skb:
 static bool gve_rx_work_pending(struct gve_rx_ring *rx)
 {
 	struct gve_rx_desc *desc;
-	u16 flags_seq;
+	__be16 flags_seq;
 	u32 next_idx;
 
 	next_idx = rx->desc.cnt & rx->desc.mask;

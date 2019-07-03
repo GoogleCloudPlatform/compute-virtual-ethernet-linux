@@ -129,6 +129,7 @@ struct gve_adminq_create_rx_queue {
 	__be64 rx_desc_ring_addr;
 	__be64 rx_data_ring_addr;
 	__be32 queue_page_list_id;
+	u8 padding[4];
 };
 
 static_assert(sizeof(struct gve_adminq_create_rx_queue) == 48);
@@ -165,6 +166,7 @@ enum gve_set_driver_param_types {
 
 struct gve_adminq_set_driver_parameter {
 	__be32 parameter_type;
+	u8 reserved[4];
 	__be64 parameter_value;
 };
 

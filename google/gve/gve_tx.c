@@ -13,9 +13,9 @@
 
 static inline void gve_tx_put_doorbell(struct gve_priv *priv,
 				       struct gve_queue_resources *q_resources,
-				       __be32 val)
+				       u32 val)
 {
-	writel(val, &priv->db_bar2[be32_to_cpu(q_resources->db_index)]);
+	iowrite32be(val, &priv->db_bar2[be32_to_cpu(q_resources->db_index)]);
 }
 
 /* gvnic can only transmit from a Registered Segment.
@@ -142,7 +142,7 @@ static void gve_tx_remove_from_block(struct gve_priv *priv, int queue_idx)
 static int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
 			     u32 to_do, bool try_to_wake);
 
-void gve_tx_free_ring(struct gve_priv *priv, int idx)
+static void gve_tx_free_ring(struct gve_priv *priv, int idx)
 {
 	struct gve_tx_ring *tx = &priv->tx[idx];
 	struct device *hdev = &priv->pdev->dev;
@@ -470,8 +470,7 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 		 * ringing doorbell.
 		 */
 		dma_wmb();
-		gve_tx_put_doorbell(priv, tx->q_resources,
-				    cpu_to_be32(tx->req));
+		gve_tx_put_doorbell(priv, tx->q_resources, tx->req);
 		return NETDEV_TX_BUSY;
 	}
 	nsegs = gve_tx_add_skb(tx, skb);
@@ -487,8 +486,7 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 
 	/* Ensure tx descs are visible before ringing doorbell */
 	dma_wmb();
-	gve_tx_put_doorbell(priv, tx->q_resources,
-			    cpu_to_be32(tx->req));
+	gve_tx_put_doorbell(priv, tx->q_resources, tx->req);
 	return NETDEV_TX_OK;
 }
 
