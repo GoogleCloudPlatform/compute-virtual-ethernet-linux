@@ -695,6 +695,7 @@ static int gve_open(struct net_device *dev)
 
 	gve_turnup(priv);
 	netif_carrier_on(dev);
+	priv->interface_up_cnt++;
 	return 0;
 
 free_rings:
@@ -736,6 +737,7 @@ static int gve_close(struct net_device *dev)
 
 	gve_free_rings(priv);
 	gve_free_qpls(priv);
+	priv->interface_down_cnt++;
 	return 0;
 
 err:
@@ -1045,6 +1047,9 @@ int gve_reset(struct gve_priv *priv, bool attempt_teardown)
 	/* Set it all back up */
 	err = gve_reset_recovery(priv, was_up);
 	gve_clear_reset_in_progress(priv);
+	priv->reset_cnt++;
+	priv->interface_up_cnt = 0;
+	priv->interface_down_cnt = 0;
 	return err;
 }
 

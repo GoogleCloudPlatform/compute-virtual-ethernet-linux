@@ -71,6 +71,12 @@ struct gve_rx_ring {
 	u32 cnt; /* free-running total number of completed packets */
 	u32 fill_cnt; /* free-running total number of descs and buffs posted */
 	u32 mask; /* masks the cnt and fill_cnt to the size of the ring */
+	u64 rx_copybreak_pkt; /* free-running count of copybreak packets */
+	u64 rx_copied_pkt; /* free-running total number of copied packets */
+	u64 rx_skb_alloc_fail; /* free-running count of skb alloc fails */
+	u64 rx_page_alloc_fail; /* empty for now, for raw dma addressing */
+	u64 rx_dma_mapping_error; /* empty for now, for raw dma addressing */
+	u64 rx_desc_err_dropped_pkt; /* free-running count of packets dropped by descriptor error */
 	u32 q_num; /* queue index */
 	u32 ntfy_id; /* notification block index */
 	struct gve_queue_resources *q_resources; /* head and tail pointer idx */
@@ -202,6 +208,24 @@ struct gve_priv {
 	dma_addr_t adminq_bus_addr;
 	u32 adminq_mask; /* masks prod_cnt to adminq size */
 	u32 adminq_prod_cnt; /* free-running count of AQ cmds executed */
+	u32 adminq_cmd_fail; /* free-running count of AQ cmds failed */
+	u32 adminq_timeouts; /* free-running count of AQ cmds timeouts */
+	/* free-running count of per AQ cmd executed */
+	u32 adminq_describe_device_cnt;
+	u32 adminq_cfg_device_resources_cnt;
+	u32 adminq_register_page_list_cnt;
+	u32 adminq_unregister_page_list_cnt;
+	u32 adminq_create_tx_queue_cnt;
+	u32 adminq_create_rx_queue_cnt;
+	u32 adminq_destroy_tx_queue_cnt;
+	u32 adminq_destroy_rx_queue_cnt;
+	u32 adminq_dcfg_device_resources_cnt;
+	u32 adminq_set_driver_parameter_cnt;
+
+	/* Global stats */
+	u32 interface_up_cnt; /* count of times interface turned up */
+	u32 interface_down_cnt; /* count of times interface turned down */
+	u32 reset_cnt; /* count of reset */
 
 	struct workqueue_struct *gve_wq;
 	struct work_struct service_task;
