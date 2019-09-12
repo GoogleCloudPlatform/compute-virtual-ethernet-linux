@@ -27,6 +27,14 @@
 /* 1 for management, 1 for rx, 1 for tx */
 #define GVE_MIN_MSIX 3
 
+/* Numbers of gve tx/rx stats in stats report. */
+#define GVE_TX_STATS_REPORT_NUM	5
+#define GVE_RX_STATS_REPORT_NUM	2
+
+/* Numbers of NIC tx/rx stats in stats report. */
+#define NIC_TX_STATS_REPORT_NUM	0
+#define NIC_RX_STATS_REPORT_NUM	4
+
 /* Each slot in the desc ring has a 1:1 mapping to a slot in the data ring */
 struct gve_rx_desc_queue {
 	struct gve_rx_desc *desc_ring; /* the descriptor ring */
@@ -221,6 +229,7 @@ struct gve_priv {
 	u32 adminq_destroy_rx_queue_cnt;
 	u32 adminq_dcfg_device_resources_cnt;
 	u32 adminq_set_driver_parameter_cnt;
+	u32 adminq_report_stats_cnt;
 
 	/* Global stats */
 	u32 interface_up_cnt; /* count of times interface turned up */
@@ -231,6 +240,11 @@ struct gve_priv {
 	struct work_struct service_task;
 	unsigned long service_task_flags;
 	unsigned long state_flags;
+
+	struct gve_stats_report *stats_report;
+	u64 stats_report_len;
+	dma_addr_t stats_report_bus; /* dma address for the stats report */
+	unsigned long ethtool_flags;
 };
 
 enum gve_service_task_flags {
@@ -244,6 +258,10 @@ enum gve_state_flags {
 	GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK	= BIT(2),
 	GVE_PRIV_FLAGS_DEVICE_RINGS_OK		= BIT(3),
 	GVE_PRIV_FLAGS_NAPI_ENABLED		= BIT(4),
+};
+
+enum gve_ethtool_flags {
+	GVE_PRIV_FLAGS_REPORT_STATS		= BIT(1),
 };
 
 static inline bool gve_get_do_reset(struct gve_priv *priv)
@@ -351,6 +369,21 @@ static inline void gve_set_napi_enabled(struct gve_priv *priv)
 static inline void gve_clear_napi_enabled(struct gve_priv *priv)
 {
 	clear_bit(GVE_PRIV_FLAGS_NAPI_ENABLED, &priv->state_flags);
+}
+
+static inline bool gve_get_report_stats(struct gve_priv *priv)
+{
+	return test_bit(GVE_PRIV_FLAGS_REPORT_STATS, &priv->ethtool_flags);
+}
+
+static inline void gve_set_report_stats(struct gve_priv *priv)
+{
+	set_bit(GVE_PRIV_FLAGS_REPORT_STATS, &priv->ethtool_flags);
+}
+
+static inline void gve_clear_report_stats(struct gve_priv *priv)
+{
+	clear_bit(GVE_PRIV_FLAGS_REPORT_STATS, &priv->ethtool_flags);
 }
 
 /* Returns the address of the ntfy_blocks irq doorbell

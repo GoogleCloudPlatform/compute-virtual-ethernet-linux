@@ -6,6 +6,7 @@
 
 #include <linux/rtnetlink.h>
 #include "gve.h"
+#include "gve_adminq.h"
 
 static void gve_get_drvinfo(struct net_device *netdev,
 			    struct ethtool_drvinfo *info)
@@ -56,12 +57,18 @@ static const char gve_gstrings_adminq_stats[][ETH_GSTRING_LEN] = {
 	"adminq_create_tx_queue_cnt", "adminq_create_rx_queue_cnt",
 	"adminq_destroy_tx_queue_cnt", "adminq_destroy_rx_queue_cnt",
 	"adminq_dcfg_device_resources_cnt", "adminq_set_driver_parameter_cnt",
+	"adminq_report_stats_cnt",
+};
+
+static const char gve_gstrings_priv_flags[][ETH_GSTRING_LEN] = {
+	"report-stats",
 };
 
 #define GVE_MAIN_STATS_LEN  ARRAY_SIZE(gve_gstrings_main_stats)
 #define GVE_ADMINQ_STATS_LEN  ARRAY_SIZE(gve_gstrings_adminq_stats)
 #define NUM_GVE_TX_CNTS	ARRAY_SIZE(gve_gstrings_tx_stats)
 #define NUM_GVE_RX_CNTS	ARRAY_SIZE(gve_gstrings_rx_stats)
+#define GVE_PRIV_FLAGS_STR_LEN ARRAY_SIZE(gve_gstrings_priv_flags)
 
 static void gve_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 {
@@ -69,32 +76,42 @@ static void gve_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 	char *s = (char *)data;
 	int i, j;
 
-	if (stringset != ETH_SS_STATS)
-		return;
+	switch (stringset) {
+	case ETH_SS_STATS:
+		memcpy(s, *gve_gstrings_main_stats,
+		       sizeof(gve_gstrings_main_stats));
+		s += sizeof(gve_gstrings_main_stats);
 
-	memcpy(s, *gve_gstrings_main_stats,
-	       sizeof(gve_gstrings_main_stats));
-	s += sizeof(gve_gstrings_main_stats);
-
-	for (i = 0; i < priv->rx_cfg.num_queues; i++) {
-		for (j = 0; j < NUM_GVE_RX_CNTS; j++) {
-			snprintf(s, ETH_GSTRING_LEN, gve_gstrings_rx_stats[j],
-			i);
-			s += ETH_GSTRING_LEN;
+		for (i = 0; i < priv->rx_cfg.num_queues; i++) {
+			for (j = 0; j < NUM_GVE_RX_CNTS; j++) {
+				snprintf(s, ETH_GSTRING_LEN,
+					 gve_gstrings_rx_stats[j], i);
+				s += ETH_GSTRING_LEN;
+			}
 		}
-	}
 
-	for (i = 0; i < priv->tx_cfg.num_queues; i++) {
-		for (j = 0; j < NUM_GVE_TX_CNTS; j++) {
-			snprintf(s, ETH_GSTRING_LEN, gve_gstrings_tx_stats[j],
-				i);
-			s += ETH_GSTRING_LEN;
+		for (i = 0; i < priv->tx_cfg.num_queues; i++) {
+			for (j = 0; j < NUM_GVE_TX_CNTS; j++) {
+				snprintf(s, ETH_GSTRING_LEN,
+					 gve_gstrings_tx_stats[j], i);
+				s += ETH_GSTRING_LEN;
+			}
 		}
-	}
 
-	memcpy(s, *gve_gstrings_adminq_stats,
-	       sizeof(gve_gstrings_adminq_stats));
-	s += sizeof(gve_gstrings_adminq_stats);
+		memcpy(s, *gve_gstrings_adminq_stats,
+		       sizeof(gve_gstrings_adminq_stats));
+		s += sizeof(gve_gstrings_adminq_stats);
+		break;
+
+	case ETH_SS_PRIV_FLAGS:
+		memcpy(s, *gve_gstrings_priv_flags,
+		       sizeof(gve_gstrings_priv_flags));
+		s += sizeof(gve_gstrings_priv_flags);
+		break;
+
+	default:
+		break;
+	}
 }
 
 static int gve_get_sset_count(struct net_device *netdev, int sset)
@@ -106,6 +123,8 @@ static int gve_get_sset_count(struct net_device *netdev, int sset)
 		return GVE_MAIN_STATS_LEN + GVE_ADMINQ_STATS_LEN +
 		       (priv->rx_cfg.num_queues * NUM_GVE_RX_CNTS) +
 		       (priv->tx_cfg.num_queues * NUM_GVE_TX_CNTS);
+	case ETH_SS_PRIV_FLAGS:
+		return GVE_PRIV_FLAGS_STR_LEN;
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -259,6 +278,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	data[i++] = priv->adminq_destroy_rx_queue_cnt;
 	data[i++] = priv->adminq_dcfg_device_resources_cnt;
 	data[i++] = priv->adminq_set_driver_parameter_cnt;
+	data[i++] = priv->adminq_report_stats_cnt;
 }
 
 static void gve_get_channels(struct net_device *netdev,
@@ -364,6 +384,53 @@ static int gve_set_tunable(struct net_device *netdev,
 	}
 }
 
+static u32 gve_get_priv_flags(struct net_device *netdev)
+{
+	struct gve_priv *priv = netdev_priv(netdev);
+	u32 i, ret_flags = 0;
+
+	for (i = 0; i < GVE_PRIV_FLAGS_STR_LEN; i++) {
+		if (priv->ethtool_flags & BIT(i)) {
+			ret_flags |= BIT(i);
+		}
+	}
+	return ret_flags;
+}
+
+static int gve_set_priv_flags(struct net_device *netdev, u32 flags)
+{
+	struct gve_priv *priv = netdev_priv(netdev);
+	u64 ori_flags, new_flags;
+	int err;
+	u32 i;
+
+	ori_flags = READ_ONCE(priv->ethtool_flags);
+	new_flags = ori_flags;
+
+	for (i = 0; i < GVE_PRIV_FLAGS_STR_LEN; i++) {
+		err = 0;
+		if (flags & BIT(i))
+			new_flags |= BIT(i);
+		else
+			new_flags &= ~(BIT(i));
+		/* set report-stats */
+		if (strcmp(gve_gstrings_priv_flags[i], "report-stats") == 0) {
+			/* execute command when flag changed */
+			if ((flags & BIT(i)) && !(ori_flags & BIT(i)))
+				err = gve_adminq_report_stats(
+					priv, priv->stats_report_len,
+					priv->stats_report_bus);
+			else if (!(flags & BIT(i)) && (ori_flags & BIT(i)))
+				err = gve_adminq_report_stats(priv, 0, 0x0);
+		}
+		if (err)
+			return EOPNOTSUPP;
+		priv->ethtool_flags = new_flags;
+	}
+
+	return 0;
+}
+
 const struct ethtool_ops gve_ethtool_ops = {
 	.get_drvinfo = gve_get_drvinfo,
 	.get_strings = gve_get_strings,
@@ -378,4 +445,6 @@ const struct ethtool_ops gve_ethtool_ops = {
 	.reset = gve_user_reset,
 	.get_tunable = gve_get_tunable,
 	.set_tunable = gve_set_tunable,
+	.get_priv_flags = gve_get_priv_flags,
+	.set_priv_flags = gve_set_priv_flags,
 };
