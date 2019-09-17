@@ -373,7 +373,7 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	priv->default_num_queues = be16_to_cpu(descriptor->default_num_queues);
 
 free_device_descriptor:
-	dma_free_coherent(&priv->pdev->dev, sizeof(*descriptor), descriptor,
+	dma_free_coherent(&priv->pdev->dev, PAGE_SIZE, descriptor,
 			  descriptor_bus);
 	return err;
 }
