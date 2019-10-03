@@ -16,7 +16,8 @@ struct gve_registers {
 	__be32	adminq_pfn;
 	__be32	adminq_doorbell;
 	__be32	adminq_event_counter;
-	u8	reserved[3];
+	u8	reserved[2];
+	u8	dma_mask;
 	u8	driver_version;
 };
 
