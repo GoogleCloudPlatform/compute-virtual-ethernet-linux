@@ -390,7 +390,18 @@ static void gve_tx_fill_seg_desc(union gve_tx_desc *seg_desc,
 	seg_desc->seg.seg_addr = cpu_to_be64(addr);
 }
 
-static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
+static inline void dma_sync_for_device(struct gve_priv *priv, dma_addr_t *page_buses,
+				       u64 iov_offset, u64 iov_len)
+{
+	u64 addr;
+	for (addr = iov_offset; addr < iov_offset + iov_len; addr += PAGE_SIZE) {
+		dma_addr_t dma = page_buses[addr / PAGE_SIZE];
+		dma_sync_single_for_device(&priv->pdev->dev, dma, PAGE_SIZE, DMA_TO_DEVICE);
+	}
+}
+
+
+static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb, struct gve_priv *priv)
 {
 	int pad_bytes, hlen, hdr_nfrags, payload_nfrags, l4_hdr_offset;
 	union gve_tx_desc *pkt_desc, *seg_desc;
@@ -432,6 +443,9 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 	skb_copy_bits(skb, 0,
 		      tx->tx_fifo.base + info->iov[hdr_nfrags - 1].iov_offset,
 		      hlen);
+	dma_sync_for_device(priv, tx->tx_fifo.qpl->page_buses,
+			    info->iov[hdr_nfrags - 1].iov_offset,
+			    info->iov[hdr_nfrags - 1].iov_len);
 	copy_offset = hlen;
 
 	for (i = payload_iov; i < payload_nfrags + payload_iov; i++) {
@@ -445,6 +459,9 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb)
 		skb_copy_bits(skb, copy_offset,
 			      tx->tx_fifo.base + info->iov[i].iov_offset,
 			      info->iov[i].iov_len);
+		dma_sync_for_device(priv, tx->tx_fifo.qpl->page_buses,
+				    info->iov[i].iov_offset,
+				    info->iov[i].iov_len);
 		copy_offset += info->iov[i].iov_len;
 	}
 
@@ -473,7 +490,7 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 		gve_tx_put_doorbell(priv, tx->q_resources, tx->req);
 		return NETDEV_TX_BUSY;
 	}
-	nsegs = gve_tx_add_skb(tx, skb);
+	nsegs = gve_tx_add_skb(tx, skb, priv);
 
 	netdev_tx_sent_queue(tx->netdev_txq, skb->len);
 	skb_tx_timestamp(skb);
