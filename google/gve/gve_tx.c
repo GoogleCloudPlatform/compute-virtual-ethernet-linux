@@ -390,7 +390,7 @@ static void gve_tx_fill_seg_desc(union gve_tx_desc *seg_desc,
 	seg_desc->seg.seg_addr = cpu_to_be64(addr);
 }
 
-static inline void dma_sync_for_device(struct gve_priv *priv, dma_addr_t *page_buses,
+static inline void gve_dma_sync_for_device(struct gve_priv *priv, dma_addr_t *page_buses,
 				       u64 iov_offset, u64 iov_len)
 {
 	u64 addr;
@@ -443,9 +443,9 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb, struct gv
 	skb_copy_bits(skb, 0,
 		      tx->tx_fifo.base + info->iov[hdr_nfrags - 1].iov_offset,
 		      hlen);
-	dma_sync_for_device(priv, tx->tx_fifo.qpl->page_buses,
-			    info->iov[hdr_nfrags - 1].iov_offset,
-			    info->iov[hdr_nfrags - 1].iov_len);
+	gve_dma_sync_for_device(priv, tx->tx_fifo.qpl->page_buses,
+				info->iov[hdr_nfrags - 1].iov_offset,
+				info->iov[hdr_nfrags - 1].iov_len);
 	copy_offset = hlen;
 
 	for (i = payload_iov; i < payload_nfrags + payload_iov; i++) {
@@ -459,9 +459,9 @@ static int gve_tx_add_skb(struct gve_tx_ring *tx, struct sk_buff *skb, struct gv
 		skb_copy_bits(skb, copy_offset,
 			      tx->tx_fifo.base + info->iov[i].iov_offset,
 			      info->iov[i].iov_len);
-		dma_sync_for_device(priv, tx->tx_fifo.qpl->page_buses,
-				    info->iov[i].iov_offset,
-				    info->iov[i].iov_len);
+		gve_dma_sync_for_device(priv, tx->tx_fifo.qpl->page_buses,
+					info->iov[i].iov_offset,
+					info->iov[i].iov_len);
 		copy_offset += info->iov[i].iov_len;
 	}
 
