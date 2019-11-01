@@ -135,20 +135,71 @@ static int gve_adminq_parse_err(struct gve_priv *priv, u32 status)
 	}
 }
 
+/* Flushes all AQ commands currently queued and waits for them to complete.
+ * If there are failures, it will return the first error.
+ */
+static int gve_adminq_kick_and_wait(struct gve_priv *priv)
+{
+	u32 tail, head;
+	int i;
+
+	tail = ioread32be(&priv->reg_bar0->adminq_event_counter);
+	head = priv->adminq_prod_cnt;
+
+	gve_adminq_kick_cmd(priv, head);
+	if (!gve_adminq_wait_for_cmd(priv, head)) {
+		dev_err(&priv->pdev->dev, "AQ commands timed out, need to reset AQ\n");
+		priv->adminq_timeouts++;
+		return -ENOTRECOVERABLE;
+	}
+
+	for (i = tail; i < head; i++) {
+		union gve_adminq_command *cmd;
+		u32 status, err;
+
+		cmd = &priv->adminq[i & priv->adminq_mask];
+		status = be32_to_cpu(READ_ONCE(cmd->status));
+		err = gve_adminq_parse_err(priv, status);
+		if (err)
+			// Return the first error if we failed.
+			return err;
+	}
+
+	return 0;
+}
+
 /* This function is not threadsafe - the caller is responsible for any
  * necessary locks.
  */
-int gve_adminq_execute_cmd(struct gve_priv *priv,
-			   union gve_adminq_command *cmd_orig)
+static int gve_adminq_issue_cmd(struct gve_priv *priv,
+				union gve_adminq_command *cmd_orig)
 {
 	union gve_adminq_command *cmd;
+	u32 tail;
 	u32 opcode;
-	u32 status = 0;
-	u32 prod_cnt;
+
+	tail = ioread32be(&priv->reg_bar0->adminq_event_counter);
+
+	// Check if next command will overflow the buffer.
+	if (((priv->adminq_prod_cnt + 1) & priv->adminq_mask) == tail) {
+		int err;
+
+		// Flush existing commands to make room.
+		err = gve_adminq_kick_and_wait(priv);
+		if (err)
+			return err;
+
+		// Retry.
+		tail = ioread32be(&priv->reg_bar0->adminq_event_counter);
+		if (((priv->adminq_prod_cnt + 1) & priv->adminq_mask) == tail) {
+			// This should never happen. We just flushed the
+			// command queue so there should be enough space.
+			return -ENOMEM;
+		}
+	}
 
 	cmd = &priv->adminq[priv->adminq_prod_cnt & priv->adminq_mask];
 	priv->adminq_prod_cnt++;
-	prod_cnt = priv->adminq_prod_cnt;
 
 	memcpy(cmd, cmd_orig, sizeof(*cmd_orig));
 	opcode = be32_to_cpu(READ_ONCE(cmd->opcode));
@@ -191,16 +242,31 @@ int gve_adminq_execute_cmd(struct gve_priv *priv,
 		dev_err(&priv->pdev->dev, "unknown AQ command opcode %d\n", opcode);
 	}
 
-	gve_adminq_kick_cmd(priv, prod_cnt);
-	if (!gve_adminq_wait_for_cmd(priv, prod_cnt)) {
-		dev_err(&priv->pdev->dev, "AQ command timed out, need to reset AQ\n");
-		priv->adminq_timeouts++;
-		return -ENOTRECOVERABLE;
-	}
+	return 0;
+}
 
-	memcpy(cmd_orig, cmd, sizeof(*cmd));
-	status = be32_to_cpu(READ_ONCE(cmd->status));
-	return gve_adminq_parse_err(priv, status);
+/* This function is not threadsafe - the caller is responsible for any
+ * necessary locks.
+ * The caller is also responsible for making sure there are no commands
+ * waiting to be executed.
+ */
+static int gve_adminq_execute_cmd(struct gve_priv *priv,
+			   union gve_adminq_command *cmd_orig)
+{
+	u32 tail, head;
+	int err;
+
+	tail = ioread32be(&priv->reg_bar0->adminq_event_counter);
+	head = priv->adminq_prod_cnt;
+	if (tail != head)
+		// This is not a valid path
+		return -EINVAL;
+
+	err = gve_adminq_issue_cmd(priv, cmd_orig);
+	if (err)
+		return err;
+
+	return gve_adminq_kick_and_wait(priv);
 }
 
 /* The device specifies that the management vector can either be the first irq
@@ -245,70 +311,101 @@ int gve_adminq_deconfigure_device_resources(struct gve_priv *priv)
 	return gve_adminq_execute_cmd(priv, &cmd);
 }
 
-int gve_adminq_create_tx_queue(struct gve_priv *priv, u32 queue_index)
+int gve_adminq_create_tx_queues(struct gve_priv *priv, u32 num_queues)
 {
-	struct gve_tx_ring *tx = &priv->tx[queue_index];
 	union gve_adminq_command cmd;
+	struct gve_tx_ring *tx;
+	int err;
+	int i;
 
-	memset(&cmd, 0, sizeof(cmd));
-	cmd.opcode = cpu_to_be32(GVE_ADMINQ_CREATE_TX_QUEUE);
-	cmd.create_tx_queue = (struct gve_adminq_create_tx_queue) {
-		.queue_id = cpu_to_be32(queue_index),
-		.reserved = 0,
-		.queue_resources_addr = cpu_to_be64(tx->q_resources_bus),
-		.tx_ring_addr = cpu_to_be64(tx->bus),
-		.queue_page_list_id = cpu_to_be32(tx->tx_fifo.qpl->id),
-		.ntfy_id = cpu_to_be32(tx->ntfy_id),
-	};
+	for (i = 0; i < num_queues; i++) {
+		tx = &priv->tx[i];
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.opcode = cpu_to_be32(GVE_ADMINQ_CREATE_TX_QUEUE);
+		cmd.create_tx_queue = (struct gve_adminq_create_tx_queue) {
+			.queue_id = cpu_to_be32(i),
+			.reserved = 0,
+			.queue_resources_addr =
+				cpu_to_be64(tx->q_resources_bus),
+			.tx_ring_addr = cpu_to_be64(tx->bus),
+			.queue_page_list_id = cpu_to_be32(tx->tx_fifo.qpl->id),
+			.ntfy_id = cpu_to_be32(tx->ntfy_id),
+		};
+		err = gve_adminq_issue_cmd(priv, &cmd);
+		if (err)
+			return err;
+	}
 
-	return gve_adminq_execute_cmd(priv, &cmd);
+	return gve_adminq_kick_and_wait(priv);
 }
 
-int gve_adminq_create_rx_queue(struct gve_priv *priv, u32 queue_index)
+int gve_adminq_create_rx_queues(struct gve_priv *priv, u32 num_queues)
 {
-	struct gve_rx_ring *rx = &priv->rx[queue_index];
 	union gve_adminq_command cmd;
+	struct gve_rx_ring *rx;
+	int err;
+	int i;
 
-	memset(&cmd, 0, sizeof(cmd));
-	cmd.opcode = cpu_to_be32(GVE_ADMINQ_CREATE_RX_QUEUE);
-	cmd.create_rx_queue = (struct gve_adminq_create_rx_queue) {
-		.queue_id = cpu_to_be32(queue_index),
-		.index = cpu_to_be32(queue_index),
-		.reserved = 0,
-		.ntfy_id = cpu_to_be32(rx->ntfy_id),
-		.queue_resources_addr = cpu_to_be64(rx->q_resources_bus),
-		.rx_desc_ring_addr = cpu_to_be64(rx->desc.bus),
-		.rx_data_ring_addr = cpu_to_be64(rx->data.data_bus),
-		.queue_page_list_id = cpu_to_be32(rx->data.qpl->id),
-	};
+	for (i = 0; i < num_queues; i++) {
+		rx = &priv->rx[i];
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.opcode = cpu_to_be32(GVE_ADMINQ_CREATE_RX_QUEUE);
+		cmd.create_rx_queue = (struct gve_adminq_create_rx_queue) {
+			.queue_id = cpu_to_be32(i),
+			.index = cpu_to_be32(i),
+			.reserved = 0,
+			.ntfy_id = cpu_to_be32(rx->ntfy_id),
+			.queue_resources_addr = cpu_to_be64(rx->q_resources_bus),
+			.rx_desc_ring_addr = cpu_to_be64(rx->desc.bus),
+			.rx_data_ring_addr = cpu_to_be64(rx->data.data_bus),
+			.queue_page_list_id = cpu_to_be32(rx->data.qpl->id),
+		};
+		err = gve_adminq_issue_cmd(priv, &cmd);
+		if (err)
+			return err;
+	}
 
-	return gve_adminq_execute_cmd(priv, &cmd);
+	return gve_adminq_kick_and_wait(priv);
 }
 
-int gve_adminq_destroy_tx_queue(struct gve_priv *priv, u32 queue_index)
+int gve_adminq_destroy_tx_queues(struct gve_priv *priv, u32 num_queues)
 {
 	union gve_adminq_command cmd;
+	int err;
+	int i;
 
-	memset(&cmd, 0, sizeof(cmd));
-	cmd.opcode = cpu_to_be32(GVE_ADMINQ_DESTROY_TX_QUEUE);
-	cmd.destroy_tx_queue = (struct gve_adminq_destroy_tx_queue) {
-		.queue_id = cpu_to_be32(queue_index),
-	};
+	for (i = 0; i < num_queues; i++) {
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.opcode = cpu_to_be32(GVE_ADMINQ_DESTROY_TX_QUEUE);
+		cmd.destroy_tx_queue = (struct gve_adminq_destroy_tx_queue) {
+			.queue_id = cpu_to_be32(i),
+		};
+		err = gve_adminq_issue_cmd(priv, &cmd);
+		if (err)
+			return err;
+	}
 
-	return gve_adminq_execute_cmd(priv, &cmd);
+	return gve_adminq_kick_and_wait(priv);
 }
 
-int gve_adminq_destroy_rx_queue(struct gve_priv *priv, u32 queue_index)
+int gve_adminq_destroy_rx_queues(struct gve_priv *priv, u32 num_queues)
 {
 	union gve_adminq_command cmd;
+	int err;
+	int i;
 
-	memset(&cmd, 0, sizeof(cmd));
-	cmd.opcode = cpu_to_be32(GVE_ADMINQ_DESTROY_RX_QUEUE);
-	cmd.destroy_rx_queue = (struct gve_adminq_destroy_rx_queue) {
-		.queue_id = cpu_to_be32(queue_index),
-	};
+	for (i = 0; i < num_queues; i++) {
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.opcode = cpu_to_be32(GVE_ADMINQ_DESTROY_RX_QUEUE);
+		cmd.destroy_rx_queue = (struct gve_adminq_destroy_rx_queue) {
+			.queue_id = cpu_to_be32(i),
+		};
+		err = gve_adminq_issue_cmd(priv, &cmd);
+		if (err)
+			return err;
+	}
 
-	return gve_adminq_execute_cmd(priv, &cmd);
+	return gve_adminq_kick_and_wait(priv);
 }
 
 int gve_adminq_describe_device(struct gve_priv *priv)
