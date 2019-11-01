@@ -251,6 +251,7 @@ enum gve_service_task_flags_bit {
 	GVE_PRIV_FLAGS_DO_RESET			= 1,
 	GVE_PRIV_FLAGS_RESET_IN_PROGRESS	= 2,
 	GVE_PRIV_FLAGS_PROBE_IN_PROGRESS	= 3,
+	GVE_PRIV_FLAGS_DO_REPORT_STATS		= 4,
 };
 
 enum gve_state_flags_bit {
@@ -309,6 +310,22 @@ static inline void gve_set_probe_in_progress(struct gve_priv *priv)
 static inline void gve_clear_probe_in_progress(struct gve_priv *priv)
 {
 	clear_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS, &priv->service_task_flags);
+}
+
+static inline bool gve_get_do_report_stats(struct gve_priv *priv)
+{
+	return test_bit(GVE_PRIV_FLAGS_DO_REPORT_STATS,
+			&priv->service_task_flags);
+}
+
+static inline void gve_set_do_report_stats(struct gve_priv *priv)
+{
+	set_bit(GVE_PRIV_FLAGS_DO_REPORT_STATS, &priv->service_task_flags);
+}
+
+static inline void gve_clear_do_report_stats(struct gve_priv *priv)
+{
+	clear_bit(GVE_PRIV_FLAGS_DO_REPORT_STATS, &priv->service_task_flags);
 }
 
 static inline bool gve_get_admin_queue_ok(struct gve_priv *priv)
@@ -507,6 +524,8 @@ int gve_reset(struct gve_priv *priv, bool attempt_teardown);
 int gve_adjust_queues(struct gve_priv *priv,
 		      struct gve_queue_config new_rx_config,
 		      struct gve_queue_config new_tx_config);
+/* report stats handling */
+void gve_handle_report_stats(struct gve_priv *priv);
 /* exported by ethtool.c */
 extern const struct ethtool_ops gve_ethtool_ops;
 /* needed by ethtool */

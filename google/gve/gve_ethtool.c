@@ -415,6 +415,9 @@ static int gve_set_priv_flags(struct net_device *netdev, u32 flags)
 			new_flags &= ~(BIT(i));
 		/* set report-stats */
 		if (strcmp(gve_gstrings_priv_flags[i], "report-stats") == 0) {
+			/* update the stats when user turns report-stats on */
+			if (flags & BIT(i))
+				gve_handle_report_stats(priv);
 			/* execute command when flag changed */
 			if ((flags & BIT(i)) && !(ori_flags & BIT(i)))
 				err = gve_adminq_report_stats(

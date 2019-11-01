@@ -910,7 +910,7 @@ static void gve_handle_status(struct gve_priv *priv, u32 status)
 	}
 	if (GVE_DEVICE_STATUS_REPORT_STATS_MASK & status) {
 		dev_info(&priv->pdev->dev, "Device report stats on.\n");
-		gve_set_report_stats(priv);
+		gve_set_do_report_stats(priv);
 	}
 }
 
@@ -930,11 +930,14 @@ static void gve_handle_reset(struct gve_priv *priv)
 	}
 }
 
-static void gve_handle_report_stats(struct gve_priv *priv)
+void gve_handle_report_stats(struct gve_priv *priv)
 {
 	int idx, stats_idx = 0, tx_bytes;
 	unsigned int start = 0;
 	struct stats *stats = priv->stats_report->stats;
+
+	if (!gve_get_report_stats(priv))
+		return;
 
 	be64_add_cpu(&priv->stats_report->written_count, 1);
 	/* tx stats */
@@ -990,7 +993,7 @@ static void gve_handle_report_stats(struct gve_priv *priv)
 	}
 }
 
-/* Handle NIC status register changes and reset requests */
+/* Handle NIC status register changes, reset requests and report stats */
 static void gve_service_task(struct work_struct *work)
 {
 	struct gve_priv *priv = container_of(work, struct gve_priv,
@@ -1000,7 +1003,10 @@ static void gve_service_task(struct work_struct *work)
 			  ioread32be(&priv->reg_bar0->device_status));
 
 	gve_handle_reset(priv);
-	gve_handle_report_stats(priv);
+	if (gve_get_do_report_stats(priv)) {
+		gve_handle_report_stats(priv);
+		gve_clear_do_report_stats(priv);
+	}
 }
 
 static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
