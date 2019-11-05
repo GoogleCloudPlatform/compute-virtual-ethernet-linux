@@ -94,11 +94,8 @@ static int gve_alloc_stats_report(struct gve_priv *priv)
 				   &priv->stats_report_bus, GFP_KERNEL);
 	if (!priv->stats_report)
 		return -ENOMEM;
-	if (gve_get_report_stats(priv))
-		err = gve_adminq_report_stats(priv, priv->stats_report_len,
-					      priv->stats_report_bus);
-	else
-		err = gve_adminq_report_stats(priv, 0, 0x0);
+	err = gve_adminq_report_stats(priv, priv->stats_report_len,
+				      priv->stats_report_bus);
 	if (err)
 		dev_err(&priv->pdev->dev,
 			"Failed to report stats: err=%d\n", err);
@@ -107,9 +104,16 @@ static int gve_alloc_stats_report(struct gve_priv *priv)
 
 static void gve_free_stats_report(struct gve_priv *priv)
 {
+	int err;
+
 	dma_free_coherent(&priv->pdev->dev, priv->stats_report_len,
 			  priv->stats_report, priv->stats_report_bus);
 	priv->stats_report = NULL;
+	/* detach the stats report */
+	err = gve_adminq_report_stats(priv, 0, 0x0);
+	if (err)
+		dev_err(&priv->pdev->dev,
+			"Failed to detach stats report: err=%d\n", err);
 }
 
 static irqreturn_t gve_mgmnt_intr(int irq, void *arg)

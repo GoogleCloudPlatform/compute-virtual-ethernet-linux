@@ -401,34 +401,33 @@ static int gve_set_priv_flags(struct net_device *netdev, u32 flags)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 	u64 ori_flags, new_flags;
-	int err;
 	u32 i;
 
 	ori_flags = READ_ONCE(priv->ethtool_flags);
 	new_flags = ori_flags;
 
 	for (i = 0; i < GVE_PRIV_FLAGS_STR_LEN; i++) {
-		err = 0;
 		if (flags & BIT(i))
 			new_flags |= BIT(i);
 		else
 			new_flags &= ~(BIT(i));
+		priv->ethtool_flags = new_flags;
 		/* set report-stats */
 		if (strcmp(gve_gstrings_priv_flags[i], "report-stats") == 0) {
 			/* update the stats when user turns report-stats on */
 			if (flags & BIT(i))
 				gve_handle_report_stats(priv);
-			/* execute command when flag changed */
-			if ((flags & BIT(i)) && !(ori_flags & BIT(i)))
-				err = gve_adminq_report_stats(
-					priv, priv->stats_report_len,
-					priv->stats_report_bus);
-			else if (!(flags & BIT(i)) && (ori_flags & BIT(i)))
-				err = gve_adminq_report_stats(priv, 0, 0x0);
+			/* zero off gve stats when report-stats turned off */
+			if (!(flags & BIT(i)) && (ori_flags & BIT(i))) {
+				int tx_stats_num = GVE_TX_STATS_REPORT_NUM *
+					priv->tx_cfg.num_queues;
+				int rx_stats_num = GVE_RX_STATS_REPORT_NUM *
+					priv->rx_cfg.num_queues;
+				memset(priv->stats_report->stats, 0,
+				       (tx_stats_num + rx_stats_num) *
+				       sizeof(struct stats));
+			}
 		}
-		if (err)
-			return EOPNOTSUPP;
-		priv->ethtool_flags = new_flags;
 	}
 
 	return 0;
