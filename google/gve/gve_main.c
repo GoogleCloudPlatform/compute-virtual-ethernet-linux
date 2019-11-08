@@ -78,6 +78,24 @@ static void gve_free_counter_array(struct gve_priv *priv)
 	priv->counter_array = NULL;
 }
 
+void gve_service_task_schedule(struct gve_priv *priv)
+{
+	if (!gve_get_probe_in_progress(priv) &&
+	    !gve_get_reset_in_progress(priv)) {
+		gve_set_do_report_stats(priv);
+		queue_work(priv->gve_wq, &priv->service_task);
+	}
+}
+
+static void gve_service_timer(struct timer_list *t)
+{
+	struct gve_priv *priv = from_timer(priv, t, service_timer);
+
+	mod_timer(&priv->service_timer,
+		  round_jiffies(jiffies + priv->service_timer_period));
+	gve_service_task_schedule(priv);
+}
+
 static int gve_alloc_stats_report(struct gve_priv *priv)
 {
 	int tx_stats_num, rx_stats_num;
@@ -94,11 +112,19 @@ static int gve_alloc_stats_report(struct gve_priv *priv)
 				   &priv->stats_report_bus, GFP_KERNEL);
 	if (!priv->stats_report)
 		return -ENOMEM;
+	/* Set up timer for periodic task */
+	timer_setup(&priv->service_timer, gve_service_timer, 0);
+	priv->service_timer_period = GVE_SERVICE_TIMER_PERIOD;
+	/* Start the service task timer */
+	mod_timer(&priv->service_timer,
+		  round_jiffies(jiffies + priv->service_timer_period));
 	return 0;
 }
 
 static void gve_free_stats_report(struct gve_priv *priv)
 {
+
+	del_timer_sync(&priv->service_timer);
 	dma_free_coherent(&priv->pdev->dev, priv->stats_report_len,
 			  priv->stats_report, priv->stats_report_bus);
 	priv->stats_report = NULL;

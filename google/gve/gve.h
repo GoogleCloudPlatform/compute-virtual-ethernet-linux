@@ -35,6 +35,9 @@
 #define NIC_TX_STATS_REPORT_NUM	0
 #define NIC_RX_STATS_REPORT_NUM	4
 
+/* Interval to schedule a service task, 20000ms. */
+#define GVE_SERVICE_TIMER_PERIOD	20000
+
 /* Each slot in the desc ring has a 1:1 mapping to a slot in the data ring */
 struct gve_rx_desc_queue {
 	struct gve_rx_desc *desc_ring; /* the descriptor ring */
@@ -245,6 +248,9 @@ struct gve_priv {
 	u64 stats_report_len;
 	dma_addr_t stats_report_bus; /* dma address for the stats report */
 	unsigned long ethtool_flags;
+
+	unsigned long service_timer_period;
+	struct timer_list service_timer;
 };
 
 enum gve_service_task_flags_bit {
