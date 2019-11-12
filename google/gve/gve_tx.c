@@ -393,9 +393,12 @@ static void gve_tx_fill_seg_desc(union gve_tx_desc *seg_desc,
 static inline void gve_dma_sync_for_device(struct gve_priv *priv, dma_addr_t *page_buses,
 				       u64 iov_offset, u64 iov_len)
 {
-	u64 addr;
-	for (addr = iov_offset; addr < iov_offset + iov_len; addr += PAGE_SIZE) {
-		dma_addr_t dma = page_buses[addr / PAGE_SIZE];
+	u64 last_page = (iov_offset + iov_len - 1) / PAGE_SIZE;
+	u64 first_page = iov_offset / PAGE_SIZE;
+	u64 page;
+
+	for (page = first_page; page <= last_page; page++) {
+		dma_addr_t dma = page_buses[page];
 		dma_sync_single_for_device(&priv->pdev->dev, dma, PAGE_SIZE, DMA_TO_DEVICE);
 	}
 }
