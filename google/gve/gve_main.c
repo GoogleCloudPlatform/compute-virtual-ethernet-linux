@@ -80,7 +80,7 @@ static void gve_free_counter_array(struct gve_priv *priv)
 
 static int gve_alloc_stats_report(struct gve_priv *priv)
 {
-	int err, tx_stats_num, rx_stats_num;
+	int tx_stats_num, rx_stats_num;
 
 	tx_stats_num = (GVE_TX_STATS_REPORT_NUM + NIC_TX_STATS_REPORT_NUM) *
 		       priv->tx_cfg.num_queues;
@@ -94,26 +94,14 @@ static int gve_alloc_stats_report(struct gve_priv *priv)
 				   &priv->stats_report_bus, GFP_KERNEL);
 	if (!priv->stats_report)
 		return -ENOMEM;
-	err = gve_adminq_report_stats(priv, priv->stats_report_len,
-				      priv->stats_report_bus);
-	if (err)
-		dev_err(&priv->pdev->dev,
-			"Failed to report stats: err=%d\n", err);
 	return 0;
 }
 
 static void gve_free_stats_report(struct gve_priv *priv)
 {
-	int err;
-
 	dma_free_coherent(&priv->pdev->dev, priv->stats_report_len,
 			  priv->stats_report, priv->stats_report_bus);
 	priv->stats_report = NULL;
-	/* detach the stats report */
-	err = gve_adminq_report_stats(priv, 0, 0x0);
-	if (err)
-		dev_err(&priv->pdev->dev,
-			"Failed to detach stats report: err=%d\n", err);
 }
 
 static irqreturn_t gve_mgmnt_intr(int irq, void *arg)
@@ -322,6 +310,11 @@ static int gve_setup_device_resources(struct gve_priv *priv)
 		err = -ENXIO;
 		goto abort_with_stats_report;
 	}
+	err = gve_adminq_report_stats(priv, priv->stats_report_len,
+				      priv->stats_report_bus);
+	if (err)
+		dev_err(&priv->pdev->dev,
+			"Failed to report stats: err=%d\n", err);
 	gve_set_device_resources_ok(priv);
 	return 0;
 abort_with_stats_report:
@@ -341,6 +334,13 @@ static void gve_teardown_device_resources(struct gve_priv *priv)
 
 	/* Tell device its resources are being freed */
 	if (gve_get_device_resources_ok(priv)) {
+		/* detach the stats report */
+		err = gve_adminq_report_stats(priv, 0, 0x0);
+		if (err) {
+			dev_err(&priv->pdev->dev,
+				"Failed to detach stats report: err=%d\n", err);
+			gve_trigger_reset(priv);
+		}
 		err = gve_adminq_deconfigure_device_resources(priv);
 		if (err) {
 			dev_err(&priv->pdev->dev,
