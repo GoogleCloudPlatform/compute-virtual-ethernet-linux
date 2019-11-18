@@ -757,7 +757,7 @@ static int gve_open(struct net_device *dev)
 	gve_set_device_rings_ok(priv);
 
 	gve_turnup(priv);
-	netif_carrier_on(dev);
+	queue_work(priv->gve_wq, &priv->service_task);
 	priv->interface_up_cnt++;
 	return 0;
 
@@ -1016,16 +1016,33 @@ void gve_handle_report_stats(struct gve_priv *priv)
 	}
 }
 
+void gve_handle_link_status(struct gve_priv *priv, bool link_status)
+{
+	if (!gve_get_napi_enabled(priv))
+		return;
+
+	if (link_status == netif_carrier_ok(priv->dev))
+		return;
+
+	if (link_status) {
+		netif_carrier_on(priv->dev);
+	} else {
+		dev_info(&priv->pdev->dev, "Device link is down.\n");
+		netif_carrier_off(priv->dev);
+	}
+}
+
 /* Handle NIC status register changes, reset requests and report stats */
 static void gve_service_task(struct work_struct *work)
 {
 	struct gve_priv *priv = container_of(work, struct gve_priv,
 					     service_task);
+	u32 status = ioread32be(&priv->reg_bar0->device_status);
 
-	gve_handle_status(priv,
-			  ioread32be(&priv->reg_bar0->device_status));
+	gve_handle_status(priv, status);
 
 	gve_handle_reset(priv);
+	gve_handle_link_status(priv, GVE_DEVICE_STATUS_LINK_STATUS_MASK & status);
 	if (gve_get_do_report_stats(priv)) {
 		gve_handle_report_stats(priv);
 		gve_clear_do_report_stats(priv);
