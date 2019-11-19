@@ -21,7 +21,8 @@ identifier gve_service_timer, t, priv, service_timer;
 +	struct gve_priv *priv = (struct gve_priv *)data;
 
 +	mod_timer(&priv->service_timer,
-+		  round_jiffies(jiffies + priv->service_timer_period));
++		  round_jiffies(jiffies +
++		  msecs_to_jiffies(priv->service_timer_period)));
 +	gve_service_task_schedule(priv);
 +}
 +#else /* LINUX_VERSION_CODE < KERNEL_VERSION(4,15,0) */

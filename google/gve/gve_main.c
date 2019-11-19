@@ -92,7 +92,8 @@ static void gve_service_timer(struct timer_list *t)
 	struct gve_priv *priv = from_timer(priv, t, service_timer);
 
 	mod_timer(&priv->service_timer,
-		  round_jiffies(jiffies + priv->service_timer_period));
+		  round_jiffies(jiffies +
+		  msecs_to_jiffies(priv->service_timer_period)));
 	gve_service_task_schedule(priv);
 }
 
@@ -117,7 +118,8 @@ static int gve_alloc_stats_report(struct gve_priv *priv)
 	priv->service_timer_period = GVE_SERVICE_TIMER_PERIOD;
 	/* Start the service task timer */
 	mod_timer(&priv->service_timer,
-		  round_jiffies(jiffies + priv->service_timer_period));
+		  round_jiffies(jiffies +
+		  msecs_to_jiffies(priv->service_timer_period)));
 	return 0;
 }
 
