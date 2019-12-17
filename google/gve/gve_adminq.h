@@ -22,6 +22,7 @@ enum gve_adminq_opcodes {
 	GVE_ADMINQ_DECONFIGURE_DEVICE_RESOURCES	= 0x9,
 	GVE_ADMINQ_SET_DRIVER_PARAMETER		= 0xB,
 	GVE_ADMINQ_REPORT_STATS			= 0xC,
+	GVE_ADMINQ_REPORT_LINK_SPEED	= 0xD
 };
 
 /* Admin queue status codes */
@@ -180,6 +181,14 @@ struct gve_adminq_report_stats {
 
 static_assert(sizeof(struct gve_adminq_report_stats) == 16);
 
+struct gve_adminq_report_link_speed {
+  __be64 link_speed_address;
+  __be16 link_speed_size;
+  char reserved[6];
+};
+
+static_assert(sizeof(struct gve_adminq_report_link_speed) == 16);
+
 struct stats {
 	__be32 stat_name;
 	__be32 queue_id;
@@ -227,6 +236,7 @@ union gve_adminq_command {
 			struct gve_adminq_unregister_page_list unreg_page_list;
 			struct gve_adminq_set_driver_parameter set_driver_param;
 			struct gve_adminq_report_stats report_stats;
+			struct gve_adminq_report_link_speed report_link_speed;
 		};
 	};
 	u8 reserved[64];
@@ -254,4 +264,5 @@ int gve_adminq_unregister_page_list(struct gve_priv *priv, u32 page_list_id);
 int gve_adminq_set_mtu(struct gve_priv *priv, u64 mtu);
 int gve_adminq_report_stats(struct gve_priv *priv, u64 stats_report_len,
 			    dma_addr_t stats_report_addr);
+int gve_adminq_report_link_speed(struct gve_priv *priv);
 #endif /* _GVE_ADMINQ_H */

@@ -552,3 +552,31 @@ int gve_adminq_report_stats(struct gve_priv *priv, u64 stats_report_len,
 
 	return gve_adminq_execute_cmd(priv, &cmd);
 }
+
+int gve_adminq_report_link_speed(struct gve_priv *priv)
+{
+	union gve_adminq_command gvnic_cmd;
+	dma_addr_t link_speed_region_bus;
+	u64* link_speed_region;
+	int err;
+
+	link_speed_region = dma_alloc_coherent(&priv->pdev->dev,
+		sizeof(*link_speed_region), &link_speed_region_bus, GFP_KERNEL);
+
+	if (!link_speed_region)
+		return -ENOMEM;
+
+	memset(&gvnic_cmd, 0, sizeof(gvnic_cmd));
+	gvnic_cmd.opcode = cpu_to_be32(GVE_ADMINQ_REPORT_LINK_SPEED);
+	gvnic_cmd.report_link_speed.link_speed_address =
+		cpu_to_be64(link_speed_region_bus);
+	gvnic_cmd.report_link_speed.link_speed_size =
+		cpu_to_be16(sizeof(*link_speed_region));
+
+	err = gve_adminq_execute_cmd(priv, &gvnic_cmd);
+
+	priv->link_speed = be64_to_cpu(*link_speed_region);
+	dma_free_coherent(&priv->pdev->dev, sizeof(*link_speed_region),
+					  link_speed_region, link_speed_region_bus);
+	return err;
+}

@@ -251,6 +251,9 @@ struct gve_priv {
 
 	unsigned long service_timer_period;
 	struct timer_list service_timer;
+
+	/* Gvnic device link speed from hypervisor. */
+	u64 link_speed;
 };
 
 enum gve_service_task_flags_bit {
