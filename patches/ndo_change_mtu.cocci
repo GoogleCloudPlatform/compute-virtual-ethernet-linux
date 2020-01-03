@@ -1,29 +1,29 @@
 @ assigned @
-identifier change_mtu, ndo_struct;
+identifier gve_netdev_ops;
 @@
 
-struct net_device_ops ndo_struct = {
-+#if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 5)
-+	.ndo_change_mtu_rh74	=	change_mtu,
-+#else /* RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(7, 5) */
-	.ndo_change_mtu		=	change_mtu,
-+#endif /* RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 5) */
-};
-
-@ check depends on assigned @
-identifier assigned.change_mtu, dev, new_mtu;
-@@
-
-change_mtu(struct net_device *dev, int new_mtu)
-{
 +#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0))
++int gve_change_mtu(struct net_device *dev, int new_mtu)
++{
 +	struct gve_priv *priv = netdev_priv(dev);
 +
 +	if (new_mtu < ETH_MIN_MTU || new_mtu > priv->max_mtu)
 +		return -EINVAL;
-+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0) */
++	dev->mtu = new_mtu;
++	return 0;
++}
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)) */
++
+struct net_device_ops gve_netdev_ops = {
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0))
++#if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 5) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(8, 0)
++	.ndo_change_mtu_rh74	=	gve_change_mtu,
++#else /* RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(7, 5) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 0) */
++	.ndo_change_mtu		=	gve_change_mtu,
++#endif /* RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 5) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(8, 0) */
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)) */
 	...
-}
+};
 
 @ block @
 expression val;
