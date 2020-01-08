@@ -34,10 +34,10 @@ static u32 gve_get_msglevel(struct net_device *netdev)
 
 static const char gve_gstrings_main_stats[][ETH_GSTRING_LEN] = {
 	"rx_packets", "rx_total_bytes", "rx_total_dropped_pkt",
-	"rx_skb_alloc_fail", "rx_page_alloc_fail", "rx_dma_mapping_error",
-	"rx_desc_err_dropped_pkt", "tx_packets", "tx_total_bytes",
-	"tx_total_dropped_pkt", "tx_timeouts", "interface_up_cnt",
-	"interface_down_cnt", "reset_cnt",
+	"rx_skb_alloc_fail", "rx_buf_alloc_fail", "rx_desc_err_dropped_pkt",
+	"tx_packets", "tx_total_bytes", "tx_total_dropped_pkt", "tx_timeouts",
+	"interface_up_cnt", "interface_down_cnt", "reset_cnt",
+	"page_alloc_fail", "dma_mapping_error",
 };
 
 static const char gve_gstrings_rx_stats[][ETH_GSTRING_LEN] = {
@@ -137,11 +137,10 @@ gve_get_ethtool_stats(struct net_device *netdev,
 		      struct ethtool_stats *stats, u64 *data)
 {
 	u64 tmp_rx_pkts, tmp_rx_bytes, tmp_rx_skb_alloc_fail,
-		tmp_rx_page_alloc_fail, tmp_rx_dma_mapping_error,
-		tmp_rx_desc_err_dropped_pkt, tmp_tx_pkts, tmp_tx_bytes;
-	u64 rx_pkts, rx_bytes, rx_skb_alloc_fail, rx_page_alloc_fail,
-		rx_dma_mapping_error, rx_desc_err_dropped_pkt, tx_pkts,
-		tx_bytes;
+		tmp_rx_buf_alloc_fail, tmp_rx_desc_err_dropped_pkt,
+		tmp_tx_pkts, tmp_tx_bytes;
+	u64 rx_pkts, rx_bytes, rx_skb_alloc_fail, rx_buf_alloc_fail,
+		rx_desc_err_dropped_pkt, tx_pkts, tx_bytes;
 	struct gve_priv *priv = netdev_priv(netdev);
 	int *rx_qid_to_stats_idx;
 	int *tx_qid_to_stats_idx;
@@ -167,8 +166,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	}
 
 	for (rx_pkts = 0, rx_bytes = 0, rx_skb_alloc_fail = 0,
-	     rx_page_alloc_fail = 0, rx_dma_mapping_error = 0,
-	     rx_desc_err_dropped_pkt = 0, ring = 0;
+	     rx_buf_alloc_fail = 0, rx_desc_err_dropped_pkt = 0, ring = 0;
 	     ring < priv->rx_cfg.num_queues; ring++) {
 		if (priv->rx) {
 			do {
@@ -178,20 +176,15 @@ gve_get_ethtool_stats(struct net_device *netdev,
 				tmp_rx_pkts = rx->rpackets;
 				tmp_rx_bytes = rx->rbytes;
 				tmp_rx_skb_alloc_fail = rx->rx_skb_alloc_fail;
-				tmp_rx_page_alloc_fail = rx->rx_page_alloc_fail;
-				tmp_rx_dma_mapping_error =
-					rx->rx_dma_mapping_error;
+				tmp_rx_buf_alloc_fail = rx->rx_buf_alloc_fail;
 				tmp_rx_desc_err_dropped_pkt =
 					rx->rx_desc_err_dropped_pkt;
 			} while (u64_stats_fetch_retry(&priv->rx[ring].statss,
 						       start));
 			rx_pkts += tmp_rx_pkts;
 			rx_bytes += tmp_rx_bytes;
-			/* rx_page_alloc_fail and rx_dma_mapping_error are empty
-			for now */
 			rx_skb_alloc_fail += tmp_rx_skb_alloc_fail;
-			rx_page_alloc_fail += tmp_rx_page_alloc_fail;
-			rx_dma_mapping_error += tmp_rx_dma_mapping_error;
+			rx_buf_alloc_fail += tmp_rx_buf_alloc_fail;
 			rx_desc_err_dropped_pkt += tmp_rx_desc_err_dropped_pkt;
 		}
 	}
@@ -214,11 +207,10 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	data[i++] = rx_pkts;
 	data[i++] = rx_bytes;
 	/* total rx dropped packets */
-	data[i++] = rx_skb_alloc_fail + rx_page_alloc_fail +
-		rx_dma_mapping_error + rx_desc_err_dropped_pkt;
+	data[i++] = rx_skb_alloc_fail + rx_buf_alloc_fail +
+		    rx_desc_err_dropped_pkt;
 	data[i++] = rx_skb_alloc_fail;
-	data[i++] = rx_page_alloc_fail;
-	data[i++] = rx_dma_mapping_error;
+	data[i++] = rx_buf_alloc_fail;
 	data[i++] = rx_desc_err_dropped_pkt;
 	data[i++] = tx_pkts;
 	data[i++] = tx_bytes;
@@ -228,6 +220,8 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	data[i++] = priv->interface_up_cnt;
 	data[i++] = priv->interface_down_cnt;
 	data[i++] = priv->reset_cnt;
+	data[i++] = priv->page_alloc_fail;
+	data[i++] = priv->dma_mapping_error;
 	i = GVE_MAIN_STATS_LEN;
 
 	/* For rx cross-reporting stats, start from nic rx stats in report */
@@ -260,9 +254,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 				  u64_stats_fetch_begin(&priv->rx[ring].statss);
 				tmp_rx_bytes = rx->rbytes;
 				tmp_rx_skb_alloc_fail = rx->rx_skb_alloc_fail;
-				tmp_rx_page_alloc_fail = rx->rx_page_alloc_fail;
-				tmp_rx_dma_mapping_error =
-					rx->rx_dma_mapping_error;
+				tmp_rx_buf_alloc_fail = rx->rx_buf_alloc_fail;
 				tmp_rx_desc_err_dropped_pkt =
 					rx->rx_desc_err_dropped_pkt;
 			} while (u64_stats_fetch_retry(&priv->rx[ring].statss,
@@ -270,8 +262,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 			data[i++] = tmp_rx_bytes;
 			/* rx dropped packets */
 			data[i++] = tmp_rx_skb_alloc_fail +
-				tmp_rx_page_alloc_fail +
-				tmp_rx_dma_mapping_error +
+				tmp_rx_buf_alloc_fail +
 				tmp_rx_desc_err_dropped_pkt;
 			data[i++] = rx->rx_copybreak_pkt;
 			data[i++] = rx->rx_copied_pkt;

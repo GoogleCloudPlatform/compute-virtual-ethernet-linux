@@ -85,8 +85,7 @@ struct gve_rx_ring {
 	u64 rx_copybreak_pkt; /* free-running count of copybreak packets */
 	u64 rx_copied_pkt; /* free-running total number of copied packets */
 	u64 rx_skb_alloc_fail; /* free-running count of skb alloc fails */
-	u64 rx_page_alloc_fail; /* empty for now, for raw dma addressing */
-	u64 rx_dma_mapping_error; /* empty for now, for raw dma addressing */
+	u64 rx_buf_alloc_fail; /* free-running count of buffer alloc fails */
 	u64 rx_desc_err_dropped_pkt; /* free-running count of packets dropped by descriptor error */
 	u32 q_num; /* queue index */
 	u32 ntfy_id; /* notification block index */
@@ -238,6 +237,8 @@ struct gve_priv {
 	u32 interface_up_cnt; /* count of times interface turned up */
 	u32 interface_down_cnt; /* count of times interface turned down */
 	u32 reset_cnt; /* count of reset */
+	u32 page_alloc_fail; /* count of page alloc fails */
+	u32 dma_mapping_error; /* count of dma mapping errors */
 
 	struct workqueue_struct *gve_wq;
 	struct work_struct service_task;
@@ -509,7 +510,8 @@ static inline bool gve_can_recycle_pages(struct net_device *dev)
 }
 
 /* buffers */
-int gve_alloc_page(struct device *dev, struct page **page, dma_addr_t *dma,
+int gve_alloc_page(struct gve_priv *priv, struct device *dev,
+		   struct page **page, dma_addr_t *dma,
 		   enum dma_data_direction);
 void gve_free_page(struct device *dev, struct page *page, dma_addr_t dma,
 		   enum dma_data_direction);
