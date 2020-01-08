@@ -21,7 +21,7 @@ static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 	struct gve_rx_ring *rx = &priv->rx[idx];
 	struct device *dev = &priv->pdev->dev;
 	size_t bytes;
-	u32 slots;
+	u32 slots = rx->mask + 1;
 
 	gve_rx_remove_from_block(priv, idx);
 
@@ -33,11 +33,27 @@ static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 			  rx->q_resources, rx->q_resources_bus);
 	rx->q_resources = NULL;
 
-	gve_unassign_qpl(priv, rx->data.qpl->id);
-	rx->data.qpl = NULL;
+	if (rx->data.raw_addressing) {
+		int i;
+
+		for (i = 0; i < slots; i++) {
+			struct gve_rx_slot_page_info *page_info =
+							&rx->data.page_info[i];
+			struct gve_rx_data_slot *data_slot =
+							&rx->data.data_ring[i];
+			dma_addr_t dma =
+				(dma_addr_t)(be64_to_cpu(data_slot->addr) -
+				page_info->page_offset);
+
+			gve_free_page(dev, rx->data.page_info[i].page, dma,
+				      DMA_FROM_DEVICE);
+		}
+	} else {
+		gve_unassign_qpl(priv, rx->data.qpl->id);
+		rx->data.qpl = NULL;
+	}
 	kfree(rx->data.page_info);
 
-	slots = rx->mask + 1;
 	bytes = sizeof(*rx->data.data_ring) * slots;
 	dma_free_coherent(dev, bytes, rx->data.data_ring,
 			  rx->data.data_bus);
@@ -52,13 +68,14 @@ static void gve_setup_rx_buffer(struct gve_rx_slot_page_info *page_info,
 	page_info->page = page;
 	page_info->page_offset = 0;
 	page_info->page_address = page_address(page);
-	slot->qpl_offset = cpu_to_be64(addr);
+	slot->addr = cpu_to_be64(addr);
 }
 
 static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 {
 	struct gve_priv *priv = rx->gve;
 	u32 slots;
+	int err;
 	int i;
 
 	/* Allocate one page per Rx queue slot. Each page is split into two
@@ -71,12 +88,30 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 	if (!rx->data.page_info)
 		return -ENOMEM;
 
-	rx->data.qpl = gve_assign_rx_qpl(priv);
-
+	if (!rx->data.raw_addressing)
+		rx->data.qpl = gve_assign_rx_qpl(priv);
 	for (i = 0; i < slots; i++) {
-		struct page *page = rx->data.qpl->pages[i];
-		dma_addr_t addr = i * PAGE_SIZE;
+		struct page *page;
+		dma_addr_t addr;
 
+		if (rx->data.raw_addressing) {
+			err = gve_alloc_page(priv, &priv->pdev->dev, &page,
+					     &addr, DMA_FROM_DEVICE);
+			if (err) {
+				int j;
+
+				u64_stats_update_begin(&rx->statss);
+				rx->rx_buf_alloc_fail++;
+				u64_stats_update_end(&rx->statss);
+				for (j = 0; j < i; j++)
+					gve_free_page(&priv->pdev->dev, page,
+						      addr, DMA_FROM_DEVICE);
+				return err;
+			}
+		} else {
+			page = rx->data.qpl->pages[i];
+			addr = i * PAGE_SIZE;
+		}
 		gve_setup_rx_buffer(&rx->data.page_info[i],
 				    &rx->data.data_ring[i], addr, page);
 	}
@@ -110,8 +145,9 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 	rx->gve = priv;
 	rx->q_num = idx;
 
-	slots = priv->rx_pages_per_qpl;
+	slots = priv->rx_data_slot_cnt;
 	rx->mask = slots - 1;
+	rx->data.raw_addressing = priv->raw_addressing;
 
 	/* alloc rx data ring */
 	bytes = sizeof(*rx->data.data_ring) * slots;
@@ -156,8 +192,8 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 		err = -ENOMEM;
 		goto abort_with_q_resources;
 	}
-	rx->mask = slots - 1;
 	rx->cnt = 0;
+	rx->db_threshold = priv->rx_desc_cnt / 2;
 	rx->desc.seqno = 1;
 	gve_rx_add_to_block(priv, idx);
 
@@ -225,8 +261,7 @@ static enum pkt_hash_types gve_rss_type(__be16 pkt_flags)
 	return PKT_HASH_TYPE_L2;
 }
 
-static struct sk_buff *gve_rx_copy(struct gve_rx_ring *rx,
-				   struct net_device *dev,
+static struct sk_buff *gve_rx_copy(struct net_device *dev,
 				   struct napi_struct *napi,
 				   struct gve_rx_slot_page_info *page_info,
 				   u16 len)
@@ -244,15 +279,10 @@ static struct sk_buff *gve_rx_copy(struct gve_rx_ring *rx,
 
 	skb->protocol = eth_type_trans(skb, dev);
 
-	u64_stats_update_begin(&rx->statss);
-	rx->rx_copied_pkt++;
-	u64_stats_update_end(&rx->statss);
-
 	return skb;
 }
 
-static struct sk_buff *gve_rx_add_frags(struct net_device *dev,
-					struct napi_struct *napi,
+static struct sk_buff *gve_rx_add_frags(struct napi_struct *napi,
 					struct gve_rx_slot_page_info *page_info,
 					u16 len)
 {
@@ -268,14 +298,120 @@ static struct sk_buff *gve_rx_add_frags(struct net_device *dev,
 	return skb;
 }
 
-static void gve_rx_flip_buff(struct gve_rx_slot_page_info *page_info,
-			     struct gve_rx_data_slot *data_ring)
+static int gve_rx_alloc_buffer(struct gve_priv *priv, struct device *dev,
+			       struct gve_rx_slot_page_info *page_info,
+			       struct gve_rx_data_slot *data_slot,
+			       struct gve_rx_ring *rx)
 {
-	u64 addr = be64_to_cpu(data_ring->qpl_offset);
+	dma_addr_t new_dma;
+	struct page *page;
+	int err;
 
+	err = gve_alloc_page(priv, dev, &page, &new_dma, DMA_FROM_DEVICE);
+	if (err) {
+		u64_stats_update_begin(&rx->statss);
+		rx->rx_buf_alloc_fail++;
+		u64_stats_update_end(&rx->statss);
+		return err;
+	}
+
+	gve_setup_rx_buffer(page_info, data_slot, new_dma, page);
+	return 0;
+}
+
+static void gve_rx_recycle_buffer(struct gve_rx_slot_page_info *page_info,
+				  struct gve_rx_data_slot *data_slot)
+{
+	u64 addr = be64_to_cpu(data_slot->addr);
+
+	/* "flip" to other packet buffer on this page */
 	page_info->page_offset ^= PAGE_SIZE / 2;
 	addr ^= PAGE_SIZE / 2;
-	data_ring->qpl_offset = cpu_to_be64(addr);
+	data_slot->addr = cpu_to_be64(addr);
+
+	/* Make sure the kernel stack can't release the page */
+	get_page(page_info->page);
+}
+
+static int gve_rx_can_recycle_buffer(struct net_device *netdev,
+				      struct page *page) {
+#if PAGE_SIZE == 4096
+	/* We can't recycle the pages if we can't fit a packet
+	 * into half a page.
+	 */
+	if (netdev->max_mtu + GVE_RX_PAD + ETH_HLEN  > PAGE_SIZE / 2) {
+		return 0;
+	} else {
+		int pagecount = page_count(page);
+		/* This page is not being used by any SKBs - reuse */
+		if (pagecount == 1) {
+			return 1;
+		/* This page is still being used by an SKB - we can't reuse */
+		} else if (pagecount >= 2) {
+			return 0;
+		} else {
+			WARN(pagecount < 1, "Pagecount should never be < 1");
+			return -1;
+		}
+	}
+#else
+	/* PAGE_SIZE != 4096 - don't try to reuse */
+	return 0;
+#endif
+}
+
+static struct sk_buff *
+gve_rx_raw_addressing(struct device *dev, struct net_device *netdev,
+		      struct gve_rx_slot_page_info *page_info, u16 len,
+		      struct napi_struct *napi,
+		      struct gve_rx_data_slot *data_slot, bool recycle)
+{
+	struct sk_buff *skb = gve_rx_add_frags(napi, page_info, len);
+
+	if (!skb)
+		return NULL;
+
+	if (recycle) {
+		gve_rx_recycle_buffer(page_info, data_slot);
+	} else {
+		dma_addr_t dma = (dma_addr_t)(be64_to_cpu(data_slot->addr) -
+					      page_info->page_offset);
+
+		/* Unmap the page and null our reference to it. The networking
+		 * stack will free it.
+		 */
+		dma_unmap_page(dev, dma, PAGE_SIZE, DMA_FROM_DEVICE);
+		page_info->page = NULL;
+	}
+	return skb;
+}
+
+static struct sk_buff *
+gve_rx_qpl(struct device *dev, struct net_device *netdev,
+	   struct gve_rx_ring *rx, struct gve_rx_slot_page_info *page_info,
+	   u16 len, struct napi_struct *napi,
+	   struct gve_rx_data_slot *data_slot, bool recycle)
+{
+	struct sk_buff *skb;
+	/* if raw_addressing mode is not enabled gvnic can only receive into
+	 * registered segments. If the buffer can't be recycled, our only
+	 * choice is to copy the data out of it so that we can return it to the
+	 * device.
+	 */
+	if (recycle) {
+		skb = gve_rx_add_frags(napi, page_info, len);
+		/* No point in recycling if we didn't get the skb */
+		if (skb)
+			gve_rx_recycle_buffer(page_info, data_slot);
+	} else {
+		skb = gve_rx_copy(netdev, napi, page_info, len);
+		if (skb) {
+			u64_stats_update_begin(&rx->statss);
+			rx->rx_copied_pkt++;
+			u64_stats_update_end(&rx->statss);
+		}
+	}
+	return skb;
 }
 
 static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
@@ -284,9 +420,11 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 	struct gve_rx_slot_page_info *page_info;
 	struct gve_priv *priv = rx->gve;
 	struct napi_struct *napi = &priv->ntfy_blocks[rx->ntfy_id].napi;
-	struct net_device *dev = priv->dev;
-	struct sk_buff *skb;
-	int pagecount;
+	struct net_device *netdev = priv->dev;
+	struct gve_rx_data_slot *data_slot;
+	struct sk_buff *skb = NULL;
+	dma_addr_t page_bus;
+	int can_recycle;
 	u16 len;
 
 	/* drop this packet */
@@ -294,71 +432,48 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 		u64_stats_update_begin(&rx->statss);
 		rx->rx_desc_err_dropped_pkt++;
 		u64_stats_update_end(&rx->statss);
-		return true;
+		return false;
 	}
 
 	len = be16_to_cpu(rx_desc->len) - GVE_RX_PAD;
 	page_info = &rx->data.page_info[idx];
-	dma_sync_single_for_cpu(&priv->pdev->dev, rx->data.qpl->page_buses[idx],
+	data_slot = &rx->data.data_ring[idx];
+	page_bus = (rx->data.raw_addressing) ? data_slot->addr :
+		   rx->data.qpl->page_buses[idx];
+	dma_sync_single_for_cpu(&priv->pdev->dev, page_bus,
 				PAGE_SIZE, DMA_FROM_DEVICE);
 
-	/* gvnic can only receive into registered segments. If the buffer
-	 * can't be recycled, our only choice is to copy the data out of
-	 * it so that we can return it to the device.
-	 */
-
-#if PAGE_SIZE == 4096
 	if (len <= priv->rx_copybreak) {
 		/* Just copy small packets */
-		skb = gve_rx_copy(rx, dev, napi, page_info, len);
-		u64_stats_update_begin(&rx->statss);
-		rx->rx_copybreak_pkt++;
-		u64_stats_update_end(&rx->statss);
-		goto have_skb;
-	}
-	if (unlikely(!gve_can_recycle_pages(dev))) {
-		skb = gve_rx_copy(rx, dev, napi, page_info, len);
-		goto have_skb;
-	}
-	pagecount = page_count(page_info->page);
-	if (pagecount == 1) {
-		/* No part of this page is used by any SKBs; we attach
-		 * the page fragment to a new SKB and pass it up the
-		 * stack.
-		 */
-		skb = gve_rx_add_frags(dev, napi, page_info, len);
-		if (!skb) {
+		skb = gve_rx_copy(netdev, napi, page_info, len);
+		if (skb) {
 			u64_stats_update_begin(&rx->statss);
-			rx->rx_skb_alloc_fail++;
+			rx->rx_copied_pkt++;
+			rx->rx_copybreak_pkt++;
 			u64_stats_update_end(&rx->statss);
-			return true;
 		}
-		/* Make sure the kernel stack can't release the page */
-		get_page(page_info->page);
-		/* "flip" to other packet buffer on this page */
-		gve_rx_flip_buff(page_info, &rx->data.data_ring[idx]);
-	} else if (pagecount >= 2) {
-		/* We have previously passed the other half of this
-		 * page up the stack, but it has not yet been freed.
-		 */
-		skb = gve_rx_copy(rx, dev, napi, page_info, len);
 	} else {
-		WARN(pagecount < 1, "Pagecount should never be < 1");
-		return false;
+		can_recycle = gve_rx_can_recycle_buffer(netdev,
+							page_info->page);
+		if (can_recycle < 0) {
+			gve_schedule_reset(priv);
+			return false;
+		} else if (rx->data.raw_addressing) {
+			skb = gve_rx_raw_addressing(&priv->pdev->dev, netdev,
+						    page_info, len, napi,
+						    data_slot, can_recycle);
+		} else {
+			skb = gve_rx_qpl(&priv->pdev->dev, netdev, rx,
+					 page_info, len, napi, data_slot,
+					 can_recycle);
+		}
 	}
-#else
-	skb = gve_rx_copy(rx, dev, napi, page_info, len);
-#endif
 
-have_skb:
-	/* We didn't manage to allocate an skb but we haven't had any
-	 * reset worthy failures.
-	 */
 	if (!skb) {
 		u64_stats_update_begin(&rx->statss);
 		rx->rx_skb_alloc_fail++;
 		u64_stats_update_end(&rx->statss);
-		return true;
+		return false;
 	}
 
 	if (likely(feat & NETIF_F_RXCSUM)) {
@@ -380,6 +495,7 @@ have_skb:
 		napi_gro_frags(napi);
 	else
 		napi_gro_receive(napi, skb);
+
 	return true;
 }
 
@@ -392,26 +508,47 @@ static bool gve_rx_work_pending(struct gve_rx_ring *rx)
 	next_idx = rx->cnt & rx->mask;
 	desc = rx->desc.desc_ring + next_idx;
 
-	/* Make sure we have synchronized the seq no with the device */
-	smp_mb();
 	flags_seq = desc->flags_seq;
+	/* make sure we have synchronized the seq no with the device */
+	smp_rmb();
 
 	return (GVE_SEQNO(flags_seq) == rx->desc.seqno);
+}
+
+static void gve_rx_refill_buffers(struct gve_priv *priv, struct gve_rx_ring *rx)
+{
+	u32 fill_cnt = rx->fill_cnt;
+
+	while ((fill_cnt & rx->mask) != (rx->cnt & rx->mask)) {
+		u32 idx = fill_cnt & rx->mask;
+
+		/* If page is not null, that slot is already filled */
+		if (!rx->data.page_info[idx].page) {
+			if (gve_rx_alloc_buffer(priv, &priv->pdev->dev,
+						&rx->data.page_info[idx],
+						&rx->data.data_ring[idx], rx)) {
+				break;
+			}
+		}
+		fill_cnt++;
+	}
+	rx->fill_cnt = fill_cnt;
 }
 
 bool gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 		       netdev_features_t feat)
 {
 	struct gve_priv *priv = rx->gve;
+	u32 work_done = 0, packets = 0;
 	struct gve_rx_desc *desc;
 	u32 cnt = rx->cnt;
 	u32 idx = cnt & rx->mask;
-	u32 work_done = 0;
 	u64 bytes = 0;
 
 	desc = rx->desc.desc_ring + idx;
 	while ((GVE_SEQNO(desc->flags_seq) == rx->desc.seqno) &&
 	       work_done < budget) {
+		bool dropped;
 		netif_info(priv, rx_status, priv->dev,
 			   "[%d] idx=%d desc=%p desc->flags_seq=0x%x\n",
 			   rx->q_num, idx, desc, desc->flags_seq);
@@ -419,9 +556,11 @@ bool gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 			   "[%d] seqno=%d rx->desc.seqno=%d\n",
 			   rx->q_num, GVE_SEQNO(desc->flags_seq),
 			   rx->desc.seqno);
-		bytes += be16_to_cpu(desc->len) - GVE_RX_PAD;
-		if (!gve_rx(rx, desc, feat, idx))
-			gve_schedule_reset(priv);
+		dropped = !gve_rx(rx, desc, feat, idx);
+		if (!dropped) {
+			bytes += be16_to_cpu(desc->len) - GVE_RX_PAD;
+			packets++;
+		}
 		cnt++;
 		idx = cnt & rx->mask;
 		desc = rx->desc.desc_ring + idx;
@@ -433,15 +572,26 @@ bool gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 		return false;
 
 	u64_stats_update_begin(&rx->statss);
-	rx->rpackets += work_done;
+	rx->rpackets += packets;
 	rx->rbytes += bytes;
 	u64_stats_update_end(&rx->statss);
 	rx->cnt = cnt;
-	rx->fill_cnt += work_done;
+	/* restock ring slots */
+	if (!rx->data.raw_addressing) {
+		/* In QPL mode buffs are refilled as the desc are processed */
+		rx->fill_cnt += work_done;
+		dma_wmb();/* Ensure descs are visible before ringing doorbell */
+		gve_rx_write_doorbell(priv, rx);
+	} else if (rx->fill_cnt - cnt <= rx->db_threshold) {
+		/* In raw addressing mode buffs are only refilled if the avail
+		 * falls below a threshold.
+		 */
+		gve_rx_refill_buffers(priv, rx);
+		/* restock desc ring slots */
+		dma_wmb();/* Ensure descs are visible before ringing doorbell */
+		gve_rx_write_doorbell(priv, rx);
+	}
 
-	/* restock desc ring slots */
-	dma_wmb();	/* Ensure descs are visible before ringing doorbell */
-	gve_rx_write_doorbell(priv, rx);
 	return gve_rx_work_pending(rx);
 }
 
