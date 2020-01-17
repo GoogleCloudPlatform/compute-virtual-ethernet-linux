@@ -143,8 +143,8 @@ gve_get_ethtool_stats(struct net_device *netdev,
 		rx_dma_mapping_error, rx_desc_err_dropped_pkt, tx_pkts,
 		tx_bytes;
 	struct gve_priv *priv = netdev_priv(netdev);
-	int rx_qid_to_stats_idx[priv->rx_cfg.num_queues];
-	int tx_qid_to_stats_idx[priv->tx_cfg.num_queues];
+	int *rx_qid_to_stats_idx;
+	int *tx_qid_to_stats_idx;
 	struct stats *report_stats = priv->stats_report->stats;
 	int stats_idx, base_stats_idx, max_stats_idx;
 	bool skip_nic_stats;
@@ -153,6 +153,18 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	int i, j;
 
 	ASSERT_RTNL();
+
+	rx_qid_to_stats_idx = kmalloc_array(priv->rx_cfg.num_queues,
+					    sizeof(int), GFP_KERNEL);
+	if (!rx_qid_to_stats_idx) {
+		return;
+	}
+	tx_qid_to_stats_idx = kmalloc_array(priv->tx_cfg.num_queues,
+					    sizeof(int), GFP_KERNEL);
+	if (!tx_qid_to_stats_idx) {
+		kfree(rx_qid_to_stats_idx);
+		return;
+	}
 
 	for (rx_pkts = 0, rx_bytes = 0, rx_skb_alloc_fail = 0,
 	     rx_page_alloc_fail = 0, rx_dma_mapping_error = 0,
@@ -328,6 +340,10 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	} else {
 		i += priv->tx_cfg.num_queues * NUM_GVE_TX_CNTS;
 	}
+
+	kfree(rx_qid_to_stats_idx);
+	kfree(tx_qid_to_stats_idx);
+
 	/* AQ Stats */
 	data[i++] = priv->adminq_prod_cnt;
 	data[i++] = priv->adminq_cmd_fail;
