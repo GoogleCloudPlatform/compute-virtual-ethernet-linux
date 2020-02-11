@@ -50,6 +50,7 @@ struct gve_rx_slot_page_info {
 	struct page *page;
 	void *page_address;
 	u32 page_offset; /* offset to write to in page */
+	bool can_flip; /* page can be flipped and reused */
 };
 
 /* A list of pages registered with the device during setup and used by a queue
