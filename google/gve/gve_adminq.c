@@ -625,8 +625,6 @@ int gve_adminq_report_link_speed(struct gve_priv *priv)
 	gvnic_cmd.opcode = cpu_to_be32(GVE_ADMINQ_REPORT_LINK_SPEED);
 	gvnic_cmd.report_link_speed.link_speed_address =
 		cpu_to_be64(link_speed_region_bus);
-	gvnic_cmd.report_link_speed.link_speed_size =
-		cpu_to_be16(sizeof(*link_speed_region));
 
 	err = gve_adminq_execute_cmd(priv, &gvnic_cmd);
 

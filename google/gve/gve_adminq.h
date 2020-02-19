@@ -190,11 +190,9 @@ static_assert(sizeof(struct gve_adminq_report_stats) == 16);
 
 struct gve_adminq_report_link_speed {
   __be64 link_speed_address;
-  __be16 link_speed_size;
-  char reserved[6];
 };
 
-static_assert(sizeof(struct gve_adminq_report_link_speed) == 16);
+static_assert(sizeof(struct gve_adminq_report_link_speed) == 8);
 
 struct stats {
 	__be32 stat_name;
