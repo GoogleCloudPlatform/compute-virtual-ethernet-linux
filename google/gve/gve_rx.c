@@ -438,7 +438,8 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 	len = be16_to_cpu(rx_desc->len) - GVE_RX_PAD;
 	page_info = &rx->data.page_info[idx];
 	data_slot = &rx->data.data_ring[idx];
-	page_bus = (rx->data.raw_addressing) ? data_slot->addr :
+	page_bus = (rx->data.raw_addressing) ?
+                   be64_to_cpu(data_slot->addr) - page_info->page_offset:
 		   rx->data.qpl->page_buses[idx];
 	dma_sync_single_for_cpu(&priv->pdev->dev, page_bus,
 				PAGE_SIZE, DMA_FROM_DEVICE);

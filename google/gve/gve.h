@@ -270,6 +270,9 @@ struct gve_priv {
 
 	/* Gvnic device link speed from hypervisor. */
 	u64 link_speed;
+
+        /* Gvnic device's dma mask, set during probe. */
+        u8 dma_mask;
 };
 
 enum gve_service_task_flags_bit {

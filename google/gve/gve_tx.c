@@ -316,12 +316,13 @@ static inline int gve_skb_fifo_bytes_required(struct gve_tx_ring *tx,
 static void gve_tx_unmap_buf(struct device *dev,
 			     struct gve_tx_dma_buf *buf)
 {
-	if (dma_unmap_len(buf, len) > 0) {
+        const int buf_len = (int)dma_unmap_len(buf, len);
+	if (buf_len > 0) {
 		dma_unmap_single(dev, dma_unmap_addr(buf, dma),
 				 dma_unmap_len(buf, len),
 				 DMA_TO_DEVICE);
 		dma_unmap_len_set(buf, len, 0);
-	} else if (dma_unmap_len(buf, len) < 0) {
+	} else if (buf_len < 0) {
 		dma_unmap_page(dev, dma_unmap_addr(buf, dma),
 			       -dma_unmap_len(buf, len),
 			       DMA_TO_DEVICE);
@@ -514,7 +515,7 @@ static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 	struct gve_tx_dma_buf *buf;
 	int last_mapped = 0;
 	u64 addr;
-	u16 len;
+	u32 len;
 	int i;
 
 	info = &tx->info[idx];

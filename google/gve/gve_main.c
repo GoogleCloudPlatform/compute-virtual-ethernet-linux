@@ -581,7 +581,8 @@ int gve_alloc_page(struct gve_priv *priv, struct device *dev,
 		   struct page **page, dma_addr_t *dma,
 		   enum dma_data_direction dir)
 {
-	*page = alloc_page(GFP_KERNEL);
+        *page = priv->dma_mask == 32 ? alloc_page(GFP_DMA32) :
+                                       alloc_page(GFP_KERNEL);
 	if (!*page) {
 		priv->page_alloc_fail++;
 		return -ENOMEM;
@@ -1319,6 +1320,7 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	priv->service_task_flags = 0x0;
 	priv->state_flags = 0x0;
 	priv->ethtool_flags = 0x0;
+        priv->dma_mask = dma_mask;
 
 	gve_set_probe_in_progress(priv);
 
