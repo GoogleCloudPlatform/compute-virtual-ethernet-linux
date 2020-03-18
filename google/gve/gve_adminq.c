@@ -444,8 +444,8 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 
 	priv->tx_desc_cnt = be16_to_cpu(descriptor->tx_queue_entries);
 	if (priv->tx_desc_cnt * sizeof(priv->tx->desc[0]) < PAGE_SIZE) {
-		netif_err(priv, drv, priv->dev, "Tx desc count %d too low\n",
-			  priv->tx_desc_cnt);
+		dev_err(&priv->pdev->dev, "Tx desc count %d too low\n",
+			priv->tx_desc_cnt);
 		err = -EINVAL;
 		goto free_device_descriptor;
 	}
@@ -454,8 +454,8 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	    < PAGE_SIZE ||
 	    priv->rx_desc_cnt * sizeof(priv->rx->data.data_ring[0])
 	    < PAGE_SIZE) {
-		netif_err(priv, drv, priv->dev, "Rx desc count %d too low\n",
-			  priv->rx_desc_cnt);
+		dev_err(&priv->pdev->dev, "Rx desc count %d too low\n",
+			priv->rx_desc_cnt);
 		err = -EINVAL;
 		goto free_device_descriptor;
 	}
@@ -463,8 +463,8 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 				be64_to_cpu(descriptor->max_registered_pages);
 	mtu = be16_to_cpu(descriptor->mtu);
 	if (mtu < ETH_MIN_MTU) {
-		netif_err(priv, drv, priv->dev, "MTU %d below minimum MTU\n",
-			  mtu);
+		dev_err(&priv->pdev->dev, "MTU %d below minimum MTU\n",
+			mtu);
 		err = -EINVAL;
 		goto free_device_descriptor;
 	}
@@ -472,12 +472,12 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	priv->num_event_counters = be16_to_cpu(descriptor->counters);
 	ether_addr_copy(priv->dev->dev_addr, descriptor->mac);
 	mac = descriptor->mac;
-	netif_info(priv, drv, priv->dev, "MAC addr: %pM\n", mac);
+	dev_info(&priv->pdev->dev, "MAC addr: %pM\n", mac);
 	priv->tx_pages_per_qpl = be16_to_cpu(descriptor->tx_pages_per_qpl);
 	priv->rx_data_slot_cnt = be16_to_cpu(descriptor->rx_pages_per_qpl);
 	if (priv->rx_data_slot_cnt < priv->rx_desc_cnt) {
-		netif_err(priv, drv, priv->dev, "rx_data_slot_cnt cannot be smaller than rx_desc_cnt, setting rx_desc_cnt down to %d.\n",
-			  priv->rx_data_slot_cnt);
+		dev_err(&priv->pdev->dev, "rx_data_slot_cnt cannot be smaller than rx_desc_cnt, setting rx_desc_cnt down to %d.\n",
+			priv->rx_data_slot_cnt);
 		priv->rx_desc_cnt = priv->rx_data_slot_cnt;
 	}
 	priv->default_num_queues = be16_to_cpu(descriptor->default_num_queues);
@@ -491,8 +491,8 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 
 		if ((void *)dev_opt + sizeof(*dev_opt)  > (void *)descriptor +
 				      be16_to_cpu(descriptor->total_length)) {
-			netif_err(priv, drv, priv->dev,
-				  "num_options in device_descriptor does not match total length.\n");
+			dev_err(&priv->dev->dev,
+				"num_options in device_descriptor does not match total length.\n");
 			err = -EINVAL;
 			goto free_device_descriptor;
 		}
@@ -507,12 +507,12 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 			if (option_length != GVE_DEV_OPT_LEN_RAW_ADDRESSING ||
 			    be32_to_cpu(dev_opt->feat_mask) !=
 			    GVE_DEV_OPT_FEAT_MASK_RAW_ADDRESSING) {
-				netif_info(priv, drv, priv->dev,
-					   "Raw addressing device option not enabled, length or features mask did not match expected.\n");
+				dev_info(&priv->pdev->dev,
+					 "Raw addressing device option not enabled, length or features mask did not match expected.\n");
 				priv->raw_addressing = false;
 			} else {
-				netif_info(priv, drv, priv->dev,
-					   "Raw addressing device option enabled.\n");
+				dev_info(&priv->pdev->dev,
+					 "Raw addressing device option enabled.\n");
 				priv->raw_addressing = true;
 			}
 			break;
@@ -520,9 +520,9 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 			/* If we don't recognize the option just continue
 			 * without doing anything.
 			 */
-			netif_info(priv, drv, priv->dev,
-				   "Unrecognized device option 0x%hx not enabled.\n",
-				   option_id);
+			dev_info(&priv->pdev->dev,
+				 "Unrecognized device option 0x%hx not enabled.\n",
+				 option_id);
 			break;
 		}
 		dev_opt = (void *)dev_opt + sizeof(*dev_opt) + option_length;
