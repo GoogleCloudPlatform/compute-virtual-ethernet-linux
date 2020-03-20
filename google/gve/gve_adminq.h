@@ -184,9 +184,10 @@ static_assert(sizeof(struct gve_adminq_set_driver_parameter) == 16);
 struct gve_adminq_report_stats {
 	__be64 stats_report_len;
 	__be64 stats_report_addr;
+	__be64 interval;
 };
 
-static_assert(sizeof(struct gve_adminq_report_stats) == 16);
+static_assert(sizeof(struct gve_adminq_report_stats) == 24);
 
 struct gve_adminq_report_link_speed {
   __be64 link_speed_address;
@@ -268,6 +269,6 @@ int gve_adminq_register_page_list(struct gve_priv *priv,
 int gve_adminq_unregister_page_list(struct gve_priv *priv, u32 page_list_id);
 int gve_adminq_set_mtu(struct gve_priv *priv, u64 mtu);
 int gve_adminq_report_stats(struct gve_priv *priv, u64 stats_report_len,
-			    dma_addr_t stats_report_addr);
+			    dma_addr_t stats_report_addr, u64 interval);
 int gve_adminq_report_link_speed(struct gve_priv *priv);
 #endif /* _GVE_ADMINQ_H */

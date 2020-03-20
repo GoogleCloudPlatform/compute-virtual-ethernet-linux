@@ -339,7 +339,8 @@ static int gve_setup_device_resources(struct gve_priv *priv)
 		goto abort_with_stats_report;
 	}
 	err = gve_adminq_report_stats(priv, priv->stats_report_len,
-				      priv->stats_report_bus);
+				      priv->stats_report_bus,
+				      GVE_SERVICE_TIMER_PERIOD);
 	if (err)
 		dev_err(&priv->pdev->dev,
 			"Failed to report stats: err=%d\n", err);
@@ -363,7 +364,8 @@ static void gve_teardown_device_resources(struct gve_priv *priv)
 	/* Tell device its resources are being freed */
 	if (gve_get_device_resources_ok(priv)) {
 		/* detach the stats report */
-		err = gve_adminq_report_stats(priv, 0, 0x0);
+		err = gve_adminq_report_stats(priv, 0, 0x0,
+			GVE_SERVICE_TIMER_PERIOD);
 		if (err) {
 			dev_err(&priv->pdev->dev,
 				"Failed to detach stats report: err=%d\n", err);

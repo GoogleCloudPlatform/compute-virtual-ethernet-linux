@@ -594,7 +594,7 @@ int gve_adminq_set_mtu(struct gve_priv *priv, u64 mtu)
 }
 
 int gve_adminq_report_stats(struct gve_priv *priv, u64 stats_report_len,
-			    dma_addr_t stats_report_addr)
+			    dma_addr_t stats_report_addr, u64 interval)
 {
 	union gve_adminq_command cmd;
 
@@ -603,6 +603,7 @@ int gve_adminq_report_stats(struct gve_priv *priv, u64 stats_report_len,
 	cmd.report_stats = (struct gve_adminq_report_stats) {
 		.stats_report_len = cpu_to_be64(stats_report_len),
 		.stats_report_addr = cpu_to_be64(stats_report_addr),
+		.interval = cpu_to_be64(interval),
 	};
 
 	return gve_adminq_execute_cmd(priv, &cmd);
