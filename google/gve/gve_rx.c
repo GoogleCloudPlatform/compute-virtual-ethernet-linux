@@ -96,7 +96,8 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 
 		if (rx->data.raw_addressing) {
 			err = gve_alloc_page(priv, &priv->pdev->dev, &page,
-					     &addr, DMA_FROM_DEVICE);
+					     &addr, DMA_FROM_DEVICE,
+					     GFP_KERNEL);
 			if (err) {
 				int j;
 
@@ -307,7 +308,8 @@ static int gve_rx_alloc_buffer(struct gve_priv *priv, struct device *dev,
 	struct page *page;
 	int err;
 
-	err = gve_alloc_page(priv, dev, &page, &new_dma, DMA_FROM_DEVICE);
+	err = gve_alloc_page(priv, dev, &page, &new_dma, DMA_FROM_DEVICE,
+			     GFP_ATOMIC);
 	if (err) {
 		u64_stats_update_begin(&rx->statss);
 		rx->rx_buf_alloc_fail++;
