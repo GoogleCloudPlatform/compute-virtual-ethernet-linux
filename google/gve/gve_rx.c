@@ -22,6 +22,7 @@ static void gve_rx_free_buffer(struct device *dev,
 	dma_addr_t dma = (dma_addr_t)(be64_to_cpu(data_slot->addr) -
 				      page_info->page_offset);
 
+	page_ref_sub(page_info->page, page_info->pagecnt_bias - 1);
 	gve_free_page(dev, page_info->page, dma, DMA_FROM_DEVICE);
 }
 
@@ -69,6 +70,9 @@ static void gve_setup_rx_buffer(struct gve_rx_slot_page_info *page_info,
 	page_info->page_offset = 0;
 	page_info->page_address = page_address(page);
 	slot->addr = cpu_to_be64(addr);
+	/* The page already has 1 ref */
+	page_ref_add(page, INT_MAX - 1);
+	page_info->pagecnt_bias = INT_MAX;
 }
 
 static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
@@ -346,18 +350,35 @@ static bool gve_rx_can_flip_buffers(struct net_device *netdev) {
 #endif
 }
 
-static int gve_rx_can_recycle_buffer(struct page *page) {
-	int pagecount = page_count(page);
+static int gve_rx_can_recycle_buffer(struct gve_rx_slot_page_info *page_info)
+{
+	int pagecount = page_count(page_info->page);
 
 	/* This page is not being used by any SKBs - reuse */
-	if (pagecount == 1) {
+	if (pagecount == page_info->pagecnt_bias) {
 		return 1;
 	/* This page is still being used by an SKB - we can't reuse */
-	} else if (pagecount >= 2) {
+	} else if (pagecount > page_info->pagecnt_bias) {
 		return 0;
 	} else {
-		WARN(pagecount < 1, "Pagecount should never be < 1");
+		WARN(pagecount < page_info->pagecnt_bias,
+		     "Pagecount should never be less than the bias.");
 		return -1;
+	}
+}
+
+static void gve_rx_update_pagecnt_bias(struct gve_rx_slot_page_info *page_info)
+{
+	page_info->pagecnt_bias--;
+	if (page_info->pagecnt_bias == 0) {
+		int pagecount = page_count(page_info->page);
+
+		/* If we have run out of bias - set it back up to INT_MAX
+		 * minus the existing refs.
+		 */
+		page_info->pagecnt_bias = INT_MAX - (pagecount);
+		/* Set pagecount back up to max */
+		page_ref_add(page_info->page, INT_MAX - pagecount);
 	}
 }
 
@@ -372,11 +393,11 @@ gve_rx_raw_addressing(struct device *dev, struct net_device *netdev,
 	if (!skb)
 		return NULL;
 
-	/* Optimistically stop the kernel from freeing the page by increasing
-	 * the page bias. We will check the refcount in refill to determine if
-	 * we need to alloc a new page.
+	/* Optimistically stop the kernel from freeing the page.
+	 * We will check again in refill to determine if we need to alloc a
+	 * new page.
 	 */
-	get_page(page_info->page);
+	gve_rx_update_pagecnt_bias(page_info);
 	page_info->can_flip = can_flip;
 
 	return skb;
@@ -399,7 +420,7 @@ gve_rx_qpl(struct device *dev, struct net_device *netdev,
 		/* No point in recycling if we didn't get the skb */
 		if (skb) {
 			/* Make sure the networking stack can't free the page */
-			get_page(page_info->page);
+			gve_rx_update_pagecnt_bias(page_info);
 			gve_rx_flip_buffer(page_info, data_slot);
 		}
 	} else {
@@ -456,7 +477,7 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 		int recycle = 0;
 
 		if (can_flip) {
-			recycle = gve_rx_can_recycle_buffer(page_info->page);
+			recycle = gve_rx_can_recycle_buffer(page_info);
 			if (recycle < 0) {
 				gve_schedule_reset(priv);
 				return false;
@@ -545,7 +566,7 @@ static bool gve_rx_refill_buffers(struct gve_priv *priv, struct gve_rx_ring *rx)
 			 * owns half the page it is impossible to tell which half. Either
 			 * the whole page is free or it needs to be replaced.
 			 */
-			int recycle = gve_rx_can_recycle_buffer(page_info->page);
+			int recycle = gve_rx_can_recycle_buffer(page_info);
 
 			if (recycle < 0) {
 				gve_schedule_reset(priv);
