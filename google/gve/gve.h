@@ -173,13 +173,13 @@ struct gve_tx_ring {
  * associated with that irq.
  */
 struct gve_notify_block {
-	__be32 irq_db_index; /* idx into Bar2 - set by device, must be 1st */
+	__be32 *irq_db_index; /* pointer to idx into Bar2 */
 	char name[IFNAMSIZ + 16]; /* name registered with the kernel */
 	struct napi_struct napi; /* kernel napi struct for this block */
 	struct gve_priv *priv;
 	struct gve_tx_ring *tx; /* tx rings on this block */
 	struct gve_rx_ring *rx; /* rx rings on this block */
-} ____cacheline_aligned;
+};
 
 /* Tracks allowed and current queue settings */
 struct gve_queue_config {
@@ -193,13 +193,18 @@ struct gve_qpl_config {
 	unsigned long *qpl_id_map; /* bitmap of used qpl ids */
 };
 
+struct gve_irq_db {
+	__be32 index;
+} ____cacheline_aligned;
+
 struct gve_priv {
 	struct net_device *dev;
 	struct gve_tx_ring *tx; /* array of tx_cfg.num_queues */
 	struct gve_rx_ring *rx; /* array of rx_cfg.num_queues */
 	struct gve_queue_page_list *qpls; /* array of num qpls */
 	struct gve_notify_block *ntfy_blocks; /* array of num_ntfy_blks */
-	dma_addr_t ntfy_block_bus;
+	struct gve_irq_db *irq_db_indices; /* array of num_ntfy_blks */
+	dma_addr_t irq_db_indices_bus;
 	struct msix_entry *msix_vectors; /* array of num_ntfy_blks + 1 */
 	char mgmt_msix_name[IFNAMSIZ + 16];
 	u32 mgmt_msix_idx;
@@ -438,7 +443,7 @@ static inline void gve_clear_report_stats(struct gve_priv *priv)
 static inline __be32 __iomem *gve_irq_doorbell(struct gve_priv *priv,
 					       struct gve_notify_block *block)
 {
-	return &priv->db_bar2[be32_to_cpu(block->irq_db_index)];
+	return &priv->db_bar2[be32_to_cpu(*block->irq_db_index)];
 }
 
 /* Returns the index into ntfy_blocks of the given tx ring's block
