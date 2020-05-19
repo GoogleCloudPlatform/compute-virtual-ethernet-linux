@@ -624,6 +624,10 @@ bool gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 			   "[%d] seqno=%d rx->desc.seqno=%d\n",
 			   rx->q_num, GVE_SEQNO(desc->flags_seq),
 			   rx->desc.seqno);
+
+		// prefetch two descriptors ahead
+		prefetch(rx->desc.desc_ring + ((cnt + 2) & rx->mask));
+
 		dropped = !gve_rx(rx, desc, feat, idx);
 		if (!dropped) {
 			bytes += be16_to_cpu(desc->len) - GVE_RX_PAD;
