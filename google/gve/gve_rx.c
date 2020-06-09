@@ -444,7 +444,18 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 	struct gve_rx_data_slot *data_slot;
 	struct sk_buff *skb = NULL;
 	dma_addr_t page_bus;
+	void *va;
 	u16 len;
+	
+	/* Prefetch two packet pages ahead, we will need it soon. */
+	page_info = &rx->data.page_info[(idx + 2) & rx->mask];
+	va = page_info->page_address + GVE_RX_PAD +
+			page_info->page_offset;
+
+	prefetch(page_info->page); // Kernel page struct.
+	prefetch(va);              // Packet header.
+	prefetch(va+64);           // Next cacheline too.
+
 
 	/* drop this packet */
 	if (unlikely(rx_desc->flags_seq & GVE_RXF_ERR)) {
