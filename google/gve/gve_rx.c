@@ -569,6 +569,7 @@ static bool gve_rx_refill_buffers(struct gve_priv *priv, struct gve_rx_ring *rx)
 						&rx->data.data_ring[idx];
 
 			gve_rx_flip_buffer(page_info, data_slot);
+			page_info->can_flip = false;
 		} else {
 			/* It is possible that the networking stack has already
 			 * finished processing all outstanding packets in the buffer
