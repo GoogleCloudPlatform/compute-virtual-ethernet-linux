@@ -567,7 +567,7 @@ static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 	}
 
 	for (i = 0; i < payload_nfrags - (seg_idx_bias - 1); i++) {
-		struct skb_frag_struct frag = shinfo->frags[i];
+		skb_frag_t frag	= shinfo->frags[i];
 
 		idx = (tx->req + i + seg_idx_bias) & tx->mask;
 		seg_desc = &tx->desc[idx];
