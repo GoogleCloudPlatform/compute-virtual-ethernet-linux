@@ -36,6 +36,7 @@ int gve_adminq_alloc(struct device *dev, struct gve_priv *priv)
 	priv->adminq_dcfg_device_resources_cnt = 0;
 	priv->adminq_set_driver_parameter_cnt = 0;
 	priv->adminq_report_stats_cnt = 0;
+	priv->adminq_report_link_speed_cnt = 0;
 
 	/* Setup Admin queue with the device */
 	iowrite32be(priv->adminq_bus_addr / PAGE_SIZE,
@@ -237,6 +238,9 @@ static int gve_adminq_issue_cmd(struct gve_priv *priv,
 		break;
 	case GVE_ADMINQ_REPORT_STATS:
 		priv->adminq_report_stats_cnt++;
+		break;
+	case GVE_ADMINQ_REPORT_LINK_SPEED:
+		priv->adminq_report_link_speed_cnt++;
 		break;
 	default:
 		dev_err(&priv->pdev->dev, "unknown AQ command opcode %d\n", opcode);
