@@ -254,6 +254,7 @@ struct gve_priv {
 	u32 adminq_dcfg_device_resources_cnt;
 	u32 adminq_set_driver_parameter_cnt;
 	u32 adminq_report_stats_cnt;
+	u32 adminq_report_link_speed_cnt;
 
 	/* Global stats */
 	u32 interface_up_cnt; /* count of times interface turned up */
