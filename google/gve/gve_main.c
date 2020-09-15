@@ -672,8 +672,7 @@ void gve_free_page(struct device *dev, struct page *page, dma_addr_t dma,
 		put_page(page);
 }
 
-static void gve_free_queue_page_list(struct gve_priv *priv,
-				     int id)
+static void gve_free_queue_page_list(struct gve_priv *priv, u32 id)
 {
 	struct gve_queue_page_list *qpl = &priv->qpls[id];
 	int i;
@@ -691,6 +690,7 @@ static void gve_free_queue_page_list(struct gve_priv *priv,
 free_pages:
 	kfree(qpl->pages);
 	priv->num_registered_pages -= qpl->num_entries;
+
 }
 
 static int gve_alloc_qpls(struct gve_priv *priv)
