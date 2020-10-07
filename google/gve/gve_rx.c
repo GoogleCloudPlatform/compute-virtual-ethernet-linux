@@ -26,6 +26,25 @@ static void gve_rx_free_buffer(struct device *dev,
 	gve_free_page(dev, page_info->page, dma, DMA_FROM_DEVICE);
 }
 
+static void gve_rx_unfill_pages(struct gve_priv *priv, struct gve_rx_ring *rx) {
+	u32 slots = rx->mask + 1;
+	int i;
+
+	if (rx->data.raw_addressing) {
+		for (i = 0; i < slots; i++)
+			gve_rx_free_buffer(&priv->pdev->dev, &rx->data.page_info[i],
+					   &rx->data.data_ring[i]);
+	} else {
+		for (i = 0; i < slots; i++)
+			page_ref_sub(rx->data.page_info[i].page,
+				     rx->data.page_info[i].pagecnt_bias - 1);
+		gve_unassign_qpl(priv, rx->data.qpl->id);
+		rx->data.qpl = NULL;
+	}
+	kfree(rx->data.page_info);
+	rx->data.page_info = NULL;
+}
+
 static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 {
 	struct gve_rx_ring *rx = &priv->rx[idx];
@@ -43,17 +62,7 @@ static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 			  rx->q_resources, rx->q_resources_bus);
 	rx->q_resources = NULL;
 
-	if (rx->data.raw_addressing) {
-		int i;
-
-		for (i = 0; i < slots; i++)
-			gve_rx_free_buffer(dev, &rx->data.page_info[i],
-					   &rx->data.data_ring[i]);
-	} else {
-		gve_unassign_qpl(priv, rx->data.qpl->id);
-		rx->data.qpl = NULL;
-	}
-	kfree(rx->data.page_info);
+	gve_rx_unfill_pages(priv, rx);
 
 	bytes = sizeof(*rx->data.data_ring) * slots;
 	dma_free_coherent(dev, bytes, rx->data.data_ring,
@@ -109,8 +118,9 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 				rx->rx_buf_alloc_fail++;
 				u64_stats_update_end(&rx->statss);
 				for (j = 0; j < i; j++)
-					gve_free_page(&priv->pdev->dev, page,
-						      addr, DMA_FROM_DEVICE);
+					gve_rx_free_buffer(&priv->pdev->dev,
+							 &rx->data.page_info[j],
+							 &rx->data.data_ring[j]);
 				return err;
 			}
 		} else {
@@ -203,7 +213,7 @@ abort_with_q_resources:
 			  rx->q_resources, rx->q_resources_bus);
 	rx->q_resources = NULL;
 abort_filled:
-	kfree(rx->data.page_info);
+	gve_rx_unfill_pages(priv, rx);
 abort_with_slots:
 	bytes = sizeof(*rx->data.data_ring) * slots;
 	dma_free_coherent(hdev, bytes, rx->data.data_ring, rx->data.data_bus);
