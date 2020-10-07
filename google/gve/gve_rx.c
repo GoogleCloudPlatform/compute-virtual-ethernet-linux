@@ -138,9 +138,9 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 {
 	struct gve_rx_ring *rx = &priv->rx[idx];
 	struct device *hdev = &priv->pdev->dev;
-	u32 slots, npages;
 	int filled_pages;
 	size_t bytes;
+	u32 slots;
 	int err;
 
 	netif_dbg(priv, drv, priv->dev, "allocating rx ring\n");
@@ -185,12 +185,6 @@ static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
 
 	/* alloc rx desc ring */
 	bytes = sizeof(struct gve_rx_desc) * priv->rx_desc_cnt;
-	npages = bytes / PAGE_SIZE;
-	if (npages * PAGE_SIZE != bytes) {
-		err = -EIO;
-		goto abort_with_q_resources;
-	}
-
 	rx->desc.desc_ring = dma_alloc_coherent(hdev, bytes, &rx->desc.bus,
 						GFP_KERNEL);
 	if (!rx->desc.desc_ring) {
@@ -362,7 +356,7 @@ static int gve_rx_can_recycle_buffer(struct gve_rx_slot_page_info *page_info)
 		return 0;
 	} else {
 		WARN(pagecount < page_info->pagecnt_bias,
-		     "Pagecount should never be less than the bias.");
+		     "Pagecount (%d) should never be less than the bias (%d).", pagecount, page_info->pagecnt_bias);
 		return -1;
 	}
 }
