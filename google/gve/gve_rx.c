@@ -554,9 +554,10 @@ bool gve_rx_work_pending(struct gve_rx_ring *rx)
 
 static bool gve_rx_refill_buffers(struct gve_priv *priv, struct gve_rx_ring *rx)
 {
+	bool empty = rx->fill_cnt == rx->cnt;
 	u32 fill_cnt = rx->fill_cnt;
 
-	while ((fill_cnt & rx->mask) != (rx->cnt & rx->mask)) {
+	while (empty || ((fill_cnt & rx->mask) != (rx->cnt & rx->mask))) {
 		u32 idx = fill_cnt & rx->mask;
 		struct gve_rx_slot_page_info *page_info =
 						&rx->data.page_info[idx];
@@ -598,6 +599,7 @@ static bool gve_rx_refill_buffers(struct gve_priv *priv, struct gve_rx_ring *rx)
 				}
 			}
 		}
+		empty = false;
 		fill_cnt++;
 	}
 	rx->fill_cnt = fill_cnt;
@@ -641,14 +643,16 @@ static int gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 		work_done++;
 	}
 
-	if (!work_done)
-		return 0;
+	if (!work_done && likely(rx->fill_cnt - cnt > rx->db_threshold)) {
+	  return 0;
+        } else if (work_done) {
+		u64_stats_update_begin(&rx->statss);
+		rx->rpackets += packets;
+		rx->rbytes += bytes;
+		u64_stats_update_end(&rx->statss);
+		rx->cnt = cnt;
+	}
 
-	u64_stats_update_begin(&rx->statss);
-	rx->rpackets += packets;
-	rx->rbytes += bytes;
-	u64_stats_update_end(&rx->statss);
-	rx->cnt = cnt;
 	/* restock ring slots */
 	if (!rx->data.raw_addressing) {
 		/* In QPL mode buffs are refilled as the desc are processed */
@@ -661,6 +665,15 @@ static int gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 		 */
 		if(!gve_rx_refill_buffers(priv, rx))
 			return false;
+
+		/* If we weren't able to successfully refill buffers, return
+		 * budget so this queue can be napi_scheduled for more work
+		 * which will give us a chance to refill buffers again.
+		 */
+		if (rx->fill_cnt - rx->cnt <= rx->db_threshold) {
+			gve_rx_write_doorbell(priv, rx);
+			return budget;
+		}
 		/* restock desc ring slots */
 		dma_wmb();/* Ensure descs are visible before ringing doorbell */
 		gve_rx_write_doorbell(priv, rx);
