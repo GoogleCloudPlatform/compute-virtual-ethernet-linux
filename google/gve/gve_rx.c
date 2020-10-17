@@ -92,8 +92,14 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 	if (!rx->data.page_info)
 		return -ENOMEM;
 
-	if (!rx->data.raw_addressing)
+	if (!rx->data.raw_addressing) {
 		rx->data.qpl = gve_assign_rx_qpl(priv);
+		if (!rx->data.qpl) {
+			kfree(rx->data.page_info);
+			rx->data.page_info = NULL;
+			return -ENOMEM;
+		}
+	}
 	for (i = 0; i < slots; i++) {
 		struct page *page;
 		dma_addr_t addr;
@@ -109,8 +115,11 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 				rx->rx_buf_alloc_fail++;
 				u64_stats_update_end(&rx->statss);
 				for (j = 0; j < i; j++)
-					gve_free_page(&priv->pdev->dev, page,
-						      addr, DMA_FROM_DEVICE);
+					gve_rx_free_buffer(&priv->pdev->dev,
+							 &rx->data.page_info[j],
+							 &rx->data.data_ring[j]);
+				kfree(rx->data.page_info);
+				rx->data.page_info = NULL;
 				return err;
 			}
 		} else {
