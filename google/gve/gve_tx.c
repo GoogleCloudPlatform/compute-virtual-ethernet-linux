@@ -716,7 +716,7 @@ static int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
 __be32 gve_tx_load_event_counter(struct gve_priv *priv,
 				 struct gve_tx_ring *tx)
 {
-	u32 counter_index = be32_to_cpu((tx->q_resources->counter_index));
+	u32 counter_index = be32_to_cpu(tx->q_resources->counter_index);
 
 	return READ_ONCE(priv->counter_array[counter_index]);
 }
