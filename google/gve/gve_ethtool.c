@@ -41,14 +41,14 @@ static const char gve_gstrings_main_stats[][ETH_GSTRING_LEN] = {
 };
 
 static const char gve_gstrings_rx_stats[][ETH_GSTRING_LEN] = {
-	"rx_posted_desc[%u]", "rx_completed_desc[%u]", "rx_bytes[%u]",
+	"rx_posted_desc[%u]", "rx_completed_desc[%u]", "rx_consumed_desc[%u]", "rx_bytes[%u]",
 	"rx_dropped_pkt[%u]", "rx_copybreak_pkt[%u]", "rx_copied_pkt[%u]",
 	"rx_queue_drop_cnt[%u]", "rx_no_buffers_posted[%u]",
 	"rx_drops_packet_over_mru[%u]", "rx_drops_invalid_checksum[%u]",
 };
 
 static const char gve_gstrings_tx_stats[][ETH_GSTRING_LEN] = {
-	"tx_posted_desc[%u]", "tx_completed_desc[%u]", "tx_bytes[%u]",
+	"tx_posted_desc[%u]", "tx_completed_desc[%u]", "tx_consumed_desc[%u]", "tx_bytes[%u]",
 	"tx_wake[%u]", "tx_stop[%u]", "tx_event_counter[%u]",
 };
 
@@ -249,6 +249,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 
 			data[i++] = rx->fill_cnt;
 			data[i++] = rx->cnt;
+                        data[i++] = rx->fill_cnt - rx->cnt;
 			do {
 				start =
 				  u64_stats_fetch_begin(&priv->rx[ring].statss);
@@ -305,6 +306,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 
 			data[i++] = tx->req;
 			data[i++] = tx->done;
+                        data[i++] = tx->req - tx->done;
 			do {
 				start =
 				  u64_stats_fetch_begin(&priv->tx[ring].statss);
