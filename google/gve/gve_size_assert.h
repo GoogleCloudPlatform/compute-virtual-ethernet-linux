@@ -4,7 +4,6 @@
  * Copyright (C) 2015-2019 Google, Inc.
  */
 
-#ifndef _GVE_ASSERT_H_
-#define _GVE_ASSERT_H_
+#ifndef static_assert
 #define static_assert(expr, ...) _Static_assert(expr, #expr)
-#endif /* _GVE_ASSERT_H_ */
+#endif /* static_assert */
