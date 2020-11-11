@@ -23,6 +23,9 @@
 #define GVE_VERSION		"1.2.3"
 #define GVE_VERSION_PREFIX	"GVE-"
 
+// Minimum amount of time between queue kicks in msec (10 seconds)
+#define MIN_TX_TIMEOUT_GAP (1000 * 10)
+
 const char gve_version_str[] = GVE_VERSION;
 static const char gve_version_prefix[] = GVE_VERSION_PREFIX;
 
@@ -957,8 +960,10 @@ static void gve_tx_timeout(struct net_device *dev, unsigned int txqueue)
 	struct gve_tx_ring *tx = NULL;
 	struct gve_priv *priv;
 	u32 last_nic_done;
+	u32 current_time;
 	u32 ntfy_idx;
 
+	netdev_info(dev, "Timeout on tx queue, %d", txqueue);
 	priv = netdev_priv(dev);
 	if (txqueue > priv->tx_cfg.num_queues)
 		goto reset;
@@ -970,13 +975,19 @@ static void gve_tx_timeout(struct net_device *dev, unsigned int txqueue)
 	block = &priv->ntfy_blocks[ntfy_idx];
 	tx = block->tx;
 
+	current_time = jiffies_to_msecs(jiffies);
+	if (tx->last_kick_msec + MIN_TX_TIMEOUT_GAP > current_time)
+		goto reset;
+
 	/* Check to see if there are missed completions, which will allow us to
 	 * kick the queue.
 	 */
 	last_nic_done = gve_tx_load_event_counter(priv, tx);
 	if (last_nic_done - tx->done) {
+		netdev_info(dev, "Kicking queue %d", txqueue);
 		iowrite32be(GVE_IRQ_MASK, gve_irq_doorbell(priv, block));
 		napi_schedule(&block->napi);
+		tx->last_kick_msec = current_time;
 		goto out;
 	} // Else reset.
 

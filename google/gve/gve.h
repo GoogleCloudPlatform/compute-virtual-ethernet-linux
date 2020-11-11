@@ -165,6 +165,7 @@ struct gve_tx_ring {
 	u32 wake_queue; /* count of queue wakes */
 	u32 queue_timeout; /* count of queue timeouts */
 	u32 ntfy_id; /* notification block index */
+	u32 last_kick_msec; /* Last time the queue was kicked */
 	dma_addr_t bus; /* dma address of the descr ring */
 	dma_addr_t q_resources_bus; /* dma address of the queue resources */
 	struct u64_stats_sync statss; /* sync stats for 32bit archs */
