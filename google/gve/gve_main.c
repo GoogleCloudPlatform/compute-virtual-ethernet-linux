@@ -312,14 +312,17 @@ static void gve_free_notify_blocks(struct gve_priv *priv)
 {
 	int i;
 
-	/* Free the irqs */
-	for (i = 0; i < priv->num_ntfy_blks; i++) {
-		struct gve_notify_block *block = &priv->ntfy_blocks[i];
-		int msix_idx = i;
-
-		irq_set_affinity_hint(priv->msix_vectors[msix_idx].vector,
-				      NULL);
-		free_irq(priv->msix_vectors[msix_idx].vector, block);
+	if (priv->msix_vectors) {
+		/* Free the irqs */
+		for (i = 0; i < priv->num_ntfy_blks; i++) {
+			struct gve_notify_block *block = &priv->ntfy_blocks[i];
+			int msix_idx = i;
+	
+			irq_set_affinity_hint(priv->msix_vectors[msix_idx].vector,
+					      NULL);
+			free_irq(priv->msix_vectors[msix_idx].vector, block);
+		}
+		free_irq(priv->msix_vectors[priv->mgmt_msix_idx].vector, priv);
 	}
 	kvfree(priv->ntfy_blocks);
 	priv->ntfy_blocks = NULL;
@@ -327,7 +330,6 @@ static void gve_free_notify_blocks(struct gve_priv *priv)
 			  sizeof(*priv->irq_db_indices),
 			  priv->irq_db_indices, priv->irq_db_indices_bus);
 	priv->irq_db_indices = NULL;
-	free_irq(priv->msix_vectors[priv->mgmt_msix_idx].vector, priv);
 	pci_disable_msix(priv->pdev);
 	kfree(priv->msix_vectors);
 	priv->msix_vectors = NULL;
