@@ -6,15 +6,8 @@
 
 #include "gve.h"
 #include "gve_adminq.h"
+#include "gve_utils.h"
 #include <linux/etherdevice.h>
-
-static void gve_rx_remove_from_block(struct gve_priv *priv, int queue_idx)
-{
-	struct gve_notify_block *block =
-			&priv->ntfy_blocks[gve_rx_idx_to_ntfy(priv, queue_idx)];
-
-	block->rx = NULL;
-}
 
 static void gve_rx_free_buffer(struct device *dev,
 			       struct gve_rx_slot_page_info *page_info,
@@ -140,16 +133,6 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 	}
 
 	return slots;
-}
-
-static void gve_rx_add_to_block(struct gve_priv *priv, int queue_idx)
-{
-	u32 ntfy_idx = gve_rx_idx_to_ntfy(priv, queue_idx);
-	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
-	struct gve_rx_ring *rx = &priv->rx[queue_idx];
-
-	block->rx = rx;
-	rx->ntfy_id = ntfy_idx;
 }
 
 static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
