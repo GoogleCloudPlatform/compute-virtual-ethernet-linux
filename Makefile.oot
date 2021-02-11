@@ -9,7 +9,7 @@ ifeq (,$(DESTDIR))
 endif
 
 obj-m += gve.o
-gve-objs := gve_main.o gve_tx.o gve_rx.o gve_ethtool.o gve_adminq.o
+gve-objs := gve_main.o gve_tx.o gve_rx.o gve_ethtool.o gve_adminq.o gve_utils.o
 
 ifeq (,$(KERNELDIR))
 KERNELDIR := /lib/modules/$(BUILD_KERNEL)/build
@@ -20,8 +20,9 @@ default:
 	$(MAKE) -C $(KERNELDIR) M=$$PWD
 
 clean:
-	@-rm -rf gve_main.o gve_tx.o gve_rx.o gve_ethtool.o gve_adminq.o gve.o \
-	built-in.o Module.symvers modules.order gve.ko *.mod.* .*.*o.cmd .tmp*
+	@-rm -rf gve_main.o gve_tx.o gve_rx.o gve_ethtool.o gve_adminq.o \
+	gve_utils.o gve.o built-in.o Module.symvers modules.order gve.ko \
+	*.mod.* .*.*o.cmd .tmp*
 
 install:
 	@mkdir -p $(DESTDIR)
