@@ -418,6 +418,26 @@ int gve_adminq_destroy_rx_queues(struct gve_priv *priv, u32 num_queues)
 	return gve_adminq_kick_and_wait(priv);
 }
 
+static int gve_set_desc_cnt(struct gve_priv *priv,
+			    struct gve_device_descriptor *descriptor) {
+	priv->tx_desc_cnt = be16_to_cpu(descriptor->tx_queue_entries);
+	if (priv->tx_desc_cnt * sizeof(priv->tx->desc[0]) < PAGE_SIZE) {
+		dev_err(&priv->pdev->dev, "Tx desc count %d too low\n",
+			priv->tx_desc_cnt);
+		return -EINVAL;
+	}
+	priv->rx_desc_cnt = be16_to_cpu(descriptor->rx_queue_entries);
+	if (priv->rx_desc_cnt * sizeof(priv->rx->desc.desc_ring[0])
+	    < PAGE_SIZE ||
+	    priv->rx_desc_cnt * sizeof(priv->rx->data.data_ring[0])
+	    < PAGE_SIZE) {
+		dev_err(&priv->pdev->dev, "Rx desc count %d too low\n",
+			priv->rx_desc_cnt);
+		return -EINVAL;
+	}
+	return 0;
+}
+
 int gve_adminq_describe_device(struct gve_priv *priv)
 {
 	struct gve_device_descriptor *descriptor;
@@ -445,24 +465,9 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	err = gve_adminq_execute_cmd(priv, &cmd);
 	if (err)
 		goto free_device_descriptor;
-
-	priv->tx_desc_cnt = be16_to_cpu(descriptor->tx_queue_entries);
-	if (priv->tx_desc_cnt * sizeof(priv->tx->desc[0]) < PAGE_SIZE) {
-		dev_err(&priv->pdev->dev, "Tx desc count %d too low\n",
-			priv->tx_desc_cnt);
-		err = -EINVAL;
+	err = gve_set_desc_cnt(priv, descriptor);
+	if (err)
 		goto free_device_descriptor;
-	}
-	priv->rx_desc_cnt = be16_to_cpu(descriptor->rx_queue_entries);
-	if (priv->rx_desc_cnt * sizeof(priv->rx->desc.desc_ring[0])
-	    < PAGE_SIZE ||
-	    priv->rx_desc_cnt * sizeof(priv->rx->data.data_ring[0])
-	    < PAGE_SIZE) {
-		dev_err(&priv->pdev->dev, "Rx desc count %d too low\n",
-			priv->rx_desc_cnt);
-		err = -EINVAL;
-		goto free_device_descriptor;
-	}
 	priv->max_registered_pages =
 				be64_to_cpu(descriptor->max_registered_pages);
 	mtu = be16_to_cpu(descriptor->mtu);
