@@ -16,6 +16,7 @@
 #include "gve.h"
 #include "gve_adminq.h"
 #include "gve_register.h"
+#include "gve_utils.h"
 
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
