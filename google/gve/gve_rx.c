@@ -395,7 +395,7 @@ gve_rx_qpl(struct device *dev, struct net_device *netdev,
 			gve_rx_flip_buffer(page_info, data_slot);
 		}
 	} else {
-		skb = gve_rx_copy(netdev, napi, page_info, len);
+		skb = gve_rx_copy(netdev, napi, page_info, len, GVE_RX_PAD);
 		if (skb) {
 			u64_stats_update_begin(&rx->statss);
 			rx->rx_copied_pkt++;
@@ -447,7 +447,7 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 
 	if (len <= priv->rx_copybreak) {
 		/* Just copy small packets */
-		skb = gve_rx_copy(netdev, napi, page_info, len);
+		skb = gve_rx_copy(netdev, napi, page_info, len, GVE_RX_PAD);
 		if (skb) {
 			u64_stats_update_begin(&rx->statss);
 			rx->rx_copied_pkt++;
