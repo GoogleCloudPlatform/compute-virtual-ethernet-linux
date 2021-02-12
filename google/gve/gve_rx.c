@@ -261,27 +261,6 @@ static enum pkt_hash_types gve_rss_type(__be16 pkt_flags)
 	return PKT_HASH_TYPE_L2;
 }
 
-static struct sk_buff *gve_rx_copy(struct net_device *dev,
-				   struct napi_struct *napi,
-				   struct gve_rx_slot_page_info *page_info,
-				   u16 len)
-{
-	struct sk_buff *skb = napi_alloc_skb(napi, len);
-	void *va = page_info->page_address + GVE_RX_PAD +
-		   page_info->page_offset;
-
-	if (unlikely(!skb))
-		return NULL;
-
-	__skb_put(skb, len);
-
-	skb_copy_to_linear_data(skb, va, len);
-
-	skb->protocol = eth_type_trans(skb, dev);
-
-	return skb;
-}
-
 static struct sk_buff *gve_rx_add_frags(struct napi_struct *napi,
 					struct gve_rx_slot_page_info *page_info,
 					u16 len)
