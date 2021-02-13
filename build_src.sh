@@ -32,7 +32,16 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 
-USAGE="build_src.sh [-t|--target=T] [-c|--compress=CF] [-d|--deb] [-v|--version=V | -r|--release]\n   -t=T or --target=T: target for build (oot, upstream, cos)\n   -c=CF or --compress=CF: compression format (gz)\n   -d or --deb: Package into a .deb as well\n   --rpm: Package into a .rpm. -v=V or --version=V: Specify a version rather then creating it\n -r or --release: This is a build for release"
+USAGE=$(cat <<-END
+build_src.sh [-t|--target=T] [-c|--compress=CF] [-d|--deb] [-v|--version=V | -r|--release]
+    -t=T or --target=T: target for build (oot, upstream, cos).
+    -c=CF or --compress=CF: compression format (gz).
+    -d or --deb: Package into a .deb as well.
+    --rpm: Package into a .rpm .
+    -v=V or --version=V: Specify a version rather then creating it.
+    -r or --release: This is a build for release.
+END
+)
 MAINDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PATCHDIR="$MAINDIR"/patches
 SRCDIR="$MAINDIR"/google/gve
