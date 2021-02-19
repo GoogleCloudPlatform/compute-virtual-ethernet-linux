@@ -951,7 +951,113 @@ static void gve_turnup(struct gve_priv *priv)
 static void gve_tx_timeout(struct net_device *dev, unsigned int txqueue)
 {
 	struct gve_priv *priv = netdev_priv(dev);
+	int i, j;
 
+	rtnl_lock();
+	// LOG Driver state
+	dev_info(&priv->pdev->dev, "gve::adminq_mask=%u", priv->adminq_mask);
+	dev_info(&priv->pdev->dev, "gve::adminq_prod_cnt=%u", priv->adminq_prod_cnt);
+	dev_info(&priv->pdev->dev, "gve::adminq_cmd_fail=%u", priv->adminq_cmd_fail);
+	dev_info(&priv->pdev->dev, "gve::adminq_timeouts=%u", priv->adminq_timeouts);
+	dev_info(&priv->pdev->dev, "gve::adminq_describe_device_cnt=%u", priv->adminq_describe_device_cnt);
+	dev_info(&priv->pdev->dev, "gve::adminq_cfg_device_resources_cnt=%u", priv->adminq_cfg_device_resources_cnt);
+	dev_info(&priv->pdev->dev, "gve::adminq_register_page_list_cnt=%u", priv->adminq_register_page_list_cnt);
+	dev_info(&priv->pdev->dev, "gve::adminq_unregister_page_list_cnt=%u", priv->adminq_unregister_page_list_cnt);
+	dev_info(&priv->pdev->dev, "gve::adminq_create_tx_queue_cnt=%u", priv->adminq_create_tx_queue_cnt);
+	dev_info(&priv->pdev->dev, "gve::adminq_create_rx_queue_cnt=%u", priv->adminq_create_rx_queue_cnt);
+	dev_info(&priv->pdev->dev, "gve::adminq_destroy_tx_queue_cnt=%u", priv->adminq_destroy_tx_queue_cnt);
+	dev_info(&priv->pdev->dev, "gve::adminq_destroy_rx_queue_cnt=%u", priv->adminq_destroy_rx_queue_cnt);
+	dev_info(&priv->pdev->dev, "gve::adminq_dcfg_device_resources_cnt=%u", priv->adminq_dcfg_device_resources_cnt);
+	dev_info(&priv->pdev->dev, "gve::adminq_set_driver_parameter_cnt=%u", priv->adminq_set_driver_parameter_cnt);
+	dev_info(&priv->pdev->dev, "gve::adminq_report_stats_cnt=%u", priv->adminq_report_stats_cnt);
+	dev_info(&priv->pdev->dev, "gve::adminq_report_link_speed_cnt=%u", priv->adminq_report_link_speed_cnt);
+	dev_info(&priv->pdev->dev, "gve::interface_up_cnt=%u", priv->interface_up_cnt);
+	dev_info(&priv->pdev->dev, "gve::interface_down_cnt=%u", priv->interface_down_cnt);
+	dev_info(&priv->pdev->dev, "gve::reset_cnt=%u", priv->reset_cnt);
+	dev_info(&priv->pdev->dev, "gve::page_alloc_fail=%u", priv->page_alloc_fail);
+	dev_info(&priv->pdev->dev, "gve::dma_mapping_error=%u", priv->dma_mapping_error);
+	dev_info(&priv->pdev->dev, "gve::suspend_cnt=%u", priv->suspend_cnt);
+	dev_info(&priv->pdev->dev, "gve::resume_cnt=%u", priv->resume_cnt);
+	dev_info(&priv->pdev->dev, "gve::service_task_flags=%lu", priv->service_task_flags);
+	dev_info(&priv->pdev->dev, "gve::state_flags=%lu", priv->state_flags);
+	dev_info(&priv->pdev->dev, "gve::ethtool_flags=%lu", priv->ethtool_flags);
+
+	for (i = 0; i < priv->tx_cfg.num_queues; i++) {
+		struct gve_tx_ring *tx = &priv->tx[i];
+
+		dev_info(&priv->pdev->dev, "gve::tx[%i].tx_fifo.size=%u", i, tx->tx_fifo.size);
+		dev_info(&priv->pdev->dev, "gve::tx[%i].tx_fifo.available=%u", i, atomic_read(&tx->tx_fifo.available));
+		dev_info(&priv->pdev->dev, "gve::tx[%i].tx_fifo.head=%u", i, tx->tx_fifo.head);
+		dev_info(&priv->pdev->dev, "gve::tx[%i].req=%u", i, tx->req);
+		dev_info(&priv->pdev->dev, "gve::tx[%i].done=%u", i, tx->done);
+		dev_info(&priv->pdev->dev, "gve::tx[%i].last_nic_done=%u", i, be32_to_cpu(tx->last_nic_done));
+		dev_info(&priv->pdev->dev, "gve::tx[%i].pkt_done=%llu", i, tx->pkt_done);
+		dev_info(&priv->pdev->dev, "gve::tx[%i].dropped_pkt=%u", i, tx->dropped_pkt);
+
+		dev_info(&priv->pdev->dev, "gve::tx[%i].queue_resources(db_index, db_counter)=(%u, %u)", i, be32_to_cpu(tx->q_resources->db_index), be32_to_cpu(tx->q_resources->counter_index));
+		dev_info(&priv->pdev->dev, "gve::tx[%i]: db_bar2[db_index]=%u", i, ioread32be(&priv->db_bar2[be32_to_cpu(tx->q_resources->db_index)]));
+		dev_info(&priv->pdev->dev, "gve::tx[%i]: counter_array[counter_index]=%u", i, READ_ONCE(priv->counter_array[be32_to_cpu(tx->q_resources->counter_index)]));
+		dev_info(&priv->pdev->dev, "gve::tx[%i].stop_queue=%u", i, tx->stop_queue);
+		dev_info(&priv->pdev->dev, "gve::tx[%i].wake_queue=%u", i, tx->wake_queue);
+		dev_info(&priv->pdev->dev, "gve::tx[%i].ntfy_id=%u", i, tx->ntfy_id);
+	}
+
+	for (i = 0; i < priv->rx_cfg.num_queues; i++) {
+		struct gve_rx_ring *rx = &priv->rx[i];
+
+		dev_info(&priv->pdev->dev, "gve::rx[%i].desc.seqno=%u", i, rx->desc.seqno);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].data.rda=%u", i, rx->data.raw_addressing);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].data.page_info.page_offset=%u", i, rx->data.page_info->page_offset);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].data.page_info.pagecnt_bias=%u", i, rx->data.page_info->pagecnt_bias);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].data.page_info.can_flip=%u", i, rx->data.page_info->can_flip);
+
+
+		dev_info(&priv->pdev->dev, "gve::rx[%i].rbytes=%llu", i, rx->rbytes);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].rpackets=%llu", i, rx->rpackets);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].cnt=%u", i, rx->cnt);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].fill_cnt=%u", i, rx->fill_cnt);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].mask=%u", i, rx->mask);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].db_threshold=%u", i, rx->db_threshold);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].rx_copybreak_pkt=%llu", i, rx->rx_copybreak_pkt);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].rx_copied_pkt=%llu", i, rx->rx_copied_pkt);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].rx_skb_alloc_fail=%llu", i, rx->rx_skb_alloc_fail);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].rx_buf_alloc_fail=%llu", i, rx->rx_buf_alloc_fail);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].rx_desc_err_dropped_pkt=%llu", i, rx->rx_desc_err_dropped_pkt);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].rx_no_refill_dropped_pkt=%llu", i, rx->rx_no_refill_dropped_pkt);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].q_num=%u", i, rx->q_num);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].ntfy_id=%u", i, rx->ntfy_id);
+		dev_info(&priv->pdev->dev, "gve::rx[%i].queue_resources(db_index, db_counter)=(%u, %u)", i, be32_to_cpu(rx->q_resources->db_index), be32_to_cpu(rx->q_resources->counter_index));
+		dev_info(&priv->pdev->dev, "gve::rx[%i]: db_bar2[db_index]=%u", i, ioread32be(&priv->db_bar2[be32_to_cpu(rx->q_resources->db_index)]));
+	}
+
+#define GVE_DUMP_TX_DESCS
+#define GVE_DUMP_RX_DESCS
+
+#ifdef GVE_DUMP_TX_DESCS
+		for (i = 0; i < priv->tx_cfg.num_queues; i++) {
+			struct gve_tx_ring *tx = &priv->tx[i];
+
+			for (j = 0; j < priv->tx_desc_cnt; j++) {
+				union gve_tx_desc *desc = &tx->desc[j];
+				if (desc->pkt.type_flags & GVE_TXD_TSO) {
+					dev_info(&priv->pdev->dev, "gve::tx[%i].desc[%i]: type_flags=%x,l4_csum_offset=%i,l4_hdr_offset=%i,desc_cnt=%i,len=%i,seg_len=%i,seg_addr=%i", i, j, desc->pkt.type_flags, desc->pkt.l4_csum_offset, desc->pkt.l4_hdr_offset, desc->pkt.desc_cnt, be16_to_cpu(desc->pkt.len), be16_to_cpu(desc->pkt.seg_len), be16_to_cpu(desc->pkt.seg_addr));
+				} else {
+					dev_info(&priv->pdev->dev, "gve::tx[%i].desc[%i]: type_flags=%x,l3_offset=%i,mss=%i,seg_len=%i,seg_addr=%i", i, j, desc->pkt.type_flags, desc->seg.l3_offset, be16_to_cpu(desc->seg.mss), be16_to_cpu(desc->seg.seg_len), be16_to_cpu(desc->seg.seg_addr));
+				}
+			}
+		}
+#endif
+#ifdef GVE_DUMP_RX_DESCS
+		for (i = 0; i < priv->rx_cfg.num_queues; i++) {
+		struct gve_rx_ring *rx = &priv->rx[i];
+			for (j = 0; j < priv->rx_desc_cnt; j++) {
+				struct gve_rx_desc *desc = &rx->desc.desc_ring[j];
+
+				dev_info(&priv->pdev->dev, "gve::rx[%i].desc[%i]: hdr_off=%u, hdr_len=%u, len=%u, flags_seq=%u", i, j, desc->hdr_len, desc->hdr_len, be16_to_cpu(desc->len), be16_to_cpu(desc->flags_seq));
+			}
+		}
+#endif
+	rtnl_unlock();
 	gve_schedule_reset(priv);
 	priv->tx_timeo_cnt++;
 }
