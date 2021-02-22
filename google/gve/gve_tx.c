@@ -391,6 +391,19 @@ static void gve_tx_fill_pkt_desc(union gve_tx_desc *pkt_desc,
 	pkt_desc->pkt.seg_addr = cpu_to_be64(addr);
 }
 
+static void gve_tx_fill_mtd_desc(union gve_tx_desc *mtd_desc,
+				 struct sk_buff *skb)
+{
+	BUILD_BUG_ON(sizeof(mtd_desc->mtd) != sizeof(mtd_desc->pkt));
+
+	mtd_desc->mtd.type_flags = GVE_TXD_MTD | GVE_MTD_SUBTYPE_PATH;
+	mtd_desc->mtd.path_state = GVE_MTD_PATH_STATE_DEFAULT |
+				   GVE_MTD_PATH_HASH_L4;
+	mtd_desc->mtd.path_hash = skb->hash;
+	mtd_desc->mtd.reserved0 = 0;
+	mtd_desc->mtd.reserved1 = 0;
+}
+
 static void gve_tx_fill_seg_desc(union gve_tx_desc *seg_desc,
 				 struct sk_buff *skb, bool is_gso,
 				 u16 len, u64 addr)
@@ -428,6 +441,7 @@ static int gve_tx_add_skb_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 	int pad_bytes, hlen, hdr_nfrags, payload_nfrags, l4_hdr_offset;
 	union gve_tx_desc *pkt_desc, *seg_desc;
 	struct gve_tx_buffer_state *info;
+	int mtd_desc_nr = !!skb->l4_hash;
 	bool is_gso = skb_is_gso(skb);
 	u32 idx = tx->req & tx->mask;
 	int payload_iov = 2;
@@ -459,7 +473,7 @@ static int gve_tx_add_skb_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 					   &info->iov[payload_iov]);
 
 	gve_tx_fill_pkt_desc(pkt_desc, skb, is_gso, l4_hdr_offset,
-			     1 + payload_nfrags, hlen,
+			     1 + mtd_desc_nr + payload_nfrags, hlen,
 			     info->iov[hdr_nfrags - 1].iov_offset);
 
 	skb_copy_bits(skb, 0,
@@ -470,8 +484,13 @@ static int gve_tx_add_skb_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 				info->iov[hdr_nfrags - 1].iov_len);
 	copy_offset = hlen;
 
+	if (mtd_desc_nr) {
+		next_idx = (tx->req + 1) & tx->mask;
+		gve_tx_fill_mtd_desc(&tx->desc[next_idx], skb);
+	}
+
 	for (i = payload_iov; i < payload_nfrags + payload_iov; i++) {
-		next_idx = (tx->req + 1 + i - payload_iov) & tx->mask;
+		next_idx = (tx->req + 1 + mtd_desc_nr + i - payload_iov) & tx->mask;
 		seg_desc = &tx->desc[next_idx];
 
 		gve_tx_fill_seg_desc(seg_desc, skb, is_gso,
@@ -487,7 +506,7 @@ static int gve_tx_add_skb_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 		copy_offset += info->iov[i].iov_len;
 	}
 
-	return 1 + payload_nfrags;
+	return 1 + mtd_desc_nr + payload_nfrags;
 }
 
 static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
@@ -495,8 +514,9 @@ static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 {
 	const struct skb_shared_info *shinfo = skb_shinfo(skb);
 	int hlen, payload_nfrags, l4_hdr_offset, seg_idx_bias;
-	union gve_tx_desc *pkt_desc, *seg_desc;
+	union gve_tx_desc *pkt_desc, *mtd_desc, *seg_desc;
 	struct gve_tx_buffer_state *info;
+	int mtd_desc_nr = !!skb->l4_hash;
 	bool is_gso = skb_is_gso(skb);
 	u32 idx = tx->req & tx->mask;
 	struct gve_tx_dma_buf *buf;
@@ -530,23 +550,29 @@ static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 	dma_unmap_addr_set(buf, dma, addr);
 
 	payload_nfrags = shinfo->nr_frags;
+	if (hlen < len)
+		payload_nfrags++;
+
+	gve_tx_fill_pkt_desc(pkt_desc, skb, is_gso, l4_hdr_offset,
+			     1 + mtd_desc_nr + payload_nfrags, hlen, addr);
+
+	if (mtd_desc_nr) {
+		mtd_desc = &tx->desc[(tx->req + 1) & tx->mask];
+		gve_tx_fill_mtd_desc(mtd_desc, skb);
+		seg_idx_bias = 2;
+	} else {
+		seg_idx_bias = 1;
+	}
+
 	if (hlen < len) {
 		/* For gso the rest of the linear portion of the skb needs to
 		 * be in its own descriptor.
 		 */
-		payload_nfrags++;
-		gve_tx_fill_pkt_desc(pkt_desc, skb, is_gso, l4_hdr_offset,
-				     1 + payload_nfrags, hlen, addr);
-
 		len -= hlen;
 		addr += hlen;
-		seg_desc = &tx->desc[(tx->req + 1) & tx->mask];
-		seg_idx_bias = 2;
+		seg_desc = &tx->desc[(tx->req + seg_idx_bias) & tx->mask];
 		gve_tx_fill_seg_desc(seg_desc, skb, is_gso, len, addr);
-	} else {
-		seg_idx_bias = 1;
-		gve_tx_fill_pkt_desc(pkt_desc, skb, is_gso, l4_hdr_offset,
-				     1 + payload_nfrags, hlen, addr);
+		seg_idx_bias++;
 	}
 
 	for (i = 0; i < payload_nfrags - (seg_idx_bias - 1); i++) {
