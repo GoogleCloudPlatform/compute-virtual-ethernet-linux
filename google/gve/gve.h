@@ -149,6 +149,9 @@ struct gve_tx_ring {
 	u64 pkt_done; /* free-running - total packets completed */
 	u64 bytes_done; /* free-running - total bytes completed */
 	u32 dropped_pkt; /* free-running - total packets dropped */
+	__be32 last_nic_done_irq; /* NIC tail pointer during last gve_intr */
+	__be32 last_nic_done_clear; /* NIC tail pointer after clearing the irq db */
+	__be32 last_nic_done_tx_poll; /* NIC tail pointer at the end of tx_poll */
 
 	/* Cacheline 2 -- Read-mostly fields */
 	union gve_tx_desc *desc ____cacheline_aligned;

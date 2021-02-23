@@ -145,6 +145,8 @@ static irqreturn_t gve_intr(int irq, void *arg)
 	struct gve_notify_block *block = arg;
 	struct gve_priv *priv = block->priv;
 
+	if (block->tx)
+		block->tx->last_nic_done_irq = gve_tx_load_event_counter(priv, block->tx);
 	iowrite32be(GVE_IRQ_MASK, gve_irq_doorbell(priv, block));
 	napi_schedule_irqoff(&block->napi);
 	return IRQ_HANDLED;
@@ -180,6 +182,8 @@ static int gve_napi_poll(struct napi_struct *napi, int budget)
 		 * * Ensure unmask synchronizes with checking for work.
 		 * */
 		dma_rmb();
+		if(block->tx)
+			block->tx->last_nic_done_clear = gve_tx_load_event_counter(priv, block->tx);
 
 		if (block->tx) reschedule |= gve_tx_poll(block, -1);
 		if (block->rx) reschedule |= gve_rx_work_pending(block->rx);
@@ -991,15 +995,20 @@ static void gve_tx_timeout(struct net_device *dev, unsigned int txqueue)
 		dev_info(&priv->pdev->dev, "gve::tx[%i].req=%u", i, tx->req);
 		dev_info(&priv->pdev->dev, "gve::tx[%i].done=%u", i, tx->done);
 		dev_info(&priv->pdev->dev, "gve::tx[%i].last_nic_done=%u", i, be32_to_cpu(tx->last_nic_done));
+		dev_info(&priv->pdev->dev, "gve::tx[%i].last_nic_done_irq=%u", i, be32_to_cpu(tx->last_nic_done_irq));
+		dev_info(&priv->pdev->dev, "gve::tx[%i].last_nic_done_clear=%u", i, be32_to_cpu(tx->last_nic_done_clear));
+		dev_info(&priv->pdev->dev, "gve::tx[%i].last_nic_done_tx_poll=%u", i, be32_to_cpu(tx->last_nic_done_tx_poll));
 		dev_info(&priv->pdev->dev, "gve::tx[%i].pkt_done=%llu", i, tx->pkt_done);
 		dev_info(&priv->pdev->dev, "gve::tx[%i].dropped_pkt=%u", i, tx->dropped_pkt);
 
 		dev_info(&priv->pdev->dev, "gve::tx[%i].queue_resources(db_index, db_counter)=(%u, %u)", i, be32_to_cpu(tx->q_resources->db_index), be32_to_cpu(tx->q_resources->counter_index));
 		dev_info(&priv->pdev->dev, "gve::tx[%i]: db_bar2[db_index]=%u", i, ioread32be(&priv->db_bar2[be32_to_cpu(tx->q_resources->db_index)]));
-		dev_info(&priv->pdev->dev, "gve::tx[%i]: counter_array[counter_index]=%u", i, READ_ONCE(priv->counter_array[be32_to_cpu(tx->q_resources->counter_index)]));
+		dev_info(&priv->pdev->dev, "gve::tx[%i]: counter_array[counter_index]=%u", i, be32_to_cpu(gve_tx_load_event_counter(priv, tx)));
+		dev_info(&priv->pdev->dev, "gve::tx[%i]: db_bar2[irq_index]=%u", i, ioread32be(gve_irq_doorbell(priv, &priv->ntfy_blocks[gve_tx_idx_to_ntfy(priv, tx->q_num)])));
 		dev_info(&priv->pdev->dev, "gve::tx[%i].stop_queue=%u", i, tx->stop_queue);
 		dev_info(&priv->pdev->dev, "gve::tx[%i].wake_queue=%u", i, tx->wake_queue);
 		dev_info(&priv->pdev->dev, "gve::tx[%i].ntfy_id=%u", i, tx->ntfy_id);
+		dev_info(&priv->pdev->dev, "gve::tx[%i].netdev_txq->state=%u", i, tx->netdev_txq->state);
 	}
 
 	for (i = 0; i < priv->rx_cfg.num_queues; i++) {

@@ -740,6 +740,7 @@ bool gve_tx_poll(struct gve_notify_block *block, int budget)
 		gve_clean_tx_done(priv, tx, to_do, true);
 	}
 	/* If we still have work we want to repoll */
+	block->tx->last_nic_done_tx_poll = gve_tx_load_event_counter(priv, tx);
 	repoll |= (nic_done != tx->done);
 	return repoll;
 }
