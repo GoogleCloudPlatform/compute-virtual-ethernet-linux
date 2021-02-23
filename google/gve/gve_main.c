@@ -179,9 +179,9 @@ static int gve_napi_poll(struct napi_struct *napi, int budget)
 		iowrite32be(GVE_IRQ_ACK | GVE_IRQ_EVENT, irq_doorbell);
 
 		/* Double check we have no extra work.
-		 * * Ensure unmask synchronizes with checking for work.
-		 * */
-		dma_rmb();
+		 * Ensure unmask synchronizes with checking for work.
+		 */
+		smp_mb();
 		if(block->tx)
 			block->tx->last_nic_done_clear = gve_tx_load_event_counter(priv, block->tx);
 
