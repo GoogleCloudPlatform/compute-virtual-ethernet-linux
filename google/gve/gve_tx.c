@@ -693,7 +693,7 @@ static int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
 	tx->bytes_done += bytes;
 	tx->pkt_done += pkts;
 	u64_stats_update_end(&tx->statss);
-	netdev_tx_completed_queue(tx->netdev_txq, pkts, bytes);
+        netdev_tx_completed_queue(tx->netdev_txq, pkts, bytes);
 
 	/* start the queue if we've stopped it */
 #ifndef CONFIG_BQL
@@ -740,6 +740,7 @@ bool gve_tx_poll(struct gve_notify_block *block, int budget)
 		gve_clean_tx_done(priv, tx, to_do, true);
 	}
 	/* If we still have work we want to repoll */
+	block->tx->last_nic_done_tx_poll = gve_tx_load_event_counter(priv, tx);
 	repoll |= (nic_done != tx->done);
 	return repoll;
 }
