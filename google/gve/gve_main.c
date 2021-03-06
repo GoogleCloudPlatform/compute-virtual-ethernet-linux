@@ -177,10 +177,9 @@ static int gve_napi_poll(struct napi_struct *napi, int budget)
 		iowrite32be(GVE_IRQ_ACK | GVE_IRQ_EVENT, irq_doorbell);
 
 		/* Double check we have no extra work.
-		 * * Ensure unmask synchronizes with checking for work.
-		 * */
-		dma_rmb();
-
+		 * Ensure unmask synchronizes with checking for work.
+		 */
+		smp_mb();
 		if (block->tx) reschedule |= gve_tx_poll(block, -1);
 		if (block->rx) reschedule |= gve_rx_work_pending(block->rx);
 
