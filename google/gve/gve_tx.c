@@ -530,7 +530,7 @@ static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 	addr = dma_map_single(tx->dev, skb->data, len, DMA_TO_DEVICE);
 	if (unlikely(dma_mapping_error(tx->dev, addr))) {
 		priv->dma_mapping_error++;
-		goto drop;
+		return 0;
 	}
 	buf = &info->buf;
 	dma_unmap_len_set(buf, len, len);
@@ -582,8 +582,7 @@ unmap_drop:
 		idx = (tx->req + last_mapped) & tx->mask;
 		gve_tx_unmap_buf(tx->dev, &tx->info[idx].buf);
 	}
-drop:
-	tx->dropped_pkt++;
+
 	return 0;
 }
 
@@ -618,12 +617,16 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 	if (nsegs) {
 		netdev_tx_sent_queue(tx->netdev_txq, skb->len);
 		skb_tx_timestamp(skb);
-	}
 
-	/* Give packets to NIC. Even if this packet failed to send the doorbell
-	 * might need to be rung because of xmit_more.
-	 */
-	tx->req += nsegs;
+		/* Give packets to NIC. Even if this packet failed to send the
+		 * doorbell might need to be rung because of xmit_more.
+		 */
+		tx->req += nsegs;
+	} else {
+		/* Failed to transmit the packet, drop it */
+		dev_kfree_skb_any(skb);
+		tx->dropped_pkt++;
+	}
 
 	if (!netif_xmit_stopped(tx->netdev_txq) && netdev_xmit_more())
 		return NETDEV_TX_OK;
