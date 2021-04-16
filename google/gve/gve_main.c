@@ -859,6 +859,36 @@ err:
 	return gve_reset_recovery(priv, false);
 }
 
+int gve_adjust_ring_sizes(struct gve_priv *priv,
+			  int new_tx_desc_cnt,
+			  int new_rx_desc_cnt)
+{
+	int err;
+
+	if (netif_carrier_ok(priv->dev)) {
+		err = gve_close(priv->dev);
+		if (err)
+			return err;
+		priv->tx_desc_cnt = new_tx_desc_cnt;
+		priv->rx_desc_cnt = new_rx_desc_cnt;
+
+		err = gve_open(priv->dev);
+		if (err)
+			goto err;
+		return 0;
+	}
+
+	priv->tx_desc_cnt = new_tx_desc_cnt;
+	priv->rx_desc_cnt = new_rx_desc_cnt;
+
+	return 0;
+
+err:
+	dev_err(&priv->pdev->dev, "Failed to adjust ring sizes: err=%d. Disabling all queues.\n", err);
+	gve_turndown(priv);
+	return err;
+}
+
 int gve_adjust_queues(struct gve_priv *priv,
 		      struct gve_queue_config new_rx_config,
 		      struct gve_queue_config new_tx_config)

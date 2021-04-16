@@ -87,9 +87,18 @@ struct gve_device_option {
 
 static_assert(sizeof(struct gve_device_option) == 8);
 
+struct gve_device_option_modify_ring {
+	__be16 max_rx_ring_size;
+	__be16 max_tx_ring_size;
+};
+
+static_assert(sizeof(struct gve_device_option_modify_ring) == 4);
+
 #define GVE_DEV_OPT_ID_RAW_ADDRESSING 0x1
 #define GVE_DEV_OPT_LEN_RAW_ADDRESSING 0x0
 #define GVE_DEV_OPT_FEAT_MASK_RAW_ADDRESSING 0x0
+#define GVE_DEV_OPT_ID_MODIFY_RING 0x6
+#define GVE_DEV_OPT_FEAT_MASK_MODIFY_RING 0x0
 
 struct gve_adminq_configure_device_resources {
 	__be64 counter_array;
@@ -125,9 +134,12 @@ struct gve_adminq_create_tx_queue {
 	__be64 tx_ring_addr;
 	__be32 queue_page_list_id;
 	__be32 ntfy_id;
+	__be64 tx_comp_ring_addr;
+	__be16 tx_ring_size;
+	u8 padding[6];
 };
 
-static_assert(sizeof(struct gve_adminq_create_tx_queue) == 32);
+static_assert(sizeof(struct gve_adminq_create_tx_queue) == 48);
 
 struct gve_adminq_create_rx_queue {
 	__be32 queue_id;
@@ -138,7 +150,8 @@ struct gve_adminq_create_rx_queue {
 	__be64 rx_desc_ring_addr;
 	__be64 rx_data_ring_addr;
 	__be32 queue_page_list_id;
-	u8 padding[4];
+	__be16 rx_ring_size;
+	u8 padding[2];
 };
 
 static_assert(sizeof(struct gve_adminq_create_rx_queue) == 48);

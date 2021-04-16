@@ -35,6 +35,9 @@
 #define NIC_TX_STATS_REPORT_NUM	0
 #define NIC_RX_STATS_REPORT_NUM	4
 
+/* Max ring size for tx and rx queues */
+#define MAX_RING_SIZE 12288
+
 /* Interval to schedule a service task, 20000ms. */
 #define GVE_SERVICE_TIMER_PERIOD	20000
 
@@ -217,6 +220,8 @@ struct gve_priv {
 	u16 num_event_counters;
 	u16 tx_desc_cnt; /* num desc per ring */
 	u16 rx_desc_cnt; /* num desc per ring */
+	u16 max_rx_desc_cnt; /* max num desc per rx ring */
+	u16 max_tx_desc_cnt; /* max num desc per tx ring */
 	u16 tx_pages_per_qpl; /* tx buffer length */
 	u16 rx_data_slot_cnt; /* rx buffer length */
 	u64 max_registered_pages;
@@ -565,6 +570,9 @@ int gve_reset(struct gve_priv *priv, bool attempt_teardown);
 int gve_adjust_queues(struct gve_priv *priv,
 		      struct gve_queue_config new_rx_config,
 		      struct gve_queue_config new_tx_config);
+int gve_adjust_ring_sizes(struct gve_priv *priv,
+			  int new_tx_desc_cnt,
+			  int new_rx_desc_cnt);
 /* report stats handling */
 void gve_handle_report_stats(struct gve_priv *priv);
 /* exported by ethtool.c */
