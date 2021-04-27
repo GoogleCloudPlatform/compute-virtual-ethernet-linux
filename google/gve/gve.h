@@ -149,7 +149,7 @@ struct gve_tx_ring {
 	u32 done; /* driver tracked tail pointer */
 
 	/* Cacheline 1 -- Accessed & dirtied during gve_clean_tx_done */
-	__be32 last_nic_done ____cacheline_aligned; /* NIC tail pointer */
+	spinlock_t clean_lock ____cacheline_aligned; /* for TX clean */
 	u64 pkt_done; /* free-running - total packets completed */
 	u64 bytes_done; /* free-running - total bytes completed */
 	u32 dropped_pkt; /* free-running - total packets dropped */
@@ -557,8 +557,9 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev);
 bool gve_tx_poll(struct gve_notify_block *block, int budget);
 int gve_tx_alloc_rings(struct gve_priv *priv);
 void gve_tx_free_rings(struct gve_priv *priv);
-__be32 gve_tx_load_event_counter(struct gve_priv *priv,
+u32 gve_tx_load_event_counter(struct gve_priv *priv,
 				 struct gve_tx_ring *tx);
+bool gve_tx_clean_pending(struct gve_priv *priv, struct gve_tx_ring *tx);
 /* rx handling */
 int gve_rx_poll(struct gve_notify_block *block, int budget);
 bool gve_rx_work_pending(struct gve_rx_ring *rx);

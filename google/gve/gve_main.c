@@ -184,7 +184,8 @@ static int gve_napi_poll(struct napi_struct *napi, int budget)
 		 * Ensure unmask synchronizes with checking for work.
 		 */
 		mb();
-		if (block->tx) reschedule |= gve_tx_poll(block, -1);
+		if (block->tx)
+			reschedule |= gve_tx_clean_pending(priv, block->tx);
 		if (block->rx) reschedule |= gve_rx_work_pending(block->rx);
 
 		if (reschedule && napi_reschedule(napi))
