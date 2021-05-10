@@ -301,7 +301,7 @@ static void gve_rx_flip_buffer(struct gve_rx_slot_page_info *page_info,
 }
 
 static bool gve_rx_can_flip_buffers(struct net_device *netdev) {
-#if PAGE_SIZE == 4096
+#if PAGE_SIZE >= 4096
 	/* We can't flip a buffer if we can't fit a packet
 	 * into half a page.
 	 */
@@ -309,7 +309,7 @@ static bool gve_rx_can_flip_buffers(struct net_device *netdev) {
 		return false;
 	return true;
 #else
-	/* PAGE_SIZE != 4096 - don't try to reuse */
+	/* PAGE_SIZE < 4096 - don't try to reuse */
 	return false;
 #endif
 }
