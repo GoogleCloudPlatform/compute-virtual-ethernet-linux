@@ -103,9 +103,14 @@ To build and install the kernel driver from source you must have a supported ker
 
 1. Install or update kernel and headers to version 3.10 or later. To complete this step, review the documentation for your operating system. Source code and driver packages can be obtained from GitHub, see [GoogleCloudPlatform/compute-virtual-ethernet-linux](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux).
 
-For example, If you are using Debian, you can install the kernel driver using the deb package:
+For example, if you are using Debian, you can install the kernel driver using the deb package either by running:
 ```shell
 dpkg -i gve-dkms_1.1.0_all.deb
+```
+
+or
+
+```shell
 apt update
 apt install ./gve-dkms_1.1.0_all.deb
 ```
