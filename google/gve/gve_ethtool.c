@@ -141,7 +141,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 		tmp_rx_buf_alloc_fail, tmp_rx_desc_err_dropped_pkt,
 		tmp_tx_pkts, tmp_tx_bytes;
 	u64 rx_pkts, rx_bytes, rx_skb_alloc_fail, rx_buf_alloc_fail,
-		rx_desc_err_dropped_pkt, tx_pkts, tx_bytes;
+		rx_desc_err_dropped_pkt, tx_pkts, tx_bytes, tx_dropped;
 	struct gve_priv *priv = netdev_priv(netdev);
 	int *rx_qid_to_stats_idx;
 	int *tx_qid_to_stats_idx;
@@ -189,7 +189,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 			rx_desc_err_dropped_pkt += tmp_rx_desc_err_dropped_pkt;
 		}
 	}
-	for (tx_pkts = 0, tx_bytes = 0, ring = 0;
+	for (tx_pkts = 0, tx_bytes = 0, tx_dropped = 0, ring = 0;
 	     ring < priv->tx_cfg.num_queues; ring++) {
 		if (priv->tx) {
 			do {
@@ -202,6 +202,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 			tx_pkts += tmp_tx_pkts;
 			tx_bytes += tmp_tx_bytes;
 		}
+		tx_dropped += priv->tx[ring].dropped_pkt;
 	}
 
 	i = 0;
@@ -215,8 +216,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	data[i++] = rx_desc_err_dropped_pkt;
 	data[i++] = tx_pkts;
 	data[i++] = tx_bytes;
-	/* Skip tx_dropped */
-	i++;
+	data[i++] = tx_dropped;
 	data[i++] = priv->tx_timeo_cnt;
 	data[i++] = priv->interface_up_cnt;
 	data[i++] = priv->interface_down_cnt;
