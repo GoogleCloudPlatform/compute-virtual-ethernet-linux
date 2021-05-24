@@ -520,13 +520,14 @@ static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 				  struct sk_buff *skb)
 {
 	const struct skb_shared_info *shinfo = skb_shinfo(skb);
-	int hlen, payload_nfrags, l4_hdr_offset, seg_idx_bias;
 	union gve_tx_desc *pkt_desc, *mtd_desc, *seg_desc;
+	int hlen, l4_hdr_offset, seg_idx_bias;
 	struct gve_tx_buffer_state *info;
 	int mtd_desc_nr = !!skb->l4_hash;
 	bool is_gso = skb_is_gso(skb);
 	u32 idx = tx->req & tx->mask;
 	struct gve_tx_dma_buf *buf;
+	int num_descriptors = 1;
 	int last_mapped = 0;
 	u64 addr;
 	u32 len;
@@ -556,12 +557,14 @@ static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 	dma_unmap_len_set(buf, len, len);
 	dma_unmap_addr_set(buf, dma, addr);
 
-	payload_nfrags = shinfo->nr_frags;
+	num_descriptors += shinfo->nr_frags;
 	if (hlen < len)
-		payload_nfrags++;
+		num_descriptors++;
+	if (mtd_desc_nr)
+		num_descriptors++;
 
 	gve_tx_fill_pkt_desc(pkt_desc, skb, is_gso, l4_hdr_offset,
-			     1 + mtd_desc_nr + payload_nfrags, hlen, addr);
+			     num_descriptors, hlen, addr);
 
 	if (mtd_desc_nr) {
 		mtd_desc = &tx->desc[(tx->req + 1) & tx->mask];
@@ -582,7 +585,7 @@ static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 		seg_idx_bias++;
 	}
 
-	for (i = 0; i < payload_nfrags - (seg_idx_bias - 1); i++) {
+	for (i = 0; i < shinfo->nr_frags; i++) {
 		skb_frag_t frag	= shinfo->frags[i];
 
 		idx = (tx->req + i + seg_idx_bias) & tx->mask;
@@ -600,11 +603,14 @@ static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 		gve_tx_fill_seg_desc(seg_desc, skb, is_gso, len, addr);
 	}
 
-	return 1 + payload_nfrags;
+	return num_descriptors;
 
 unmap_drop:
 	i--;
 	for (last_mapped = i + seg_idx_bias; last_mapped >= 0; last_mapped--) {
+		/* Skip metadata descriptor, if set */
+		if (last_mapped == 1 && mtd_desc_nr == 1)
+			continue;
 		idx = (tx->req + last_mapped) & tx->mask;
 		gve_tx_unmap_buf(tx->dev, &tx->info[idx].buf);
 	}
