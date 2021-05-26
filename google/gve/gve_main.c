@@ -180,8 +180,8 @@ static int gve_napi_poll(struct napi_struct *napi, int budget)
 		irq_doorbell = gve_irq_doorbell(priv, block);
 		iowrite32be(GVE_IRQ_ACK | GVE_IRQ_EVENT, irq_doorbell);
 
-		/* Double check we have no extra work.
-		 * Ensure unmask synchronizes with checking for work.
+		/* Ensure IRQ ACK is visible before we check pending work.
+		 * If queue had issued updates, it would be truly visible.
 		 */
 		mb();
 		if (block->tx)
