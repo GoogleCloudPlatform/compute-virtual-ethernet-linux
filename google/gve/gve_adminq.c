@@ -300,6 +300,7 @@ int gve_adminq_configure_device_resources(struct gve_priv *priv,
 		.irq_db_stride = cpu_to_be32(sizeof(*priv->irq_db_indices)),
 		.ntfy_blk_msix_base_idx =
 					cpu_to_be32(GVE_NTFY_BLK_BASE_MSIX_IDX),
+		.queue_format = priv->queue_format,
 	};
 
 	return gve_adminq_execute_cmd(priv, &cmd);
@@ -325,8 +326,8 @@ int gve_adminq_create_tx_queues(struct gve_priv *priv, u32 num_queues)
 
 	for (i = 0; i < num_queues; i++) {
 		tx = &priv->tx[i];
-		qpl_id = priv->raw_addressing ? GVE_RAW_ADDRESSING_QPL_ID :
-			 tx->tx_fifo.qpl->id;
+		qpl_id = priv->queue_format == GVE_GQI_RDA_FORMAT ?
+			 GVE_RAW_ADDRESSING_QPL_ID : tx->tx_fifo.qpl->id;
 		memset(&cmd, 0, sizeof(cmd));
 		cmd.opcode = cpu_to_be32(GVE_ADMINQ_CREATE_TX_QUEUE);
 		cmd.create_tx_queue = (struct gve_adminq_create_tx_queue) {
@@ -358,8 +359,8 @@ int gve_adminq_create_rx_queues(struct gve_priv *priv, u32 num_queues)
 
 	for (i = 0; i < num_queues; i++) {
 		rx = &priv->rx[i];
-		qpl_id = priv->raw_addressing ? GVE_RAW_ADDRESSING_QPL_ID :
-			 rx->data.qpl->id;
+		qpl_id = priv->queue_format == GVE_GQI_RDA_FORMAT ?
+			 GVE_RAW_ADDRESSING_QPL_ID : rx->data.qpl->id;
 		memset(&cmd, 0, sizeof(cmd));
 		cmd.opcode = cpu_to_be32(GVE_ADMINQ_CREATE_RX_QUEUE);
 		cmd.create_rx_queue = (struct gve_adminq_create_rx_queue) {
@@ -442,68 +443,89 @@ static int gve_set_desc_cnt(struct gve_priv *priv,
 }
 
 /* Process all device options for a given describe device call. */
-static void gve_process_device_options(struct gve_priv *priv,
-				       struct gve_device_descriptor *des)
+static int gve_process_device_options(
+		struct gve_priv *priv,
+		struct gve_device_descriptor *des,
+		struct gve_device_option_gqi_rda **dev_op_gqi_rda,
+		struct gve_device_option_gqi_qpl **dev_op_gqi_qpl,
+		struct gve_device_option_modify_ring **dev_op_modify_ring)
 {
-	struct gve_device_option_modify_ring *dev_op_modify_ring;
 	struct gve_device_option *dev_op;
 	int num_options;
-	int op_id;
-	int len;
 	int i;
 
 	num_options = be16_to_cpu(des->num_device_options);
 	if (!num_options)
-		return;
-	dev_op = (struct gve_device_option*)((void*)des +
+		return 0;
+	dev_op = (struct gve_device_option*)((char *)des +
 		  sizeof(struct gve_device_descriptor));
 	for (i = 0; i < num_options; ++i) {
-		len = be16_to_cpu(dev_op->option_length);
-		op_id = be16_to_cpu(dev_op->option_id);
+		u32 req_feat_mask =
+			be32_to_cpu(dev_op->required_features_mask);
+		u16 len = be16_to_cpu(dev_op->option_length);
+		u16 op_id = be16_to_cpu(dev_op->option_id);
+
+		if ((char *)dev_op + sizeof(*dev_op) >
+		    (char *)des + be16_to_cpu(des->total_length)) {
+			dev_err(&priv->pdev->dev,
+				"num_options in device_descriptor does not match total length.\n");
+			return -EINVAL;
+		}
+
 		switch (op_id) {
+		case GVE_DEV_OPT_ID_GQI_RDA:
+			if (unlikely(len < sizeof(**dev_op_gqi_rda))) {
+				dev_err(&priv->pdev->dev,
+					"Ignore GQI RDA option: Invalid length.\n");
+				break;
+			}
+			if (req_feat_mask !=
+				GVE_DEV_OPT_REQ_FEAT_MASK_GQI_RDA) {
+				dev_info(&priv->pdev->dev,
+					 "GQI RDA device option not enabled: required features mask did not match expected.\n");
+				break;
+			}
+			if (unlikely(len > sizeof(**dev_op_gqi_rda))) {
+				dev_warn_once(&priv->pdev->dev,
+					      "Length of GQI RDA option larger than expected. Possible older version of guest driver.\n");
+			}
+			*dev_op_gqi_rda = (void *)(dev_op + 1);
+			break;
+		case GVE_DEV_OPT_ID_GQI_QPL:
+			if (unlikely(len < sizeof(**dev_op_gqi_qpl))) {
+				dev_err(&priv->pdev->dev,
+					"Ignore GQI QPL option: Invalid length\n");
+				break;
+			}
+			if (req_feat_mask !=
+				GVE_DEV_OPT_REQ_FEAT_MASK_GQI_QPL) {
+				dev_info(&priv->pdev->dev,
+					 "GQI QPL device option not enabled: required features mask did not match expected.\n");
+				break;
+			}
+			if (unlikely(len > sizeof(**dev_op_gqi_qpl))) {
+				dev_warn_once(&priv->pdev->dev,
+					      "Length of GQI QPL option larger than expected. Possible older version of guest driver.\n");
+			}
+			*dev_op_gqi_qpl = (void *)(dev_op + 1);
+			break;
 		case GVE_DEV_OPT_ID_MODIFY_RING:
-			if (unlikely(len < sizeof(struct gve_device_option_modify_ring))) {
+			if (unlikely(len < sizeof(**dev_op_modify_ring))) {
 				dev_err(&priv->pdev->dev,
 					"Ignore Modify Ring option: Invalid length\n");
 				break;
 			}
-			if (be32_to_cpu(dev_op->feat_mask) !=
-			    GVE_DEV_OPT_FEAT_MASK_MODIFY_RING) {
+			if (be32_to_cpu(dev_op->required_features_mask) !=
+			    GVE_DEV_OPT_REQ_FEAT_MASK_MODIFY_RING) {
 				dev_info(&priv->pdev->dev,
 					 "Modify Ring device option not enabled, feature mask did not match expected.\n");
 				break;
 			}
-			if (unlikely(len > sizeof(struct gve_device_option_modify_ring))) {
+			if (unlikely(len > sizeof(**dev_op_modify_ring))) {
 				dev_warn(&priv->pdev->dev,
-				    "Length of Modify Ring option larger than expected. \
-				    Possible older version of guest driver.\n");
+				    "Length of Modify Ring option larger than expected. Possible older version of guest driver.\n");
 			}
-			dev_op_modify_ring =
-				(struct gve_device_option_modify_ring*)
-					((void*)dev_op +
-					sizeof(struct gve_device_option));
-			if (dev_op_modify_ring->max_rx_ring_size < MAX_RING_SIZE) {
-				priv->max_rx_desc_cnt = dev_op_modify_ring->max_rx_ring_size;
-			}
-			if (dev_op_modify_ring->max_tx_ring_size < MAX_RING_SIZE) {
-				priv->max_tx_desc_cnt = dev_op_modify_ring->max_tx_ring_size;
-			}
-			break;
-		case GVE_DEV_OPT_ID_RAW_ADDRESSING:
-			/* If the length or feature mask doesn't match,
-			 * continue without enabling the feature.
-			 */
-			if (len != GVE_DEV_OPT_LEN_RAW_ADDRESSING ||
-			    be32_to_cpu(dev_op->feat_mask) !=
-			    GVE_DEV_OPT_FEAT_MASK_RAW_ADDRESSING) {
-				dev_info(&priv->pdev->dev,
-					 "Raw addressing device option not enabled, length or features mask did not match expected.\n");
-				priv->raw_addressing = false;
-			} else {
-				dev_info(&priv->pdev->dev,
-					 "Raw addressing device option enabled.\n");
-				priv->raw_addressing = true;
-			}
+			*dev_op_modify_ring = (void *)(dev_op + 1);
 			break;
 		default:
 			dev_info(&priv->pdev->dev,
@@ -511,16 +533,39 @@ static void gve_process_device_options(struct gve_priv *priv,
 				op_id);
 		}
 		if (i < num_options - 1) {
-			dev_op = ((void*)dev_op +
+			dev_op = (struct gve_device_option*)((char *)dev_op +
 				  sizeof(struct gve_device_option) + len);
 		}
 	}
-	return;
+	return 0;
+}
+
+static void gve_enable_supported_features(
+	struct gve_priv *priv,
+	u32 supported_features_mask,
+	const struct gve_device_option_modify_ring *dev_op_modify_ring)
+{
+	if (dev_op_modify_ring &&
+	    (supported_features_mask & GVE_SUP_MODIFY_RING_MASK)) {
+		dev_info(&priv->pdev->dev, "MODIFY RING device option enabled.\n");
+		priv->max_rx_desc_cnt = min_t(
+			int,
+			be16_to_cpu(dev_op_modify_ring->max_rx_ring_size),
+			MAX_RING_SIZE);
+		priv->max_tx_desc_cnt = min_t(
+			int,
+			be16_to_cpu(dev_op_modify_ring->max_tx_ring_size),
+			MAX_RING_SIZE);
+	}
 }
 
 int gve_adminq_describe_device(struct gve_priv *priv)
 {
+	struct gve_device_option_modify_ring *dev_op_modify_ring = NULL;
+	struct gve_device_option_gqi_rda *dev_op_gqi_rda = NULL;
+	struct gve_device_option_gqi_qpl *dev_op_gqi_qpl = NULL;
 	struct gve_device_descriptor *descriptor;
+	u32 supported_features_mask = 0;
 	union gve_adminq_command cmd;
 	dma_addr_t descriptor_bus;
 	int err = 0;
@@ -570,7 +615,30 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 
 	priv->max_rx_desc_cnt = MAX_RING_SIZE;
 	priv->max_tx_desc_cnt = MAX_RING_SIZE;
-	gve_process_device_options(priv, descriptor);
+	err = gve_process_device_options(priv, descriptor, &dev_op_gqi_rda,
+					 &dev_op_gqi_qpl, &dev_op_modify_ring);
+	if (err)
+		goto free_device_descriptor;
+	/* Choose the queue format in a priority order: GqiRda, GqiQpl. */
+	if (dev_op_gqi_rda) {
+		priv->queue_format = GVE_GQI_RDA_FORMAT;
+		dev_info(&priv->pdev->dev,
+			 "Driver is running with GQI RDA queue format.\n");
+		supported_features_mask =
+			be32_to_cpu(dev_op_gqi_rda->supported_features_mask);
+	} else if (dev_op_gqi_qpl) {
+		priv->queue_format = GVE_GQI_QPL_FORMAT;
+		supported_features_mask =
+			be32_to_cpu(dev_op_gqi_qpl->supported_features_mask);
+		dev_info(&priv->pdev->dev,
+			 "Driver is running with GQI QPL queue format.\n");
+	} else {
+		dev_err(&priv->pdev->dev, "No queue format is supported.\n");
+		err = -EINVAL;
+		goto free_device_descriptor;
+	}
+	gve_enable_supported_features(priv, supported_features_mask,
+				      dev_op_modify_ring);
 	if (priv->max_rx_desc_cnt < priv->rx_desc_cnt)
 		priv->rx_desc_cnt = priv->max_rx_desc_cnt;
 	if (priv->max_tx_desc_cnt < priv->tx_desc_cnt)

@@ -82,23 +82,49 @@ static_assert(sizeof(struct gve_device_descriptor) == 40);
 struct gve_device_option {
 	__be16 option_id;
 	__be16 option_length;
-	__be32 feat_mask;
+	__be32 required_features_mask;
 };
 
 static_assert(sizeof(struct gve_device_option) == 8);
 
+struct gve_device_option_gqi_rda {
+	__be32 supported_features_mask;
+};
+
+static_assert(sizeof(struct gve_device_option_gqi_rda) == 4);
+
+struct gve_device_option_gqi_qpl {
+	__be32 supported_features_mask;
+};
+
+static_assert(sizeof(struct gve_device_option_gqi_qpl) == 4);
+
 struct gve_device_option_modify_ring {
+	__be32 supported_features_mask;
 	__be16 max_rx_ring_size;
 	__be16 max_tx_ring_size;
 };
 
-static_assert(sizeof(struct gve_device_option_modify_ring) == 4);
+static_assert(sizeof(struct gve_device_option_modify_ring) == 8);
 
-#define GVE_DEV_OPT_ID_RAW_ADDRESSING 0x1
-#define GVE_DEV_OPT_LEN_RAW_ADDRESSING 0x0
-#define GVE_DEV_OPT_FEAT_MASK_RAW_ADDRESSING 0x0
-#define GVE_DEV_OPT_ID_MODIFY_RING 0x6
-#define GVE_DEV_OPT_FEAT_MASK_MODIFY_RING 0x0
+enum gve_dev_opt_id {
+	GVE_DEV_OPT_ID_GQI_RDA = 0x2,
+	GVE_DEV_OPT_ID_GQI_QPL = 0x3,
+	/* 0x4, 0x5 reserved for GVE_DEV_OPT_ID_DQO_RDA,
+	 * GVE_DEV_OPT_ID_DQO_QPL.
+	 */
+	GVE_DEV_OPT_ID_MODIFY_RING = 0x6,
+};
+
+enum gve_dev_opt_req_feat_mask {
+	GVE_DEV_OPT_REQ_FEAT_MASK_GQI_RDA = 0x0,
+	GVE_DEV_OPT_REQ_FEAT_MASK_GQI_QPL = 0x0,
+	GVE_DEV_OPT_REQ_FEAT_MASK_MODIFY_RING = 0x0,
+};
+
+enum gve_sup_feature_mask {
+	GVE_SUP_MODIFY_RING_MASK = 0x1,
+};
 
 struct gve_adminq_configure_device_resources {
 	__be64 counter_array;
@@ -107,9 +133,10 @@ struct gve_adminq_configure_device_resources {
 	__be32 num_irq_dbs;
 	__be32 irq_db_stride;
 	__be32 ntfy_blk_msix_base_idx;
+	u8 queue_format;
 };
 
-static_assert(sizeof(struct gve_adminq_configure_device_resources) == 32);
+static_assert(sizeof(struct gve_adminq_configure_device_resources) == 40);
 
 struct gve_adminq_register_page_list {
 	__be32 page_list_id;
