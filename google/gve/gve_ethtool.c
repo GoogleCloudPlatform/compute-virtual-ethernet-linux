@@ -201,8 +201,8 @@ gve_get_ethtool_stats(struct net_device *netdev,
 						       start));
 			tx_pkts += tmp_tx_pkts;
 			tx_bytes += tmp_tx_bytes;
+			tx_dropped += priv->tx[ring].dropped_pkt;
 		}
-		tx_dropped += priv->tx[ring].dropped_pkt;
 	}
 
 	i = 0;
