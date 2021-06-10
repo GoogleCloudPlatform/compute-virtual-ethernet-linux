@@ -450,25 +450,31 @@ static int gve_process_device_options(
 		struct gve_device_option_gqi_qpl **dev_op_gqi_qpl,
 		struct gve_device_option_modify_ring **dev_op_modify_ring)
 {
+	char *const des_end = (char *)des + be16_to_cpu(des->total_length);
+	const int num_options = be16_to_cpu(des->num_device_options);
+
 	struct gve_device_option *dev_op;
-	int num_options;
 	int i;
 
-	num_options = be16_to_cpu(des->num_device_options);
-	if (!num_options)
-		return 0;
-	dev_op = (struct gve_device_option*)((char *)des +
-		  sizeof(struct gve_device_descriptor));
+	/* The options struct directly follows the device descriptor. */
+	dev_op = (void *)(des + 1);
 	for (i = 0; i < num_options; ++i) {
-		u32 req_feat_mask =
-			be32_to_cpu(dev_op->required_features_mask);
-		u16 len = be16_to_cpu(dev_op->option_length);
-		u16 op_id = be16_to_cpu(dev_op->option_id);
+		u32 req_feat_mask;
+		u16 len;
+		u16 op_id;
 
-		if ((char *)dev_op + sizeof(*dev_op) >
-		    (char *)des + be16_to_cpu(des->total_length)) {
+		if ((char *)(dev_op + 1) > des_end) {
 			dev_err(&priv->pdev->dev,
 				"num_options in device_descriptor does not match total length.\n");
+			return -EINVAL;
+		}
+
+		req_feat_mask = be32_to_cpu(dev_op->required_features_mask);
+		len = be16_to_cpu(dev_op->option_length);
+		op_id = be16_to_cpu(dev_op->option_id);
+
+		if ((char *)(dev_op + 1) + len > des_end) {
+			dev_err(&priv->pdev->dev, "Device option too large\n");
 			return -EINVAL;
 		}
 
@@ -531,12 +537,12 @@ static int gve_process_device_options(
 			dev_info(&priv->pdev->dev,
 				"Unrecognized device option 0x%x not enabled\n",
 				op_id);
+			break;
 		}
-		if (i < num_options - 1) {
-			dev_op = (struct gve_device_option*)((char *)dev_op +
-				  sizeof(struct gve_device_option) + len);
-		}
+
+		dev_op = (void *)((char *)(dev_op + 1) + len);
 	}
+
 	return 0;
 }
 
