@@ -20,7 +20,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		"1.2.1"
+#define GVE_VERSION		"1.2.2"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 const char gve_version_str[] = GVE_VERSION;
