@@ -479,6 +479,21 @@ static int gve_process_device_options(
 		}
 
 		switch (op_id) {
+		case GVE_DEV_OPT_ID_GQI_RAW_ADDRESSING:
+			/* If the length or feature mask doesn't match,
+			 * continue without enabling the feature.
+			 */
+			if (len != GVE_DEV_OPT_LEN_GQI_RAW_ADDRESSING ||
+			    req_feat_mask !=
+			    GVE_DEV_OPT_REQ_FEAT_MASK_GQI_RAW_ADDRESSING) {
+				dev_info(&priv->pdev->dev,
+					 "Gqi raw addressing device option not enabled, length or features mask did not match expected.\n");
+			} else {
+				dev_info(&priv->pdev->dev,
+					 "Gqi raw addressing device option enabled.\n");
+				priv->queue_format = GVE_GQI_RDA_FORMAT;
+			}
+			break;
 		case GVE_DEV_OPT_ID_GQI_RDA:
 			if (unlikely(len < sizeof(**dev_op_gqi_rda))) {
 				dev_err(&priv->pdev->dev,
@@ -625,23 +640,26 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 					 &dev_op_gqi_qpl, &dev_op_modify_ring);
 	if (err)
 		goto free_device_descriptor;
-	/* Choose the queue format in a priority order: GqiRda, GqiQpl. */
-	if (dev_op_gqi_rda) {
+	/* If the GQI_RAW_ADDRESSING option is not enabled and the queue format
+	 * is not set to GqiRda, choose the queue format in a priority order:
+	 * GqiRda, GqiQpl. Use GqiQpl as default.
+	 */
+	if (priv->queue_format == GVE_GQI_RDA_FORMAT) {
+		dev_info(&priv->pdev->dev,
+			 "Driver is running with GQI RDA queue format.\n");
+	} else if (dev_op_gqi_rda) {
 		priv->queue_format = GVE_GQI_RDA_FORMAT;
 		dev_info(&priv->pdev->dev,
 			 "Driver is running with GQI RDA queue format.\n");
 		supported_features_mask =
 			be32_to_cpu(dev_op_gqi_rda->supported_features_mask);
-	} else if (dev_op_gqi_qpl) {
+	} else {
 		priv->queue_format = GVE_GQI_QPL_FORMAT;
-		supported_features_mask =
-			be32_to_cpu(dev_op_gqi_qpl->supported_features_mask);
+		if (dev_op_gqi_qpl)
+			supported_features_mask = be32_to_cpu(
+				dev_op_gqi_qpl->supported_features_mask);
 		dev_info(&priv->pdev->dev,
 			 "Driver is running with GQI QPL queue format.\n");
-	} else {
-		dev_err(&priv->pdev->dev, "No queue format is supported.\n");
-		err = -EINVAL;
-		goto free_device_descriptor;
 	}
 	gve_enable_supported_features(priv, supported_features_mask,
 				      dev_op_modify_ring);

@@ -108,6 +108,7 @@ struct gve_device_option_modify_ring {
 static_assert(sizeof(struct gve_device_option_modify_ring) == 8);
 
 enum gve_dev_opt_id {
+	GVE_DEV_OPT_ID_GQI_RAW_ADDRESSING = 0x1,
 	GVE_DEV_OPT_ID_GQI_RDA = 0x2,
 	GVE_DEV_OPT_ID_GQI_QPL = 0x3,
 	/* 0x4, 0x5 reserved for GVE_DEV_OPT_ID_DQO_RDA,
@@ -117,6 +118,7 @@ enum gve_dev_opt_id {
 };
 
 enum gve_dev_opt_req_feat_mask {
+	GVE_DEV_OPT_REQ_FEAT_MASK_GQI_RAW_ADDRESSING = 0x0,
 	GVE_DEV_OPT_REQ_FEAT_MASK_GQI_RDA = 0x0,
 	GVE_DEV_OPT_REQ_FEAT_MASK_GQI_QPL = 0x0,
 	GVE_DEV_OPT_REQ_FEAT_MASK_MODIFY_RING = 0x0,
@@ -125,6 +127,8 @@ enum gve_dev_opt_req_feat_mask {
 enum gve_sup_feature_mask {
 	GVE_SUP_MODIFY_RING_MASK = 0x1,
 };
+
+#define GVE_DEV_OPT_LEN_GQI_RAW_ADDRESSING 0x0
 
 struct gve_adminq_configure_device_resources {
 	__be64 counter_array;
