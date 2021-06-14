@@ -561,7 +561,7 @@ void gve_free_page(struct device *dev, struct page *page, dma_addr_t dma,
 netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev);
 bool gve_tx_poll(struct gve_notify_block *block, int budget);
 int gve_tx_alloc_rings(struct gve_priv *priv);
-void gve_tx_free_rings(struct gve_priv *priv);
+void gve_tx_free_rings_gqi(struct gve_priv *priv);
 u32 gve_tx_load_event_counter(struct gve_priv *priv,
 				 struct gve_tx_ring *tx);
 bool gve_tx_clean_pending(struct gve_priv *priv, struct gve_tx_ring *tx);
@@ -569,7 +569,7 @@ bool gve_tx_clean_pending(struct gve_priv *priv, struct gve_tx_ring *tx);
 int gve_rx_poll(struct gve_notify_block *block, int budget);
 bool gve_rx_work_pending(struct gve_rx_ring *rx);
 int gve_rx_alloc_rings(struct gve_priv *priv);
-void gve_rx_free_rings(struct gve_priv *priv);
+void gve_rx_free_rings_gqi(struct gve_priv *priv);
 /* Reset */
 void gve_schedule_reset(struct gve_priv *priv);
 int gve_reset(struct gve_priv *priv, bool attempt_teardown);

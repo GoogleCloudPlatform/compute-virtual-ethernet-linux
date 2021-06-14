@@ -550,7 +550,7 @@ free_rx:
 	kvfree(priv->rx);
 	priv->rx = NULL;
 free_tx_queue:
-	gve_tx_free_rings(priv);
+	gve_tx_free_rings_gqi(priv);
 free_tx:
 	kvfree(priv->tx);
 	priv->tx = NULL;
@@ -590,7 +590,7 @@ static void gve_free_rings(struct gve_priv *priv)
 			ntfy_idx = gve_tx_idx_to_ntfy(priv, i);
 			gve_remove_napi(priv, ntfy_idx);
 		}
-		gve_tx_free_rings(priv);
+		gve_tx_free_rings_gqi(priv);
 		kvfree(priv->tx);
 		priv->tx = NULL;
 	}
@@ -599,7 +599,7 @@ static void gve_free_rings(struct gve_priv *priv)
 			ntfy_idx = gve_rx_idx_to_ntfy(priv, i);
 			gve_remove_napi(priv, ntfy_idx);
 		}
-		gve_rx_free_rings(priv);
+		gve_rx_free_rings_gqi(priv);
 		kvfree(priv->rx);
 		priv->rx = NULL;
 	}
