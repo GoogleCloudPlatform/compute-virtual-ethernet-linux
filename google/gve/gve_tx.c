@@ -529,7 +529,7 @@ static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 
 	addr = dma_map_single(tx->dev, skb->data, len, DMA_TO_DEVICE);
 	if (unlikely(dma_mapping_error(tx->dev, addr))) {
-		priv->dma_mapping_error++;
+		tx->dma_mapping_error++;
 		return 0;
 	}
 	buf = &info->buf;
