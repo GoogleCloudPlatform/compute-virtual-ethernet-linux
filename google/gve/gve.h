@@ -268,8 +268,8 @@ struct gve_priv {
 	u32 adminq_report_link_speed_cnt;
 
 	/* Global stats */
-	u32 interface_up_cnt; /* count of times interface turned up */
-	u32 interface_down_cnt; /* count of times interface turned down */
+	u32 interface_up_cnt; /* count of times interface turned up since last reset */
+	u32 interface_down_cnt; /* count of times interface turned down since last reset */
 	u32 reset_cnt; /* count of reset */
 	u32 page_alloc_fail; /* count of page alloc fails */
 	u32 dma_mapping_error; /* count of dma mapping errors */
