@@ -85,23 +85,34 @@ static void gve_free_counter_array(struct gve_priv *priv)
 	priv->counter_array = NULL;
 }
 
-void gve_service_task_schedule(struct gve_priv *priv)
+/* NIC requests to report stats */
+static void gve_stats_report_task(struct work_struct *work)
+{
+	struct gve_priv *priv = container_of(work, struct gve_priv,
+					     stats_report_task);
+	if (gve_get_do_report_stats(priv)) {
+		gve_handle_report_stats(priv);
+		gve_clear_do_report_stats(priv);
+	}
+}
+
+static void gve_stats_report_schedule(struct gve_priv *priv)
 {
 	if (!gve_get_probe_in_progress(priv) &&
 	    !gve_get_reset_in_progress(priv)) {
 		gve_set_do_report_stats(priv);
-		queue_work(priv->gve_wq, &priv->service_task);
+		queue_work(priv->gve_wq, &priv->stats_report_task);
 	}
 }
 
-static void gve_service_timer(struct timer_list *t)
+static void gve_stats_report_timer(struct timer_list *t)
 {
-	struct gve_priv *priv = from_timer(priv, t, service_timer);
+	struct gve_priv *priv = from_timer(priv, t, stats_report_timer);
 
-	mod_timer(&priv->service_timer,
+	mod_timer(&priv->stats_report_timer,
 		  round_jiffies(jiffies +
-		  msecs_to_jiffies(priv->service_timer_period)));
-	gve_service_task_schedule(priv);
+		  msecs_to_jiffies(priv->stats_report_timer_period)));
+	gve_stats_report_schedule(priv);
 }
 
 static int gve_alloc_stats_report(struct gve_priv *priv)
@@ -112,21 +123,16 @@ static int gve_alloc_stats_report(struct gve_priv *priv)
 		       priv->tx_cfg.num_queues;
 	rx_stats_num = (GVE_RX_STATS_REPORT_NUM + NIC_RX_STATS_REPORT_NUM) *
 		       priv->rx_cfg.num_queues;
-	priv->stats_report_len = sizeof(struct gve_stats_report) +
-				 (tx_stats_num + rx_stats_num) *
-				 sizeof(struct stats);
+	priv->stats_report_len = struct_size(priv->stats_report, stats,
+					     tx_stats_num + rx_stats_num);
 	priv->stats_report =
 		dma_alloc_coherent(&priv->pdev->dev, priv->stats_report_len,
 				   &priv->stats_report_bus, GFP_KERNEL);
 	if (!priv->stats_report)
 		return -ENOMEM;
-	/* Set up timer for periodic task */
-	timer_setup(&priv->service_timer, gve_service_timer, 0);
-	priv->service_timer_period = GVE_SERVICE_TIMER_PERIOD;
-	/* Start the service task timer */
-	mod_timer(&priv->service_timer,
-		  round_jiffies(jiffies +
-		  msecs_to_jiffies(priv->service_timer_period)));
+	/* Set up timer for the report-stats task */
+	timer_setup(&priv->stats_report_timer, gve_stats_report_timer, 0);
+	priv->stats_report_timer_period = GVE_STATS_REPORT_TIMER_PERIOD;
 	return 0;
 }
 
@@ -135,7 +141,7 @@ static void gve_free_stats_report(struct gve_priv *priv)
 	if (!priv->stats_report)
 		return;
 
-	del_timer_sync(&priv->service_timer);
+	del_timer_sync(&priv->stats_report_timer);
 	dma_free_coherent(&priv->pdev->dev, priv->stats_report_len,
 			  priv->stats_report, priv->stats_report_bus);
 	priv->stats_report = NULL;
@@ -373,7 +379,7 @@ static int gve_setup_device_resources(struct gve_priv *priv)
 	}
 	err = gve_adminq_report_stats(priv, priv->stats_report_len,
 				      priv->stats_report_bus,
-				      GVE_SERVICE_TIMER_PERIOD);
+				      GVE_STATS_REPORT_TIMER_PERIOD);
 	if (err)
 		dev_err(&priv->pdev->dev,
 			"Failed to report stats: err=%d\n", err);
@@ -397,8 +403,7 @@ static void gve_teardown_device_resources(struct gve_priv *priv)
 	/* Tell device its resources are being freed */
 	if (gve_get_device_resources_ok(priv)) {
 		/* detach the stats report */
-		err = gve_adminq_report_stats(priv, 0, 0x0,
-			GVE_SERVICE_TIMER_PERIOD);
+		err = gve_adminq_report_stats(priv, 0, 0x0, GVE_STATS_REPORT_TIMER_PERIOD);
 		if (err) {
 			dev_err(&priv->pdev->dev,
 				"Failed to detach stats report: err=%d\n", err);
@@ -808,6 +813,11 @@ static int gve_open(struct net_device *dev)
 		goto reset;
 	gve_set_device_rings_ok(priv);
 
+	if (gve_get_report_stats(priv))
+		mod_timer(&priv->stats_report_timer,
+			  round_jiffies(jiffies +
+				msecs_to_jiffies(priv->stats_report_timer_period)));
+
 	gve_turnup(priv);
 	queue_work(priv->gve_wq, &priv->service_task);
 	priv->interface_up_cnt++;
@@ -849,6 +859,7 @@ static int gve_close(struct net_device *dev)
 			goto err;
 		gve_clear_device_rings_ok(priv);
 	}
+	del_timer_sync(&priv->stats_report_timer);
 
 	gve_free_rings(priv);
 	gve_free_qpls(priv);
@@ -1081,8 +1092,7 @@ void gve_handle_report_stats(struct gve_priv *priv)
 				.queue_id = cpu_to_be32(idx),
 			};
 			stats[stats_idx++] = (struct stats) {
-				.stat_name = cpu_to_be32(
-					TX_LAST_COMPLETION_PROCESSED),
+				.stat_name = cpu_to_be32(TX_LAST_COMPLETION_PROCESSED),
 				.value = cpu_to_be64(priv->tx[idx].done),
 				.queue_id = cpu_to_be32(idx),
 			};
@@ -1098,8 +1108,7 @@ void gve_handle_report_stats(struct gve_priv *priv)
 	if (priv->rx) {
 		for (idx = 0; idx < priv->rx_cfg.num_queues; idx++) {
 			stats[stats_idx++] = (struct stats) {
-				.stat_name = cpu_to_be32(
-					RX_NEXT_EXPECTED_SEQUENCE),
+				.stat_name = cpu_to_be32(RX_NEXT_EXPECTED_SEQUENCE),
 				.value = cpu_to_be64(priv->rx[idx].desc.seqno),
 				.queue_id = cpu_to_be32(idx),
 			};
@@ -1140,10 +1149,6 @@ static void gve_service_task(struct work_struct *work)
 
 	gve_handle_reset(priv);
 	gve_handle_link_status(priv, GVE_DEVICE_STATUS_LINK_STATUS_MASK & status);
-	if (gve_get_do_report_stats(priv)) {
-		gve_handle_report_stats(priv);
-		gve_clear_do_report_stats(priv);
-	}
 }
 
 static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
@@ -1420,6 +1425,7 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto abort_with_netdev;
 	}
 	INIT_WORK(&priv->service_task, gve_service_task);
+	INIT_WORK(&priv->stats_report_task, gve_stats_report_task);
 	priv->tx_cfg.max_queues = max_tx_queues;
 	priv->rx_cfg.max_queues = max_rx_queues;
 

@@ -465,13 +465,11 @@ static int gve_set_tunable(struct net_device *netdev,
 static u32 gve_get_priv_flags(struct net_device *netdev)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
-	u32 i, ret_flags = 0;
+	u32 ret_flags = 0;
 
-	for (i = 0; i < GVE_PRIV_FLAGS_STR_LEN; i++) {
-		if (priv->ethtool_flags & BIT(i)) {
-			ret_flags |= BIT(i);
-		}
-	}
+	/* Only 1 flag exists currently: report-stats (BIT(O)), so set that flag. */
+	if (priv->ethtool_flags & BIT(0))
+		ret_flags |= BIT(0);
 	return ret_flags;
 }
 
@@ -479,40 +477,39 @@ static int gve_set_priv_flags(struct net_device *netdev, u32 flags)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 	u64 ori_flags, new_flags;
-	u32 i;
 
 	ori_flags = READ_ONCE(priv->ethtool_flags);
 	new_flags = ori_flags;
 
-	for (i = 0; i < GVE_PRIV_FLAGS_STR_LEN; i++) {
-		if (flags & BIT(i))
-			new_flags |= BIT(i);
-		else
-			new_flags &= ~(BIT(i));
-		priv->ethtool_flags = new_flags;
-		/* set report-stats */
-		if (strcmp(gve_gstrings_priv_flags[i], "report-stats") == 0) {
-			/* update the stats when user turns report-stats on */
-			if (flags & BIT(i))
-				gve_handle_report_stats(priv);
-			/* zero off gve stats when report-stats turned off */
-			if (!(flags & BIT(i)) && (ori_flags & BIT(i))) {
-				int tx_stats_num = GVE_TX_STATS_REPORT_NUM *
-					priv->tx_cfg.num_queues;
-				int rx_stats_num = GVE_RX_STATS_REPORT_NUM *
-					priv->rx_cfg.num_queues;
-				memset(priv->stats_report->stats, 0,
-				       (tx_stats_num + rx_stats_num) *
-				       sizeof(struct stats));
-			}
-		}
+	/* Only one priv flag exists: report-stats (BIT(0))*/
+	if (flags & BIT(0))
+		new_flags |= BIT(0);
+	else
+		new_flags &= ~(BIT(0));
+	priv->ethtool_flags = new_flags;
+	/* start report-stats timer when user turns report stats on. */
+	if (flags & BIT(0)) {
+		mod_timer(&priv->stats_report_timer,
+			  round_jiffies(jiffies +
+					msecs_to_jiffies(priv->stats_report_timer_period)));
 	}
+	/* Zero off gve stats when report-stats turned off and */
+	/* delete report stats timer. */
+	if (!(flags & BIT(0)) && (ori_flags & BIT(0))) {
+		int tx_stats_num = GVE_TX_STATS_REPORT_NUM *
+			priv->tx_cfg.num_queues;
+		int rx_stats_num = GVE_RX_STATS_REPORT_NUM *
+			priv->rx_cfg.num_queues;
 
+		memset(priv->stats_report->stats, 0, (tx_stats_num + rx_stats_num) *
+				   sizeof(struct stats));
+		del_timer_sync(&priv->stats_report_timer);
+	}
 	return 0;
 }
 
 static int gve_get_link_ksettings(struct net_device *netdev,
-				       struct ethtool_link_ksettings *cmd)
+				  struct ethtool_link_ksettings *cmd)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 	int err = gve_adminq_report_link_speed(priv);

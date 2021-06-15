@@ -31,12 +31,12 @@
 #define GVE_TX_STATS_REPORT_NUM	6
 #define GVE_RX_STATS_REPORT_NUM	2
 
+/* Interval to schedule a stats report update, 20000ms. */
+#define GVE_STATS_REPORT_TIMER_PERIOD	20000
+
 /* Numbers of NIC tx/rx stats in stats report. */
 #define NIC_TX_STATS_REPORT_NUM	0
 #define NIC_RX_STATS_REPORT_NUM	4
-
-/* Interval to schedule a service task, 20000ms. */
-#define GVE_SERVICE_TIMER_PERIOD	20000
 
 /* Each slot in the desc ring has a 1:1 mapping to a slot in the data ring */
 struct gve_rx_desc_queue {
@@ -279,6 +279,7 @@ struct gve_priv {
 
 	struct workqueue_struct *gve_wq;
 	struct work_struct service_task;
+	struct work_struct stats_report_task;
 	unsigned long service_task_flags;
 	unsigned long state_flags;
 
@@ -287,8 +288,8 @@ struct gve_priv {
 	dma_addr_t stats_report_bus; /* dma address for the stats report */
 	unsigned long ethtool_flags;
 
-	unsigned long service_timer_period;
-	struct timer_list service_timer;
+	unsigned long stats_report_timer_period;
+	struct timer_list stats_report_timer;
 
 	/* Gvnic device link speed from hypervisor. */
 	u64 link_speed;
@@ -305,7 +306,7 @@ enum gve_service_task_flags_bit {
 	GVE_PRIV_FLAGS_DO_RESET			= 1,
 	GVE_PRIV_FLAGS_RESET_IN_PROGRESS	= 2,
 	GVE_PRIV_FLAGS_PROBE_IN_PROGRESS	= 3,
-	GVE_PRIV_FLAGS_DO_REPORT_STATS		= 4,
+	GVE_PRIV_FLAGS_DO_REPORT_STATS = 4,
 };
 
 enum gve_state_flags_bit {
@@ -445,11 +446,6 @@ static inline void gve_clear_napi_enabled(struct gve_priv *priv)
 static inline bool gve_get_report_stats(struct gve_priv *priv)
 {
 	return test_bit(GVE_PRIV_FLAGS_REPORT_STATS, &priv->ethtool_flags);
-}
-
-static inline void gve_set_report_stats(struct gve_priv *priv)
-{
-	set_bit(GVE_PRIV_FLAGS_REPORT_STATS, &priv->ethtool_flags);
 }
 
 static inline void gve_clear_report_stats(struct gve_priv *priv)
