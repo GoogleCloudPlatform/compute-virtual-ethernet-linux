@@ -273,6 +273,7 @@ struct gve_priv {
 	u32 reset_cnt; /* count of reset */
 	u32 page_alloc_fail; /* count of page alloc fails */
 	u32 dma_mapping_error; /* count of dma mapping errors */
+	u32 stats_report_trigger_cnt; /* count of device-requested stats-reports since last reset */
 	u32 suspend_cnt; /* count of times suspended */
 	u32 resume_cnt; /* count of times resumed */
 

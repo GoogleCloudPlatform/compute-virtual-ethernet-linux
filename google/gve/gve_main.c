@@ -1013,7 +1013,7 @@ static void gve_handle_status(struct gve_priv *priv, u32 status)
 		gve_set_do_reset(priv);
 	}
 	if (GVE_DEVICE_STATUS_REPORT_STATS_MASK & status) {
-		dev_info(&priv->pdev->dev, "Device report stats on.\n");
+		priv->stats_report_trigger_cnt++;
 		gve_set_do_report_stats(priv);
 	}
 }
@@ -1291,6 +1291,7 @@ int gve_reset(struct gve_priv *priv, bool attempt_teardown)
 	priv->reset_cnt++;
 	priv->interface_up_cnt = 0;
 	priv->interface_down_cnt = 0;
+	priv->stats_report_trigger_cnt = 0;
 	return err;
 }
 

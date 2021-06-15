@@ -38,7 +38,7 @@ static const char gve_gstrings_main_stats[][ETH_GSTRING_LEN] = {
 	"rx_dropped", "tx_dropped", "tx_timeouts",
 	"rx_skb_alloc_fail", "rx_buf_alloc_fail", "rx_desc_err_dropped_pkt",
 	"interface_up_cnt", "interface_down_cnt", "reset_cnt",
-	"page_alloc_fail", "dma_mapping_error",
+	"page_alloc_fail", "dma_mapping_error", "stats_report_trigger_cnt",
 };
 
 static const char gve_gstrings_rx_stats[][ETH_GSTRING_LEN] = {
@@ -225,6 +225,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	data[i++] = priv->reset_cnt;
 	data[i++] = priv->page_alloc_fail;
 	data[i++] = priv->dma_mapping_error;
+	data[i++] = priv->stats_report_trigger_cnt;
 	i = GVE_MAIN_STATS_LEN;
 
 	/* For rx cross-reporting stats, start from nic rx stats in report */
