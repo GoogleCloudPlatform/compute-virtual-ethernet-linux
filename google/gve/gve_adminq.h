@@ -223,7 +223,7 @@ struct gve_adminq_report_stats {
 static_assert(sizeof(struct gve_adminq_report_stats) == 24);
 
 struct gve_adminq_report_link_speed {
-  __be64 link_speed_address;
+	__be64 link_speed_address;
 };
 
 static_assert(sizeof(struct gve_adminq_report_link_speed) == 8);
