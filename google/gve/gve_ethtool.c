@@ -380,7 +380,7 @@ static int gve_set_channels(struct net_device *netdev,
 
 	gve_get_channels(netdev, &old_settings);
 
-	/* Changing combined is not allowed allowed */
+	/* Changing combined is not allowed */
 	if (cmd->combined_count != old_settings.combined_count)
 		return -EINVAL;
 
@@ -432,7 +432,7 @@ static int gve_get_tunable(struct net_device *netdev,
 		*(u32 *)value = priv->rx_copybreak;
 		return 0;
 	default:
-		return -EINVAL;
+		return -EOPNOTSUPP;
 	}
 }
 
@@ -443,16 +443,15 @@ static int gve_set_tunable(struct net_device *netdev,
 	struct gve_priv *priv = netdev_priv(netdev);
 	u32 len;
 
-	switch(etuna->id) {
+	switch (etuna->id) {
 	case ETHTOOL_RX_COPYBREAK:
 		len = *(u32 *)value;
-		if (len > priv->dev->mtu) {
+		if (len > PAGE_SIZE / 2)
 			return -EINVAL;
-		}
 		priv->rx_copybreak = len;
 		return 0;
 	default:
-		return -EINVAL;
+		return -EOPNOTSUPP;
 	}
 }
 
