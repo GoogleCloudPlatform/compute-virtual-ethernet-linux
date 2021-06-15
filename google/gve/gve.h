@@ -148,7 +148,8 @@ struct gve_tx_ring {
 	spinlock_t clean_lock ____cacheline_aligned; /* for TX clean */
 	u64 pkt_done; /* free-running - total packets completed */
 	u64 bytes_done; /* free-running - total bytes completed */
-	u32 dropped_pkt; /* free-running - total packets dropped */
+	u64 dropped_pkt; /* free-running - total packets dropped */
+	u64 dma_mapping_error; /* count of dma mapping errors */
 
 	/* Cacheline 2 -- Read-mostly fields */
 	union gve_tx_desc *desc ____cacheline_aligned;
