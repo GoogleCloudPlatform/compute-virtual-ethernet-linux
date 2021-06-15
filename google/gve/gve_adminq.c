@@ -176,8 +176,8 @@ static int gve_adminq_issue_cmd(struct gve_priv *priv,
 				union gve_adminq_command *cmd_orig)
 {
 	union gve_adminq_command *cmd;
-	u32 tail;
 	u32 opcode;
+	u32 tail;
 
 	tail = ioread32be(&priv->reg_bar0->adminq_event_counter);
 
@@ -316,82 +316,119 @@ int gve_adminq_deconfigure_device_resources(struct gve_priv *priv)
 	return gve_adminq_execute_cmd(priv, &cmd);
 }
 
+static int gve_adminq_create_tx_queue(struct gve_priv *priv, u32 queue_index)
+{
+	struct gve_tx_ring *tx = &priv->tx[queue_index];
+	union gve_adminq_command cmd;
+	u32 qpl_id;
+	int err;
+
+	qpl_id = priv->queue_format == GVE_GQI_RDA_FORMAT ?
+		 GVE_RAW_ADDRESSING_QPL_ID : tx->tx_fifo.qpl->id;
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.opcode = cpu_to_be32(GVE_ADMINQ_CREATE_TX_QUEUE);
+	cmd.create_tx_queue = (struct gve_adminq_create_tx_queue) {
+		.queue_id = cpu_to_be32(queue_index),
+		.reserved = 0,
+		.queue_resources_addr =
+			cpu_to_be64(tx->q_resources_bus),
+		.tx_ring_addr = cpu_to_be64(tx->bus),
+		.tx_comp_ring_addr = 0,
+		.tx_ring_size = cpu_to_be16(priv->tx_desc_cnt),
+		.queue_page_list_id = cpu_to_be32(qpl_id),
+		.ntfy_id = cpu_to_be32(tx->ntfy_id),
+	};
+
+	err = gve_adminq_issue_cmd(priv, &cmd);
+	if (err)
+		return err;
+
+	return 0;
+}
+
 int gve_adminq_create_tx_queues(struct gve_priv *priv, u32 num_queues)
 {
-	union gve_adminq_command cmd;
-	struct gve_tx_ring *tx;
-	u32 qpl_id;
 	int err;
 	int i;
 
 	for (i = 0; i < num_queues; i++) {
-		tx = &priv->tx[i];
-		qpl_id = priv->queue_format == GVE_GQI_RDA_FORMAT ?
-			 GVE_RAW_ADDRESSING_QPL_ID : tx->tx_fifo.qpl->id;
-		memset(&cmd, 0, sizeof(cmd));
-		cmd.opcode = cpu_to_be32(GVE_ADMINQ_CREATE_TX_QUEUE);
-		cmd.create_tx_queue = (struct gve_adminq_create_tx_queue) {
-			.queue_id = cpu_to_be32(i),
-			.reserved = 0,
-			.queue_resources_addr =
-				cpu_to_be64(tx->q_resources_bus),
-			.tx_ring_addr = cpu_to_be64(tx->bus),
-			.queue_page_list_id = cpu_to_be32(qpl_id),
-			.ntfy_id = cpu_to_be32(tx->ntfy_id),
-		};
-		err = gve_adminq_issue_cmd(priv, &cmd);
+		err = gve_adminq_create_tx_queue(priv, i);
 		if (err)
 			return err;
 	}
 
 	return gve_adminq_kick_and_wait(priv);
+}
+
+static int gve_adminq_create_rx_queue(struct gve_priv *priv, u32 queue_index)
+{
+	struct gve_rx_ring *rx = &priv->rx[queue_index];
+	union gve_adminq_command cmd;
+	u32 qpl_id;
+	int err;
+
+	qpl_id = priv->queue_format == GVE_GQI_RDA_FORMAT ?
+		 GVE_RAW_ADDRESSING_QPL_ID : rx->data.qpl->id;
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.opcode = cpu_to_be32(GVE_ADMINQ_CREATE_RX_QUEUE);
+	cmd.create_rx_queue = (struct gve_adminq_create_rx_queue) {
+		.queue_id = cpu_to_be32(queue_index),
+		.index = cpu_to_be32(queue_index),
+		.reserved = 0,
+		.ntfy_id = cpu_to_be32(rx->ntfy_id),
+		.queue_resources_addr = cpu_to_be64(rx->q_resources_bus),
+		.rx_desc_ring_addr = cpu_to_be64(rx->desc.bus),
+		.rx_data_ring_addr = cpu_to_be64(rx->data.data_bus),
+		.rx_ring_size = cpu_to_be16(priv->rx_desc_cnt),
+		.queue_page_list_id = cpu_to_be32(qpl_id),
+	};
+
+	err = gve_adminq_issue_cmd(priv, &cmd);
+	if (err)
+		return err;
+
+	return 0;
 }
 
 int gve_adminq_create_rx_queues(struct gve_priv *priv, u32 num_queues)
 {
-	union gve_adminq_command cmd;
-	struct gve_rx_ring *rx;
-	u32 qpl_id;
 	int err;
 	int i;
 
 	for (i = 0; i < num_queues; i++) {
-		rx = &priv->rx[i];
-		qpl_id = priv->queue_format == GVE_GQI_RDA_FORMAT ?
-			 GVE_RAW_ADDRESSING_QPL_ID : rx->data.qpl->id;
-		memset(&cmd, 0, sizeof(cmd));
-		cmd.opcode = cpu_to_be32(GVE_ADMINQ_CREATE_RX_QUEUE);
-		cmd.create_rx_queue = (struct gve_adminq_create_rx_queue) {
-			.queue_id = cpu_to_be32(i),
-			.index = cpu_to_be32(i),
-			.reserved = 0,
-			.ntfy_id = cpu_to_be32(rx->ntfy_id),
-			.queue_resources_addr = cpu_to_be64(rx->q_resources_bus),
-			.rx_desc_ring_addr = cpu_to_be64(rx->desc.bus),
-			.rx_data_ring_addr = cpu_to_be64(rx->data.data_bus),
-			.queue_page_list_id = cpu_to_be32(qpl_id),
-		};
-		err = gve_adminq_issue_cmd(priv, &cmd);
+		err = gve_adminq_create_rx_queue(priv, i);
 		if (err)
 			return err;
 	}
 
 	return gve_adminq_kick_and_wait(priv);
+}
+
+static int gve_adminq_destroy_tx_queue(struct gve_priv *priv, u32 queue_index)
+{
+	union gve_adminq_command cmd;
+	int err;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.opcode = cpu_to_be32(GVE_ADMINQ_DESTROY_TX_QUEUE);
+	cmd.destroy_tx_queue = (struct gve_adminq_destroy_tx_queue) {
+		.queue_id = cpu_to_be32(queue_index),
+	};
+
+	err = gve_adminq_issue_cmd(priv, &cmd);
+	if (err)
+		return err;
+
+	return 0;
 }
 
 int gve_adminq_destroy_tx_queues(struct gve_priv *priv, u32 num_queues)
 {
-	union gve_adminq_command cmd;
 	int err;
 	int i;
 
 	for (i = 0; i < num_queues; i++) {
-		memset(&cmd, 0, sizeof(cmd));
-		cmd.opcode = cpu_to_be32(GVE_ADMINQ_DESTROY_TX_QUEUE);
-		cmd.destroy_tx_queue = (struct gve_adminq_destroy_tx_queue) {
-			.queue_id = cpu_to_be32(i),
-		};
-		err = gve_adminq_issue_cmd(priv, &cmd);
+		err = gve_adminq_destroy_tx_queue(priv, i);
 		if (err)
 			return err;
 	}
@@ -399,19 +436,31 @@ int gve_adminq_destroy_tx_queues(struct gve_priv *priv, u32 num_queues)
 	return gve_adminq_kick_and_wait(priv);
 }
 
-int gve_adminq_destroy_rx_queues(struct gve_priv *priv, u32 num_queues)
+static int gve_adminq_destroy_rx_queue(struct gve_priv *priv, u32 queue_index)
 {
 	union gve_adminq_command cmd;
+	int err;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.opcode = cpu_to_be32(GVE_ADMINQ_DESTROY_RX_QUEUE);
+	cmd.destroy_rx_queue = (struct gve_adminq_destroy_rx_queue) {
+		.queue_id = cpu_to_be32(queue_index),
+	};
+
+	err = gve_adminq_issue_cmd(priv, &cmd);
+	if (err)
+		return err;
+
+	return 0;
+}
+
+int gve_adminq_destroy_rx_queues(struct gve_priv *priv, u32 num_queues)
+{
 	int err;
 	int i;
 
 	for (i = 0; i < num_queues; i++) {
-		memset(&cmd, 0, sizeof(cmd));
-		cmd.opcode = cpu_to_be32(GVE_ADMINQ_DESTROY_RX_QUEUE);
-		cmd.destroy_rx_queue = (struct gve_adminq_destroy_rx_queue) {
-			.queue_id = cpu_to_be32(i),
-		};
-		err = gve_adminq_issue_cmd(priv, &cmd);
+		err = gve_adminq_destroy_rx_queue(priv, i);
 		if (err)
 			return err;
 	}
