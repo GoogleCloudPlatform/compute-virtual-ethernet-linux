@@ -480,7 +480,7 @@ static int gve_create_rings(struct gve_priv *priv)
 		 */
 		return err;
 	}
-	netif_dbg(priv, drv, priv->dev, "created %d tx queues \n",
+	netif_dbg(priv, drv, priv->dev, "created %d tx queues\n",
 		  priv->tx_cfg.num_queues);
 
 	err = gve_adminq_create_rx_queues(priv, priv->rx_cfg.num_queues);
@@ -492,17 +492,16 @@ static int gve_create_rings(struct gve_priv *priv)
 		 */
 		return err;
 	}
-	netif_dbg(priv, drv, priv->dev, "created %d rx queues \n",
+	netif_dbg(priv, drv, priv->dev, "created %d rx queues\n",
 		  priv->rx_cfg.num_queues);
 
 	/* Rx data ring has been prefilled with packet buffers at queue
 	 * allocation time.
 	 * Write the doorbell to provide descriptor slots and packet buffers
 	 * to the NIC.
-	*/
-	for (i = 0; i < priv->rx_cfg.num_queues; i++) {
+	 */
+	for (i = 0; i < priv->rx_cfg.num_queues; i++)
 		gve_rx_write_doorbell(priv, &priv->rx[i]);
-	}
 
 	return 0;
 }
@@ -623,7 +622,6 @@ int gve_alloc_page(struct gve_priv *priv, struct device *dev,
 	if (dma_mapping_error(dev, *dma)) {
 		priv->dma_mapping_error++;
 		put_page(*page);
-		*page = NULL;
 		return -ENOMEM;
 	}
 	return 0;
@@ -697,7 +695,6 @@ static void gve_free_queue_page_list(struct gve_priv *priv, u32 id)
 free_pages:
 	kvfree(qpl->pages);
 	priv->num_registered_pages -= qpl->num_entries;
-
 }
 
 static int gve_alloc_qpls(struct gve_priv *priv)
@@ -1115,9 +1112,10 @@ void gve_handle_link_status(struct gve_priv *priv, bool link_status)
 		return;
 
 	if (link_status) {
+		netdev_info(priv->dev, "Device link is up.\n");
 		netif_carrier_on(priv->dev);
 	} else {
-		dev_info(&priv->pdev->dev, "Device link is down.\n");
+		netdev_info(priv->dev, "Device link is down.\n");
 		netif_carrier_off(priv->dev);
 	}
 }
@@ -1376,9 +1374,7 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto abort_with_db_bar;
 	}
 	SET_NETDEV_DEV(dev, &pdev->dev);
-
 	pci_set_drvdata(pdev, dev);
-
 	dev->ethtool_ops = &gve_ethtool_ops;
 	dev->netdev_ops = &gve_netdev_ops;
 	/* advertise features */
@@ -1407,7 +1403,6 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
         priv->dma_mask = dma_mask;
 
 	gve_set_probe_in_progress(priv);
-
 	priv->gve_wq = alloc_ordered_workqueue("gve", 0);
 	if (!priv->gve_wq) {
 		dev_err(&pdev->dev, "Could not allocate workqueue");
