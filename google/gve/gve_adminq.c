@@ -755,11 +755,12 @@ int gve_adminq_report_link_speed(struct gve_priv *priv)
 {
 	union gve_adminq_command gvnic_cmd;
 	dma_addr_t link_speed_region_bus;
-	u64* link_speed_region;
+	__be64 *link_speed_region;
 	int err;
 
-	link_speed_region = dma_alloc_coherent(&priv->pdev->dev,
-		sizeof(*link_speed_region), &link_speed_region_bus, GFP_KERNEL);
+	link_speed_region =
+		dma_alloc_coherent(&priv->pdev->dev, sizeof(*link_speed_region),
+				   &link_speed_region_bus, GFP_KERNEL);
 
 	if (!link_speed_region)
 		return -ENOMEM;
@@ -772,7 +773,7 @@ int gve_adminq_report_link_speed(struct gve_priv *priv)
 	err = gve_adminq_execute_cmd(priv, &gvnic_cmd);
 
 	priv->link_speed = be64_to_cpu(*link_speed_region);
-	dma_free_coherent(&priv->pdev->dev, sizeof(*link_speed_region),
-					  link_speed_region, link_speed_region_bus);
+	dma_free_coherent(&priv->pdev->dev, sizeof(*link_speed_region), link_speed_region,
+			  link_speed_region_bus);
 	return err;
 }
