@@ -660,28 +660,26 @@ static int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
 		/* Unmap the buffer */
 		if (tx->raw_addressing)
 			gve_tx_unmap_buf(tx->dev, &tx->info[idx].buf);
+		tx->done++;
 		/* Mark as free */
 		if (skb) {
 			info->skb = NULL;
 			bytes += skb->len;
 			pkts++;
 			dev_consume_skb_any(skb);
-			if (!tx->raw_addressing) {
-				/* FIFO free */
-				for (i = 0; i < ARRAY_SIZE(info->iov); i++) {
-					space_freed += info->iov[i].iov_len +
-						       info->iov[i].iov_padding;
-					info->iov[i].iov_len = 0;
-					info->iov[i].iov_padding = 0;
-				}
+			if (tx->raw_addressing)
+				continue;
+			/* FIFO free */
+			for (i = 0; i < ARRAY_SIZE(info->iov); i++) {
+				space_freed += info->iov[i].iov_len + info->iov[i].iov_padding;
+				info->iov[i].iov_len = 0;
+				info->iov[i].iov_padding = 0;
 			}
 		}
-		tx->done++;
 	}
 
-	if (!tx->raw_addressing) {
+	if (!tx->raw_addressing)
 		gve_tx_free_fifo(&tx->tx_fifo, space_freed);
-	}
 	u64_stats_update_begin(&tx->statss);
 	tx->bytes_done += bytes;
 	tx->pkt_done += pkts;
