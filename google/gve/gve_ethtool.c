@@ -34,9 +34,9 @@ static u32 gve_get_msglevel(struct net_device *netdev)
 }
 
 static const char gve_gstrings_main_stats[][ETH_GSTRING_LEN] = {
-	"rx_packets", "rx_total_bytes", "rx_total_dropped_pkt",
+	"rx_packets", "tx_packets", "rx_bytes", "tx_bytes",
+	"rx_dropped", "tx_dropped", "tx_timeouts",
 	"rx_skb_alloc_fail", "rx_buf_alloc_fail", "rx_desc_err_dropped_pkt",
-	"tx_packets", "tx_total_bytes", "tx_total_dropped_pkt", "tx_timeouts",
 	"interface_up_cnt", "interface_down_cnt", "reset_cnt",
 	"page_alloc_fail", "dma_mapping_error",
 };
@@ -51,6 +51,7 @@ static const char gve_gstrings_rx_stats[][ETH_GSTRING_LEN] = {
 static const char gve_gstrings_tx_stats[][ETH_GSTRING_LEN] = {
 	"tx_posted_desc[%u]", "tx_completed_desc[%u]", "tx_bytes[%u]",
 	"tx_wake[%u]", "tx_stop[%u]", "tx_event_counter[%u]",
+	"tx_dma_mapping_error[%u]",
 };
 
 static const char gve_gstrings_adminq_stats[][ETH_GSTRING_LEN] = {
@@ -140,13 +141,13 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	u64 tmp_rx_pkts, tmp_rx_bytes, tmp_rx_skb_alloc_fail,
 		tmp_rx_buf_alloc_fail, tmp_rx_desc_err_dropped_pkt,
 		tmp_tx_pkts, tmp_tx_bytes;
-	u64 rx_pkts, rx_bytes, rx_skb_alloc_fail, rx_buf_alloc_fail,
-		rx_desc_err_dropped_pkt, tx_pkts, tx_bytes;
-	struct gve_priv *priv = netdev_priv(netdev);
+	u64 rx_buf_alloc_fail, rx_desc_err_dropped_pkt, rx_pkts,
+		rx_skb_alloc_fail, rx_bytes, tx_pkts, tx_bytes;
+	int stats_idx, base_stats_idx, max_stats_idx;
+	struct stats *report_stats;
 	int *rx_qid_to_stats_idx;
 	int *tx_qid_to_stats_idx;
-	struct stats *report_stats = priv->stats_report->stats;
-	int stats_idx, base_stats_idx, max_stats_idx;
+	struct gve_priv *priv;
 	bool skip_nic_stats;
 	unsigned int start;
 	int ring;
@@ -154,24 +155,25 @@ gve_get_ethtool_stats(struct net_device *netdev,
 
 	ASSERT_RTNL();
 
+	priv = netdev_priv(netdev);
+	report_stats = priv->stats_report->stats;
 	rx_qid_to_stats_idx = kmalloc_array(priv->rx_cfg.num_queues,
 					    sizeof(int), GFP_KERNEL);
-	if (!rx_qid_to_stats_idx) {
+	if (!rx_qid_to_stats_idx)
 		return;
-	}
 	tx_qid_to_stats_idx = kmalloc_array(priv->tx_cfg.num_queues,
 					    sizeof(int), GFP_KERNEL);
 	if (!tx_qid_to_stats_idx) {
 		kfree(rx_qid_to_stats_idx);
 		return;
 	}
-
 	for (rx_pkts = 0, rx_bytes = 0, rx_skb_alloc_fail = 0,
 	     rx_buf_alloc_fail = 0, rx_desc_err_dropped_pkt = 0, ring = 0;
 	     ring < priv->rx_cfg.num_queues; ring++) {
 		if (priv->rx) {
 			do {
 				struct gve_rx_ring *rx = &priv->rx[ring];
+
 				start =
 				  u64_stats_fetch_begin(&priv->rx[ring].statss);
 				tmp_rx_pkts = rx->rpackets;
@@ -206,18 +208,18 @@ gve_get_ethtool_stats(struct net_device *netdev,
 
 	i = 0;
 	data[i++] = rx_pkts;
+	data[i++] = tx_pkts;
 	data[i++] = rx_bytes;
+	data[i++] = tx_bytes;
 	/* total rx dropped packets */
 	data[i++] = rx_skb_alloc_fail + rx_buf_alloc_fail +
 		    rx_desc_err_dropped_pkt;
-	data[i++] = rx_skb_alloc_fail;
-	data[i++] = rx_buf_alloc_fail;
-	data[i++] = rx_desc_err_dropped_pkt;
-	data[i++] = tx_pkts;
-	data[i++] = tx_bytes;
 	/* Skip tx_dropped */
 	i++;
 	data[i++] = priv->tx_timeo_cnt;
+	data[i++] = rx_skb_alloc_fail;
+	data[i++] = rx_buf_alloc_fail;
+	data[i++] = rx_desc_err_dropped_pkt;
 	data[i++] = priv->interface_up_cnt;
 	data[i++] = priv->interface_down_cnt;
 	data[i++] = priv->reset_cnt;
@@ -236,6 +238,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 		stats_idx += NIC_RX_STATS_REPORT_NUM) {
 		u32 stat_name = be32_to_cpu(report_stats[stats_idx].stat_name);
 		u32 queue_id = be32_to_cpu(report_stats[stats_idx].queue_id);
+
 		if (stat_name == 0) {
 			/* no stats written by NIC yet */
 			skip_nic_stats = true;
@@ -274,14 +277,16 @@ gve_get_ethtool_stats(struct net_device *netdev,
 				continue;
 			}
 			for (j = 0; j < NIC_RX_STATS_REPORT_NUM; j++) {
-				u64 value = be64_to_cpu(report_stats[
-					rx_qid_to_stats_idx[ring] + j].value);
+				u64 value =
+				be64_to_cpu(report_stats[rx_qid_to_stats_idx[ring] + j].value);
+
 				data[i++] = value;
 			}
 		}
 	} else {
 		i += priv->rx_cfg.num_queues * NUM_GVE_RX_CNTS;
 	}
+
 	/* For tx cross-reporting stats, start from nic tx stats in report */
 	base_stats_idx = max_stats_idx;
 	max_stats_idx = NIC_TX_STATS_REPORT_NUM * priv->tx_cfg.num_queues +
@@ -292,6 +297,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 		stats_idx += NIC_TX_STATS_REPORT_NUM) {
 		u32 stat_name = be32_to_cpu(report_stats[stats_idx].stat_name);
 		u32 queue_id = be32_to_cpu(report_stats[stats_idx].queue_id);
+
 		if (stat_name == 0) {
 			/* no stats written by NIC yet */
 			skip_nic_stats = true;
@@ -316,6 +322,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 			data[i++] = tx->wake_queue;
 			data[i++] = tx->stop_queue;
 			data[i++] = gve_tx_load_event_counter(priv, tx);
+			data[i++] = tx->dma_mapping_error;
 			/* stats from NIC */
 			if (skip_nic_stats) {
 				/* skip NIC tx stats */
@@ -323,8 +330,8 @@ gve_get_ethtool_stats(struct net_device *netdev,
 				continue;
 			}
 			for (j = 0; j < NIC_TX_STATS_REPORT_NUM; j++) {
-				u64 value = be64_to_cpu(report_stats[
-					tx_qid_to_stats_idx[ring] + j].value);
+				u64 value =
+				be64_to_cpu(report_stats[tx_qid_to_stats_idx[ring] + j].value);
 				data[i++] = value;
 			}
 		}
@@ -334,7 +341,6 @@ gve_get_ethtool_stats(struct net_device *netdev,
 
 	kfree(rx_qid_to_stats_idx);
 	kfree(tx_qid_to_stats_idx);
-
 	/* AQ Stats */
 	data[i++] = priv->adminq_prod_cnt;
 	data[i++] = priv->adminq_cmd_fail;
