@@ -76,7 +76,7 @@ static_assert(sizeof(struct gve_rx_desc) == 64);
 
 /* If the device supports raw dma addressing then the addr in data slot is
  * the dma address of the buffer.
- * If the device only supports registered segments than the addr is a byte
+ * If the device only supports registered segments then the addr is a byte
  * offset into the registered segment (an ordered list of pages) where the
  * buffer is.
  */
