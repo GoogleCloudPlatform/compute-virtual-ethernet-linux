@@ -11,7 +11,8 @@
 
 static void gve_rx_free_buffer(struct device *dev,
 			       struct gve_rx_slot_page_info *page_info,
-			       struct gve_rx_data_slot *data_slot) {
+			       union gve_rx_data_slot *data_slot)
+{
 	dma_addr_t dma = (dma_addr_t)(be64_to_cpu(data_slot->addr) -
 				      page_info->page_offset);
 
@@ -19,12 +20,32 @@ static void gve_rx_free_buffer(struct device *dev,
 	gve_free_page(dev, page_info->page, dma, DMA_FROM_DEVICE);
 }
 
+static void gve_rx_unfill_pages(struct gve_priv *priv, struct gve_rx_ring *rx)
+{
+	u32 slots = rx->mask + 1;
+	int i;
+
+	if (rx->data.raw_addressing) {
+		for (i = 0; i < slots; i++)
+			gve_rx_free_buffer(&priv->pdev->dev, &rx->data.page_info[i],
+					   &rx->data.data_ring[i]);
+	} else {
+		for (i = 0; i < slots; i++)
+			page_ref_sub(rx->data.page_info[i].page,
+				     rx->data.page_info[i].pagecnt_bias - 1);
+		gve_unassign_qpl(priv, rx->data.qpl->id);
+		rx->data.qpl = NULL;
+	}
+	kvfree(rx->data.page_info);
+	rx->data.page_info = NULL;
+}
+
 static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 {
 	struct gve_rx_ring *rx = &priv->rx[idx];
 	struct device *dev = &priv->pdev->dev;
-	size_t bytes;
 	u32 slots = rx->mask + 1;
+	size_t bytes;
 
 	gve_rx_remove_from_block(priv, idx);
 
@@ -36,17 +57,7 @@ static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 			  rx->q_resources, rx->q_resources_bus);
 	rx->q_resources = NULL;
 
-	if (rx->data.raw_addressing) {
-		int i;
-
-		for (i = 0; i < slots; i++)
-			gve_rx_free_buffer(dev, &rx->data.page_info[i],
-					   &rx->data.data_ring[i]);
-	} else {
-		gve_unassign_qpl(priv, rx->data.qpl->id);
-		rx->data.qpl = NULL;
-	}
-	kfree(rx->data.page_info);
+	gve_rx_unfill_pages(priv, rx);
 
 	bytes = sizeof(*rx->data.data_ring) * slots;
 	dma_free_coherent(dev, bytes, rx->data.data_ring,
@@ -56,13 +67,12 @@ static void gve_rx_free_ring(struct gve_priv *priv, int idx)
 }
 
 static void gve_setup_rx_buffer(struct gve_rx_slot_page_info *page_info,
-				struct gve_rx_data_slot *slot,
-				dma_addr_t addr, struct page *page)
+			     dma_addr_t addr, struct page *page, __be64 *slot_addr)
 {
 	page_info->page = page;
 	page_info->page_offset = 0;
 	page_info->page_address = page_address(page);
-	slot->addr = cpu_to_be64(addr);
+	*slot_addr = cpu_to_be64(addr);
 	/* The page already has 1 ref */
 	page_ref_add(page, INT_MAX - 1);
 	page_info->pagecnt_bias = INT_MAX;
@@ -70,7 +80,7 @@ static void gve_setup_rx_buffer(struct gve_rx_slot_page_info *page_info,
 
 static int gve_rx_alloc_buffer(struct gve_priv *priv, struct device *dev,
 			       struct gve_rx_slot_page_info *page_info,
-			       struct gve_rx_data_slot *data_slot,
+			       union gve_rx_data_slot *data_slot,
 			       struct gve_rx_ring *rx)
 {
 	struct page *page;
@@ -86,7 +96,7 @@ static int gve_rx_alloc_buffer(struct gve_priv *priv, struct device *dev,
 		return err;
 	}
 
-	gve_setup_rx_buffer(page_info, data_slot, dma, page);
+	gve_setup_rx_buffer(page_info, dma, page, &data_slot->addr);
 	return 0;
 }
 
@@ -116,36 +126,27 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 		}
 	}
 	for (i = 0; i < slots; i++) {
-		struct page *page;
-		dma_addr_t addr;
+		if (!rx->data.raw_addressing) {
+			struct page *page = rx->data.qpl->pages[i];
+			dma_addr_t addr = i * PAGE_SIZE;
 
-		if (rx->data.raw_addressing) {
-			err = gve_alloc_page(priv, &priv->pdev->dev, &page,
-					     &addr, DMA_FROM_DEVICE,
-					     GFP_KERNEL);
-			if (err) {
-				int j;
-
-				u64_stats_update_begin(&rx->statss);
-				rx->rx_buf_alloc_fail++;
-				u64_stats_update_end(&rx->statss);
-				for (j = 0; j < i; j++)
-					gve_rx_free_buffer(&priv->pdev->dev,
-							 &rx->data.page_info[j],
-							 &rx->data.data_ring[j]);
-				kfree(rx->data.page_info);
-				rx->data.page_info = NULL;
-				return err;
-			}
-		} else {
-			page = rx->data.qpl->pages[i];
-			addr = i * PAGE_SIZE;
+			gve_setup_rx_buffer(&rx->data.page_info[i], addr, page,
+					    &rx->data.data_ring[i].qpl_offset);
+			continue;
 		}
-		gve_setup_rx_buffer(&rx->data.page_info[i],
-				    &rx->data.data_ring[i], addr, page);
+		err = gve_rx_alloc_buffer(priv, &priv->pdev->dev, &rx->data.page_info[i],
+					  &rx->data.data_ring[i], rx);
+		if (err)
+			goto alloc_err;
 	}
 
 	return slots;
+alloc_err:
+	while (i--)
+		gve_rx_free_buffer(&priv->pdev->dev,
+				   &rx->data.page_info[i],
+				   &rx->data.data_ring[i]);
+	return err;
 }
 
 static int gve_rx_alloc_ring(struct gve_priv *priv, int idx)
@@ -223,7 +224,7 @@ abort_with_q_resources:
 			  rx->q_resources, rx->q_resources_bus);
 	rx->q_resources = NULL;
 abort_filled:
-	kfree(rx->data.page_info);
+	gve_rx_unfill_pages(priv, rx);
 abort_with_slots:
 	bytes = sizeof(*rx->data.data_ring) * slots;
 	dma_free_coherent(hdev, bytes, rx->data.data_ring, rx->data.data_bus);
@@ -296,15 +297,13 @@ static struct sk_buff *gve_rx_add_frags(struct napi_struct *napi,
 	return skb;
 }
 
-static void gve_rx_flip_buffer(struct gve_rx_slot_page_info *page_info,
-			       struct gve_rx_data_slot *data_slot)
+static void gve_rx_flip_buff(struct gve_rx_slot_page_info *page_info, __be64 *slot_addr)
 {
-	u64 addr = be64_to_cpu(data_slot->addr);
+	const __be64 offset = cpu_to_be64(PAGE_SIZE / 2);
 
 	/* "flip" to other packet buffer on this page */
 	page_info->page_offset ^= PAGE_SIZE / 2;
-	addr ^= PAGE_SIZE / 2;
-	data_slot->addr = cpu_to_be64(addr);
+	*(slot_addr) ^= offset;
 }
 
 static bool gve_rx_can_flip_buffers(struct net_device *netdev) {
@@ -326,26 +325,26 @@ static int gve_rx_can_recycle_buffer(struct gve_rx_slot_page_info *page_info)
 	int pagecount = page_count(page_info->page);
 
 	/* This page is not being used by any SKBs - reuse */
-	if (pagecount == page_info->pagecnt_bias) {
+	if (pagecount == page_info->pagecnt_bias)
 		return 1;
 	/* This page is still being used by an SKB - we can't reuse */
-	} else if (pagecount > page_info->pagecnt_bias) {
+	else if (pagecount > page_info->pagecnt_bias)
 		return 0;
-	} else {
-		WARN(pagecount < page_info->pagecnt_bias,
-		     "Pagecount should never be less than the bias.");
-		return -1;
-	}
+	WARN(pagecount < page_info->pagecnt_bias,
+	     "Pagecount (%d) should never be less than the bias (%d).",
+	     pagecount, page_info->pagecnt_bias);
+	return -1;
 }
 
 static struct sk_buff *
 gve_rx_raw_addressing(struct device *dev, struct net_device *netdev,
 		      struct gve_rx_slot_page_info *page_info, u16 len,
 		      struct napi_struct *napi,
-		      struct gve_rx_data_slot *data_slot, bool can_flip)
+		      union gve_rx_data_slot *data_slot)
 {
-	struct sk_buff *skb = gve_rx_add_frags(napi, page_info, len);
+	struct sk_buff *skb;
 
+	skb = gve_rx_add_frags(napi, page_info, len);
 	if (!skb)
 		return NULL;
 
@@ -354,7 +353,6 @@ gve_rx_raw_addressing(struct device *dev, struct net_device *netdev,
 	 * new page.
 	 */
 	gve_dec_pagecnt_bias(page_info);
-	page_info->can_flip = can_flip;
 
 	return skb;
 }
@@ -363,21 +361,22 @@ static struct sk_buff *
 gve_rx_qpl(struct device *dev, struct net_device *netdev,
 	   struct gve_rx_ring *rx, struct gve_rx_slot_page_info *page_info,
 	   u16 len, struct napi_struct *napi,
-	   struct gve_rx_data_slot *data_slot, bool recycle)
+	   union gve_rx_data_slot *data_slot)
 {
 	struct sk_buff *skb;
+
 	/* if raw_addressing mode is not enabled gvnic can only receive into
 	 * registered segments. If the buffer can't be recycled, our only
 	 * choice is to copy the data out of it so that we can return it to the
 	 * device.
 	 */
-	if (recycle) {
+	if (page_info->can_flip) {
 		skb = gve_rx_add_frags(napi, page_info, len);
 		/* No point in recycling if we didn't get the skb */
 		if (skb) {
-			/* Make sure the networking stack can't free the page */
+			/* Make sure that the page isn't freed. */
 			gve_dec_pagecnt_bias(page_info);
-			gve_rx_flip_buffer(page_info, data_slot);
+			gve_rx_flip_buff(page_info, &data_slot->qpl_offset);
 		}
 	} else {
 		skb = gve_rx_copy(netdev, napi, page_info, len, GVE_RX_PAD);
@@ -396,8 +395,8 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 	struct gve_rx_slot_page_info *page_info;
 	struct gve_priv *priv = rx->gve;
 	struct napi_struct *napi = &priv->ntfy_blocks[rx->ntfy_id].napi;
-	struct net_device *netdev = priv->dev;
-	struct gve_rx_data_slot *data_slot;
+	struct net_device *dev = priv->dev;
+	union gve_rx_data_slot *data_slot;
 	struct sk_buff *skb = NULL;
 	dma_addr_t page_bus;
 	void *va;
@@ -432,7 +431,7 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 
 	if (len <= priv->rx_copybreak) {
 		/* Just copy small packets */
-		skb = gve_rx_copy(netdev, napi, page_info, len, GVE_RX_PAD);
+		skb = gve_rx_copy(dev, napi, page_info, len, GVE_RX_PAD);
 		if (skb) {
 			u64_stats_update_begin(&rx->statss);
 			rx->rx_copied_pkt++;
@@ -440,25 +439,26 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 			u64_stats_update_end(&rx->statss);
 		}
 	} else {
-		bool can_flip = gve_rx_can_flip_buffers(netdev);
+		u8 can_flip = gve_rx_can_flip_buffers(dev);
 		int recycle = 0;
 
 		if (can_flip) {
 			recycle = gve_rx_can_recycle_buffer(page_info);
 			if (recycle < 0) {
-				gve_schedule_reset(priv);
+				if (!rx->data.raw_addressing)
+					gve_schedule_reset(priv);
 				return false;
 			}
 		}
+
+		page_info->can_flip = can_flip && recycle;
 		if (rx->data.raw_addressing) {
-			skb = gve_rx_raw_addressing(&priv->pdev->dev, netdev,
+			skb = gve_rx_raw_addressing(&priv->pdev->dev, dev,
 						    page_info, len, napi,
-						    data_slot,
-						    can_flip && recycle);
+						    data_slot);
 		} else {
-			skb = gve_rx_qpl(&priv->pdev->dev, netdev, rx,
-					 page_info, len, napi, data_slot,
-					 can_flip && recycle);
+			skb = gve_rx_qpl(&priv->pdev->dev, dev, rx,
+					 page_info, len, napi, data_slot);
 		}
 	}
 
@@ -488,7 +488,6 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 		napi_gro_frags(napi);
 	else
 		napi_gro_receive(napi, skb);
-
 	return true;
 }
 
@@ -521,28 +520,29 @@ static bool gve_rx_refill_buffers(struct gve_priv *priv, struct gve_rx_ring *rx)
 			/* The other half of the page is free because it was
 			 * free when we processed the descriptor. Flip to it.
 			 */
-			struct gve_rx_data_slot *data_slot =
+			union gve_rx_data_slot *data_slot =
 						&rx->data.data_ring[idx];
 
-			gve_rx_flip_buffer(page_info, data_slot);
-			page_info->can_flip = false;
+			gve_rx_flip_buff(page_info, &data_slot->addr);
+			page_info->can_flip = 0;
 		} else {
 			/* It is possible that the networking stack has already
 			 * finished processing all outstanding packets in the buffer
 			 * and it can be reused.
-			 * Flipping is unceccessary here - if the networking stack still
+			 * Flipping is unnecessary here - if the networking stack still
 			 * owns half the page it is impossible to tell which half. Either
 			 * the whole page is free or it needs to be replaced.
 			 */
 			int recycle = gve_rx_can_recycle_buffer(page_info);
 
 			if (recycle < 0) {
-				gve_schedule_reset(priv);
+				if (!rx->data.raw_addressing)
+					gve_schedule_reset(priv);
 				return false;
 			}
 			if (!recycle) {
 				/* We can't reuse the buffer - alloc a new one*/
-				struct gve_rx_data_slot *data_slot =
+				union gve_rx_data_slot *data_slot =
 						&rx->data.data_ring[idx];
 				struct device *dev = &priv->pdev->dev;
 
@@ -574,6 +574,7 @@ static int gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 	while ((GVE_SEQNO(desc->flags_seq) == rx->desc.seqno) &&
 	       work_done < budget) {
 		bool dropped;
+
 		netif_info(priv, rx_status, priv->dev,
 			   "[%d] idx=%d desc=%p desc->flags_seq=0x%x\n",
 			   rx->q_num, idx, desc, desc->flags_seq);
@@ -597,29 +598,38 @@ static int gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 		work_done++;
 	}
 
-	if (!work_done)
+	if (!work_done && rx->fill_cnt - cnt > rx->db_threshold)
 		return 0;
 
-	u64_stats_update_begin(&rx->statss);
-	rx->rpackets += packets;
-	rx->rbytes += bytes;
-	u64_stats_update_end(&rx->statss);
-	rx->cnt = cnt;
+	if (work_done) {
+		u64_stats_update_begin(&rx->statss);
+		rx->rpackets += packets;
+		rx->rbytes += bytes;
+		u64_stats_update_end(&rx->statss);
+		rx->cnt = cnt;
+	}
+
 	/* restock ring slots */
 	if (!rx->data.raw_addressing) {
 		/* In QPL mode buffs are refilled as the desc are processed */
 		rx->fill_cnt += work_done;
-		gve_rx_write_doorbell(priv, rx);
 	} else if (rx->fill_cnt - cnt <= rx->db_threshold) {
 		/* In raw addressing mode buffs are only refilled if the avail
 		 * falls below a threshold.
 		 */
-		if(!gve_rx_refill_buffers(priv, rx))
+		if (!gve_rx_refill_buffers(priv, rx))
 			return false;
-		/* restock desc ring slots */
-		gve_rx_write_doorbell(priv, rx);
+
+		/* If we were not able to completely refill buffers, we'll want
+		 * to schedule this queue for work again to refill buffers.
+		 */
+		if (rx->fill_cnt - cnt <= rx->db_threshold) {
+			gve_rx_write_doorbell(priv, rx);
+			return budget;
+		}
 	}
 
+	gve_rx_write_doorbell(priv, rx);
 	return work_done;
 }
 

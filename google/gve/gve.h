@@ -51,7 +51,7 @@ struct gve_rx_slot_page_info {
 	void *page_address;
 	u32 page_offset; /* offset to write to in page */
 	int pagecnt_bias; /* expected pagecnt if only the driver has a ref */
-	bool can_flip; /* page can be flipped and reused */
+	u8 can_flip; /* page can be flipped and reused */
 };
 
 /* A list of pages registered with the device during setup and used by a queue
@@ -66,7 +66,7 @@ struct gve_queue_page_list {
 
 /* Each slot in the data ring has a 1:1 mapping to a slot in the desc ring */
 struct gve_rx_data_queue {
-	struct gve_rx_data_slot *data_ring; /* read by NIC */
+	union gve_rx_data_slot *data_ring; /* read by NIC */
 	dma_addr_t data_bus; /* dma mapping of the slots */
 	struct gve_rx_slot_page_info *page_info; /* page info of the buffers */
 	struct gve_queue_page_list *qpl; /* qpl assigned to this queue */
