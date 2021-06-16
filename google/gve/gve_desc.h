@@ -80,7 +80,8 @@ static_assert(sizeof(struct gve_rx_desc) == 64);
  * offset into the registered segment (an ordered list of pages) where the
  * buffer is.
  */
-struct gve_rx_data_slot {
+union gve_rx_data_slot {
+	__be64 qpl_offset;
 	__be64 addr;
 };
 
