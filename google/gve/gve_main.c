@@ -735,8 +735,10 @@ static int gve_alloc_qpls(struct gve_priv *priv)
 				     sizeof(unsigned long) * BITS_PER_BYTE;
 	priv->qpl_cfg.qpl_id_map = kvzalloc(BITS_TO_LONGS(num_qpls) *
 					    sizeof(unsigned long), GFP_KERNEL);
-	if (!priv->qpl_cfg.qpl_id_map)
+	if (!priv->qpl_cfg.qpl_id_map) {
+		err = -ENOMEM;
 		goto free_qpls;
+	}
 
 	return 0;
 
@@ -1110,7 +1112,7 @@ void gve_handle_report_stats(struct gve_priv *priv)
 	}
 }
 
-void gve_handle_link_status(struct gve_priv *priv, bool link_status)
+static void gve_handle_link_status(struct gve_priv *priv, bool link_status)
 {
 	if (!gve_get_napi_enabled(priv))
 		return;
@@ -1172,7 +1174,7 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 		priv->dev->max_mtu = PAGE_SIZE;
 		err = gve_adminq_set_mtu(priv, priv->dev->mtu);
 		if (err) {
-		        dev_err(&priv->pdev->dev, "Could not set mtu");
+			dev_err(&priv->pdev->dev, "Could not set mtu");
 			goto err;
 		}
 	}
@@ -1432,7 +1434,6 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	dev_info(&pdev->dev, "GVE version %s\n", gve_version_str);
 	gve_clear_probe_in_progress(priv);
 	queue_work(priv->gve_wq, &priv->service_task);
-
 	return 0;
 
 abort_with_wq:
