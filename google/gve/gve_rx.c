@@ -68,6 +68,28 @@ static void gve_setup_rx_buffer(struct gve_rx_slot_page_info *page_info,
 	page_info->pagecnt_bias = INT_MAX;
 }
 
+static int gve_rx_alloc_buffer(struct gve_priv *priv, struct device *dev,
+			       struct gve_rx_slot_page_info *page_info,
+			       struct gve_rx_data_slot *data_slot,
+			       struct gve_rx_ring *rx)
+{
+	struct page *page;
+	dma_addr_t dma;
+	int err;
+
+	err = gve_alloc_page(priv, dev, &page, &dma, DMA_FROM_DEVICE,
+			     GFP_ATOMIC);
+	if (err) {
+		u64_stats_update_begin(&rx->statss);
+		rx->rx_buf_alloc_fail++;
+		u64_stats_update_end(&rx->statss);
+		return err;
+	}
+
+	gve_setup_rx_buffer(page_info, data_slot, dma, page);
+	return 0;
+}
+
 static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 {
 	struct gve_priv *priv = rx->gve;
@@ -265,28 +287,6 @@ static struct sk_buff *gve_rx_add_frags(struct napi_struct *napi,
 			GVE_RX_PAD, len, PAGE_SIZE / 2);
 
 	return skb;
-}
-
-static int gve_rx_alloc_buffer(struct gve_priv *priv, struct device *dev,
-			       struct gve_rx_slot_page_info *page_info,
-			       struct gve_rx_data_slot *data_slot,
-			       struct gve_rx_ring *rx)
-{
-	struct page *page;
-	dma_addr_t dma;
-	int err;
-
-	err = gve_alloc_page(priv, dev, &page, &dma, DMA_FROM_DEVICE,
-			     GFP_ATOMIC);
-	if (err) {
-		u64_stats_update_begin(&rx->statss);
-		rx->rx_buf_alloc_fail++;
-		u64_stats_update_end(&rx->statss);
-		return err;
-	}
-
-	gve_setup_rx_buffer(page_info, data_slot, dma, page);
-	return 0;
 }
 
 static void gve_rx_flip_buffer(struct gve_rx_slot_page_info *page_info,
