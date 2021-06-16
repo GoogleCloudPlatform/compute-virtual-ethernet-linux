@@ -509,13 +509,14 @@ bool gve_rx_work_pending(struct gve_rx_ring *rx)
 
 static bool gve_rx_refill_buffers(struct gve_priv *priv, struct gve_rx_ring *rx)
 {
+	int refill_target = rx->mask + 1;
 	u32 fill_cnt = rx->fill_cnt;
 
-	while ((fill_cnt & rx->mask) != (rx->cnt & rx->mask)) {
+	while (fill_cnt - rx->cnt < refill_target) {
+		struct gve_rx_slot_page_info *page_info;
 		u32 idx = fill_cnt & rx->mask;
-		struct gve_rx_slot_page_info *page_info =
-						&rx->data.page_info[idx];
 
+		page_info = &rx->data.page_info[idx];
 		if (page_info->can_flip) {
 			/* The other half of the page is free because it was
 			 * free when we processed the descriptor. Flip to it.
