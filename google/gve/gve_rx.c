@@ -602,7 +602,6 @@ static int gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 	if (!rx->data.raw_addressing) {
 		/* In QPL mode buffs are refilled as the desc are processed */
 		rx->fill_cnt += work_done;
-		dma_wmb();/* Ensure descs are visible before ringing doorbell */
 		gve_rx_write_doorbell(priv, rx);
 	} else if (rx->fill_cnt - cnt <= rx->db_threshold) {
 		/* In raw addressing mode buffs are only refilled if the avail
@@ -611,7 +610,6 @@ static int gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 		if(!gve_rx_refill_buffers(priv, rx))
 			return false;
 		/* restock desc ring slots */
-		dma_wmb();/* Ensure descs are visible before ringing doorbell */
 		gve_rx_write_doorbell(priv, rx);
 	}
 
