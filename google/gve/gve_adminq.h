@@ -90,13 +90,11 @@ static_assert(sizeof(struct gve_device_option) == 8);
 struct gve_device_option_gqi_rda {
 	__be32 supported_features_mask;
 };
-
 static_assert(sizeof(struct gve_device_option_gqi_rda) == 4);
 
 struct gve_device_option_gqi_qpl {
 	__be32 supported_features_mask;
 };
-
 static_assert(sizeof(struct gve_device_option_gqi_qpl) == 4);
 
 struct gve_device_option_modify_ring {
