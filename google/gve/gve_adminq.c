@@ -617,32 +617,6 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	err = gve_adminq_execute_cmd(priv, &cmd);
 	if (err)
 		goto free_device_descriptor;
-	err = gve_set_desc_cnt(priv, descriptor);
-	if (err)
-		goto free_device_descriptor;
-	priv->max_registered_pages =
-				be64_to_cpu(descriptor->max_registered_pages);
-	mtu = be16_to_cpu(descriptor->mtu);
-	if (mtu < ETH_MIN_MTU) {
-		dev_err(&priv->pdev->dev, "MTU %d below minimum MTU\n", mtu);
-		err = -EINVAL;
-		goto free_device_descriptor;
-	}
-	priv->dev->max_mtu = mtu;
-	priv->num_event_counters = be16_to_cpu(descriptor->counters);
-	ether_addr_copy(priv->dev->dev_addr, descriptor->mac);
-	mac = descriptor->mac;
-	dev_info(&priv->pdev->dev, "MAC addr: %pM\n", mac);
-	priv->tx_pages_per_qpl = be16_to_cpu(descriptor->tx_pages_per_qpl);
-	priv->rx_data_slot_cnt = be16_to_cpu(descriptor->rx_pages_per_qpl);
-	if (priv->rx_data_slot_cnt < priv->rx_desc_cnt) {
-		dev_err(&priv->pdev->dev, "rx_data_slot_cnt cannot be smaller than rx_desc_cnt, setting rx_desc_cnt down to %d.\n",
-			priv->rx_data_slot_cnt);
-		priv->rx_desc_cnt = priv->rx_data_slot_cnt;
-	}
-	priv->default_num_queues = be16_to_cpu(descriptor->default_num_queues);
-	dev_opt = (struct gve_device_option *)((void *)descriptor +
-							sizeof(*descriptor));
 
 	err = gve_process_device_options(priv, descriptor, &dev_op_gqi_rda,
 					 &dev_op_gqi_qpl, &dev_op_modify_ring);
@@ -669,6 +643,30 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 		dev_info(&priv->pdev->dev,
 			 "Driver is running with GQI QPL queue format.\n");
 	}
+	err = gve_set_desc_cnt(priv, descriptor);
+	if (err)
+		goto free_device_descriptor;
+	priv->max_registered_pages =
+				be64_to_cpu(descriptor->max_registered_pages);
+	mtu = be16_to_cpu(descriptor->mtu);
+	if (mtu < ETH_MIN_MTU) {
+		dev_err(&priv->pdev->dev, "MTU %d below minimum MTU\n", mtu);
+		err = -EINVAL;
+		goto free_device_descriptor;
+	}
+	priv->dev->max_mtu = mtu;
+	priv->num_event_counters = be16_to_cpu(descriptor->counters);
+	ether_addr_copy(priv->dev->dev_addr, descriptor->mac);
+	mac = descriptor->mac;
+	dev_info(&priv->pdev->dev, "MAC addr: %pM\n", mac);
+	priv->tx_pages_per_qpl = be16_to_cpu(descriptor->tx_pages_per_qpl);
+	priv->rx_data_slot_cnt = be16_to_cpu(descriptor->rx_pages_per_qpl);
+	if (priv->rx_data_slot_cnt < priv->rx_desc_cnt) {
+		dev_err(&priv->pdev->dev, "rx_data_slot_cnt cannot be smaller than rx_desc_cnt, setting rx_desc_cnt down to %d.\n",
+			priv->rx_data_slot_cnt);
+		priv->rx_desc_cnt = priv->rx_data_slot_cnt;
+	}
+	priv->default_num_queues = be16_to_cpu(descriptor->default_num_queues);
 free_device_descriptor:
 	dma_free_coherent(&priv->pdev->dev, PAGE_SIZE, descriptor,
 			  descriptor_bus);
