@@ -57,13 +57,6 @@ void gve_rx_add_to_block(struct gve_priv *priv, int queue_idx)
 	rx->ntfy_id = ntfy_idx;
 }
 
-void gve_rx_write_doorbell(struct gve_priv *priv, struct gve_rx_ring *rx)
-{
-	u32 db_idx = be32_to_cpu(rx->q_resources->db_index);
-
-	iowrite32be(rx->fill_cnt, &priv->db_bar2[db_idx]);
-}
-
 struct sk_buff *gve_rx_copy(struct net_device *dev, struct napi_struct *napi,
 			    struct gve_rx_slot_page_info *page_info, u16 len,
 			    u16 pad)
