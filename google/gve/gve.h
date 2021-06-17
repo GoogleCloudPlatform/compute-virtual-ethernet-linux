@@ -479,22 +479,20 @@ static inline u32 gve_rx_idx_to_ntfy(struct gve_priv *priv, u32 queue_idx)
  */
 static inline u32 gve_num_tx_qpls(struct gve_priv *priv)
 {
-	if (priv->queue_format != GVE_GQI_QPL_FORMAT) {
+	if (priv->queue_format != GVE_GQI_QPL_FORMAT)
 		return 0;
-	} else {
-		return priv->tx_cfg.num_queues;
-	}
+
+	return priv->tx_cfg.num_queues;
 }
 
 /* Returns the number of rx queue page lists
  */
 static inline u32 gve_num_rx_qpls(struct gve_priv *priv)
 {
-	if (priv->queue_format != GVE_GQI_QPL_FORMAT) {
+	if (priv->queue_format != GVE_GQI_QPL_FORMAT)
 		return 0;
-	} else {
-		return priv->rx_cfg.num_queues;
-	}
+
+	return priv->rx_cfg.num_queues;
 }
 
 /* Returns a pointer to the next available tx qpl in the list of qpls
