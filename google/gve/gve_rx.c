@@ -13,8 +13,8 @@ static void gve_rx_free_buffer(struct device *dev,
 			       struct gve_rx_slot_page_info *page_info,
 			       union gve_rx_data_slot *data_slot)
 {
-	dma_addr_t dma = (dma_addr_t)(be64_to_cpu(data_slot->addr) -
-				      page_info->page_offset);
+	dma_addr_t dma = (dma_addr_t)(be64_to_cpu(data_slot->addr) &
+				      GVE_DATA_SLOT_ADDR_PAGE_MASK);
 
 	page_ref_sub(page_info->page, page_info->pagecnt_bias - 1);
 	gve_free_page(dev, page_info->page, dma, DMA_FROM_DEVICE);
@@ -424,8 +424,8 @@ static bool gve_rx(struct gve_rx_ring *rx, struct gve_rx_desc *rx_desc,
 	page_info = &rx->data.page_info[idx];
 	data_slot = &rx->data.data_ring[idx];
 	page_bus = (rx->data.raw_addressing) ?
-                   be64_to_cpu(data_slot->addr) - page_info->page_offset:
-		   rx->data.qpl->page_buses[idx];
+			be64_to_cpu(data_slot->addr) & GVE_DATA_SLOT_ADDR_PAGE_MASK :
+			rx->data.qpl->page_buses[idx];
 	dma_sync_single_for_cpu(&priv->pdev->dev, page_bus,
 				PAGE_SIZE, DMA_FROM_DEVICE);
 
