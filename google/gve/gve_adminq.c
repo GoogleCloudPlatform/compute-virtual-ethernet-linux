@@ -67,9 +67,9 @@ void gve_parse_device_option(struct gve_priv *priv,
 		if (option_length < sizeof(**dev_op_gqi_rda) ||
 		    req_feat_mask != GVE_DEV_OPT_REQ_FEAT_MASK_GQI_RDA) {
 			dev_warn(&priv->pdev->dev, GVE_DEVICE_OPTION_ERROR_FMT,
-				"GQI RDA", (int)sizeof(**dev_op_gqi_rda),
-				GVE_DEV_OPT_REQ_FEAT_MASK_GQI_RDA,
-				option_length, req_feat_mask);
+				 "GQI RDA", (int)sizeof(**dev_op_gqi_rda),
+				 GVE_DEV_OPT_REQ_FEAT_MASK_GQI_RDA,
+				 option_length, req_feat_mask);
 			break;
 		}
 
@@ -83,9 +83,9 @@ void gve_parse_device_option(struct gve_priv *priv,
 		if (option_length < sizeof(**dev_op_gqi_qpl) ||
 		    req_feat_mask != GVE_DEV_OPT_REQ_FEAT_MASK_GQI_QPL) {
 			dev_warn(&priv->pdev->dev, GVE_DEVICE_OPTION_ERROR_FMT,
-				"GQI QPL", (int)sizeof(**dev_op_gqi_qpl),
-				GVE_DEV_OPT_REQ_FEAT_MASK_GQI_QPL,
-				option_length, req_feat_mask);
+				 "GQI QPL", (int)sizeof(**dev_op_gqi_qpl),
+				 GVE_DEV_OPT_REQ_FEAT_MASK_GQI_QPL,
+				 option_length, req_feat_mask);
 			break;
 		}
 
