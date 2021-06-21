@@ -20,7 +20,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		"1.2.2"
+#define GVE_VERSION		"1.2.3"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 const char gve_version_str[] = GVE_VERSION;
@@ -180,7 +180,8 @@ static int gve_napi_poll(struct napi_struct *napi, int budget)
 		 * Ensure unmask synchronizes with checking for work.
 		 */
 		mb();
-		if (block->tx) reschedule |= gve_tx_poll(block, -1);
+		if (block->tx)
+			reschedule |= gve_tx_clean_pending(priv, block->tx);
 		if (block->rx) reschedule |= gve_rx_work_pending(block->rx);
 
 		if (reschedule && napi_reschedule(napi))
