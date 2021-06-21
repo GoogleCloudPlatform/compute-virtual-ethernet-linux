@@ -176,16 +176,25 @@ static void gve_tx_free_ring(struct gve_priv *priv, int idx)
 
 static void gve_tx_add_to_block(struct gve_priv *priv, int queue_idx)
 {
-	unsigned int active_cpus = min_t(int, priv->num_ntfy_blks / 2,
-					 num_online_cpus());
 	int ntfy_idx = gve_tx_idx_to_ntfy(priv, queue_idx);
 	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 	struct gve_tx_ring *tx = &priv->tx[queue_idx];
+	int num_cpus, group_size, cpu;
+	cpumask_var_t mask;
 
 	block->tx = tx;
 	tx->ntfy_id = ntfy_idx;
-	netif_set_xps_queue(priv->dev, get_cpu_mask(ntfy_idx % active_cpus),
-			    queue_idx);
+
+	if (!zalloc_cpumask_var(&mask, GFP_KERNEL)) {
+		netdev_warn(priv->dev, "Failed to zalloc cpumask!");
+		return;
+	}
+	num_cpus = num_online_cpus();
+	group_size = priv->tx_cfg.num_queues;
+	for (cpu = queue_idx; cpu < num_cpus; cpu += group_size)
+		cpumask_set_cpu(cpu, mask);
+	netif_set_xps_queue(priv->dev, mask, queue_idx);
+	free_cpumask_var(mask);
 }
 
 static int gve_tx_alloc_ring(struct gve_priv *priv, int idx)
