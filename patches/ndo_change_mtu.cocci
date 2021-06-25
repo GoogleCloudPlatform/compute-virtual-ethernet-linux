@@ -65,14 +65,14 @@ priv->dev->max_mtu = max;
 +#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0) */
 
 @ swap2 @
-expression max;
+expression max, e1;
 struct gve_priv *priv;
 @@
 
 +#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0))
-+if (priv->max_mtu > max)
++if (e1 && priv->max_mtu > max)
 +#else /* LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0) */
-if (priv->dev->max_mtu > max)
+if (e1 && priv->dev->max_mtu > max)
 +#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0) */
 {
 ...
@@ -111,3 +111,25 @@ expression max, e1, e2, ret;
 if (dev->max_mtu + e1 + e2 > max)
 +#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0) */
 return ret;
+
+@ swap6 @
+struct net_device *dev;
+expression max;
+@@
+
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0))
++return ((struct gve_priv *)netdev_priv(dev))->max_mtu <= max;
++#else /* LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0) */
+return dev->max_mtu <= max;
++#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0) */
+
+@ swap7 @
+struct gve_priv *priv;
+expression e1;
+@@
+
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0))
++e1 = priv->max_mtu;
++#else /* LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0) */
+e1 = priv->dev->max_mtu;
++#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0) */
