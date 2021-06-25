@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: (GPL-2.0 OR MIT)
 /* Google virtual Ethernet (gve) driver
  *
- * Copyright (C) 2015-2019 Google, Inc.
+ * Copyright (C) 2015-2021 Google, Inc.
  */
 
-#include "gve_utils.h"
-
+#include "gve.h"
 #include "gve_adminq.h"
+#include "gve_utils.h"
 
 void gve_tx_remove_from_block(struct gve_priv *priv, int queue_idx)
 {
