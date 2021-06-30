@@ -344,6 +344,7 @@ struct gve_tx_ring {
 		struct {
 			/* NIC tail pointer */
 			__be32 last_nic_done;
+			spinlock_t clean_lock;
 		};
 
 		/* DQO fields. */
@@ -378,8 +379,6 @@ struct gve_tx_ring {
 			struct gve_index_list timed_out_completions;
 		} dqo_compl;
 	} ____cacheline_aligned;
-
-	spinlock_t clean_lock ____cacheline_aligned; /* for TX clean */
 	u64 pkt_done; /* free-running - total packets completed */
 	u64 bytes_done; /* free-running - total bytes completed */
 	u64 dropped_pkt; /* free-running - total packets dropped */
