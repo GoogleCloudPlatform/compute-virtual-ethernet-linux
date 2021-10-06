@@ -120,7 +120,7 @@ static int gve_prefill_rx_pages(struct gve_rx_ring *rx)
 	if (!rx->data.raw_addressing) {
 		rx->data.qpl = gve_assign_rx_qpl(priv);
 		if (!rx->data.qpl) {
-			kfree(rx->data.page_info);
+			kvfree(rx->data.page_info);
 			rx->data.page_info = NULL;
 			return -ENOMEM;
 		}
