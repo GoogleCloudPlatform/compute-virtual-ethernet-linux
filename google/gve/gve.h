@@ -341,8 +341,7 @@ struct gve_tx_ring {
 	union {
 		/* GQI fields */
 		struct {
-			/* NIC tail pointer */
-			__be32 last_nic_done;
+			/* Spinlock for when cleanup in progress */
 			spinlock_t clean_lock;
 		};
 
@@ -838,7 +837,7 @@ bool gve_tx_poll(struct gve_notify_block *block, int budget);
 int gve_tx_alloc_rings(struct gve_priv *priv);
 void gve_tx_free_rings_gqi(struct gve_priv *priv);
 u32 gve_tx_load_event_counter(struct gve_priv *priv,
-				 struct gve_tx_ring *tx);
+			      struct gve_tx_ring *tx);
 bool gve_tx_clean_pending(struct gve_priv *priv, struct gve_tx_ring *tx);
 /* rx handling */
 void gve_rx_write_doorbell(struct gve_priv *priv, struct gve_rx_ring *rx);
