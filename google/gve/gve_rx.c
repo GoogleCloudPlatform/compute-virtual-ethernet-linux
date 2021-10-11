@@ -306,18 +306,10 @@ static void gve_rx_flip_buff(struct gve_rx_slot_page_info *page_info, __be64 *sl
 	*(slot_addr) ^= offset;
 }
 
-static bool gve_rx_can_flip_buffers(struct net_device *netdev) {
-#if PAGE_SIZE >= 4096
-	/* We can't flip a buffer if we can't fit a packet
-	 * into half a page.
-	 */
-	if (netdev->max_mtu + GVE_RX_PAD + ETH_HLEN  > PAGE_SIZE / 2)
-		return false;
-	return true;
-#else
-	/* PAGE_SIZE < 4096 - don't try to reuse */
-	return false;
-#endif
+static bool gve_rx_can_flip_buffers(struct net_device *netdev)
+{
+	return PAGE_SIZE >= 4096
+		? netdev->mtu + GVE_RX_PAD + ETH_HLEN <= PAGE_SIZE / 2 : false;
 }
 
 static int gve_rx_can_recycle_buffer(struct gve_rx_slot_page_info *page_info)
