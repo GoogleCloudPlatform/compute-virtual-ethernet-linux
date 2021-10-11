@@ -360,7 +360,6 @@ static int gve_maybe_stop_tx(struct gve_priv *priv, struct gve_tx_ring *tx,
 		if (likely(gve_can_tx(tx, bytes_required)))
 			ret = 0;
 	}
-
 	if (ret) {
 		/* No space, so stop the queue */
 		tx->stop_queue++;
@@ -713,7 +712,10 @@ bool gve_tx_poll(struct gve_notify_block *block, int budget)
 	to_do = min_t(u32, (nic_done - tx->done), budget);
 	gve_clean_tx_done(priv, tx, to_do, true);
 	spin_unlock(&tx->clean_lock);
+<<<<<<< HEAD
 
+=======
+>>>>>>> 2827f6a (gve: Do lazy cleanup in TX path)
 	/* If we still have work we want to repoll */
 	return nic_done != tx->done;
 }
