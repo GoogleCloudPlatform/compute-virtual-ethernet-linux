@@ -712,10 +712,6 @@ bool gve_tx_poll(struct gve_notify_block *block, int budget)
 	to_do = min_t(u32, (nic_done - tx->done), budget);
 	gve_clean_tx_done(priv, tx, to_do, true);
 	spin_unlock(&tx->clean_lock);
-<<<<<<< HEAD
-
-=======
->>>>>>> 2827f6a (gve: Do lazy cleanup in TX path)
 	/* If we still have work we want to repoll */
 	return nic_done != tx->done;
 }
