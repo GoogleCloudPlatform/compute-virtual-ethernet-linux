@@ -576,9 +576,6 @@ struct gve_priv {
 	/* Gvnic device link speed from hypervisor. */
 	u64 link_speed;
 
-        /* Gvnic device's dma mask, set during probe. */
-        u8 dma_mask;
-
 	bool up_before_suspend; /* True if dev was up before suspend */
 
 	struct gve_options_dqo_rda options_dqo_rda;
