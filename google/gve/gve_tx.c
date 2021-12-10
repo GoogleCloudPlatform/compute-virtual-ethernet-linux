@@ -306,14 +306,14 @@ static inline int gve_skb_fifo_bytes_required(struct gve_tx_ring *tx,
 #define MAX_TX_DESC_NEEDED	(MAX_SKB_FRAGS + 4)
 static void gve_tx_unmap_buf(struct device *dev, struct gve_tx_buffer_state *info)
 {
-        if (info->skb) {
+	if (info->skb) {
 		dma_unmap_single(dev, dma_unmap_addr(info, dma),
 				 dma_unmap_len(info, len),
 				 DMA_TO_DEVICE);
 		dma_unmap_len_set(info, len, 0);
 	} else {
 		dma_unmap_page(dev, dma_unmap_addr(info, dma),
-		       dma_unmap_len(info, len),
+			       dma_unmap_len(info, len),
 			       DMA_TO_DEVICE);
 		dma_unmap_len_set(info, len, 0);
 	}
@@ -633,20 +633,17 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 	if (nsegs) {
 		netdev_tx_sent_queue(tx->netdev_txq, skb->len);
 		skb_tx_timestamp(skb);
-
-		/* Give packets to NIC. Even if this packet failed to send the
-		 * doorbell might need to be rung because of xmit_more.
-		 */
 		tx->req += nsegs;
 	} else {
-		/* Failed to transmit the packet, drop it */
 		dev_kfree_skb_any(skb);
-		tx->dropped_pkt++;
 	}
 
 	if (!netif_xmit_stopped(tx->netdev_txq) && netdev_xmit_more())
 		return NETDEV_TX_OK;
 
+	/* Give packets to NIC. Even if this packet failed to send the doorbell
+	 * might need to be rung because of xmit_more.
+	 */
 	gve_tx_put_doorbell(priv, tx->q_resources, tx->req);
 	return NETDEV_TX_OK;
 }
@@ -673,7 +670,7 @@ static int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
 
 		/* Unmap the buffer */
 		if (tx->raw_addressing)
-			gve_tx_unmap_buf(tx->dev, &tx->info[idx]);
+			gve_tx_unmap_buf(tx->dev, info);
 		tx->done++;
 		/* Mark as free */
 		if (skb) {

@@ -259,7 +259,7 @@ void gve_tx_free_rings_dqo(struct gve_priv *priv)
 }
 
 /* Returns the number of slots available in the ring */
-static inline u32 num_avail_tx_slots(const struct gve_tx_ring *tx)
+static u32 num_avail_tx_slots(const struct gve_tx_ring *tx)
 {
 	u32 num_used = (tx->dqo_tx.tail - tx->dqo_tx.head) & tx->mask;
 
@@ -881,9 +881,9 @@ static void remove_miss_completions(struct gve_priv *priv,
 		dev_kfree_skb_any(pending_packet->skb);
 		pending_packet->skb = NULL;
 		tx->dropped_pkt++;
-		net_err_ratelimited("%s: No reinjection completion was received for: %ld.\n",
+		net_err_ratelimited("%s: No reinjection completion was received for: %d.\n",
 				    priv->dev->name,
-				    (pending_packet - tx->dqo.pending_packets));
+				    (int)(pending_packet - tx->dqo.pending_packets));
 
 		pending_packet->state = GVE_PACKET_STATE_TIMED_OUT_COMPL;
 		pending_packet->timeout_jiffies =
