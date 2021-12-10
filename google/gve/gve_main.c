@@ -770,11 +770,6 @@ int gve_alloc_page(struct gve_priv *priv, struct device *dev,
 		   struct page **page, dma_addr_t *dma,
 		   enum dma_data_direction dir, gfp_t gfp_flags)
 {
-	if (priv->dma_mask == 24)
-		gfp_flags |= GFP_DMA;
-	else if (priv->dma_mask == 32)
-		gfp_flags |= GFP_DMA32;
-
         *page = alloc_page(gfp_flags);
 	if (!*page) {
 		priv->page_alloc_fail++;
@@ -1542,7 +1537,6 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	__be32 __iomem *db_bar;
 	struct gve_registers __iomem *reg_bar;
 	struct gve_priv *priv;
-	u8 dma_mask;
 	int err;
 
 	err = pci_enable_device(pdev);
@@ -1568,10 +1562,6 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto abort_with_reg_bar;
 	}
 
-	dma_mask = readb(&reg_bar->dma_mask);
-	// Default to 64 if the register isn't set
-	if (!dma_mask)
-		dma_mask = 64;
 	gve_write_version(&reg_bar->driver_version);
 	/* Get max queues to alloc etherdev */
 	max_tx_queues = ioread32be(&reg_bar->max_tx_queues);
@@ -1629,7 +1619,6 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	priv->service_task_flags = 0x0;
 	priv->state_flags = 0x0;
 	priv->ethtool_flags = 0x0;
-        priv->dma_mask = dma_mask;
 
 	gve_set_probe_in_progress(priv);
 	priv->gve_wq = alloc_ordered_workqueue("gve", 0);
