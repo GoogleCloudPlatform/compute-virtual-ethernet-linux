@@ -303,14 +303,14 @@ static inline int gve_skb_fifo_bytes_required(struct gve_tx_ring *tx,
 #define MAX_TX_DESC_NEEDED	(MAX_SKB_FRAGS + 3)
 static void gve_tx_unmap_buf(struct device *dev, struct gve_tx_buffer_state *info)
 {
-        if (info->skb) {
+	if (info->skb) {
 		dma_unmap_single(dev, dma_unmap_addr(info, dma),
 				 dma_unmap_len(info, len),
 				 DMA_TO_DEVICE);
 		dma_unmap_len_set(info, len, 0);
 	} else {
 		dma_unmap_page(dev, dma_unmap_addr(info, dma),
-		       dma_unmap_len(info, len),
+			       dma_unmap_len(info, len),
 			       DMA_TO_DEVICE);
 		dma_unmap_len_set(info, len, 0);
 	}
@@ -492,12 +492,11 @@ static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 				  struct sk_buff *skb)
 {
 	const struct skb_shared_info *shinfo = skb_shinfo(skb);
-	int hlen, payload_nfrags, l4_hdr_offset, seg_idx_bias;
+	int hlen, payload_nfrags, l4_hdr_offset;
 	union gve_tx_desc *pkt_desc, *seg_desc;
 	struct gve_tx_buffer_state *info;
 	bool is_gso = skb_is_gso(skb);
 	u32 idx = tx->req & tx->mask;
-	int last_mapped = 0;
 	u64 addr;
 	u32 len;
 	int i;
@@ -519,7 +518,7 @@ static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 	addr = dma_map_single(tx->dev, skb->data, len, DMA_TO_DEVICE);
 	if (unlikely(dma_mapping_error(tx->dev, addr))) {
 		tx->dma_mapping_error++;
-		return 0;
+		goto drop;
 	}
 	dma_unmap_len_set(info, len, len);
 	dma_unmap_addr_set(info, dma, addr);
@@ -535,24 +534,23 @@ static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 
 		len -= hlen;
 		addr += hlen;
-		seg_desc = &tx->desc[(tx->req + 1) & tx->mask];
-		seg_idx_bias = 2;
+		idx = (tx->req + 1) & tx->mask;
+		seg_desc = &tx->desc[idx];
 		gve_tx_fill_seg_desc(seg_desc, skb, is_gso, len, addr);
 	} else {
-		seg_idx_bias = 1;
 		gve_tx_fill_pkt_desc(pkt_desc, skb, is_gso, l4_hdr_offset,
 				     1 + payload_nfrags, hlen, addr);
 	}
 
-	for (i = 0; i < payload_nfrags - (seg_idx_bias - 1); i++) {
-		skb_frag_t frag	= shinfo->frags[i];
+	for (i = 0; i < shinfo->nr_frags; i++) {
+		const skb_frag_t *frag = &shinfo->frags[i];
 
-		idx = (tx->req + i + seg_idx_bias) & tx->mask;
+		idx = (idx + 1) & tx->mask;
 		seg_desc = &tx->desc[idx];
-		len = skb_frag_size(&frag);
-		addr = skb_frag_dma_map(tx->dev, &frag, 0, len, DMA_TO_DEVICE);
+		len = skb_frag_size(frag);
+		addr = skb_frag_dma_map(tx->dev, frag, 0, len, DMA_TO_DEVICE);
 		if (unlikely(dma_mapping_error(tx->dev, addr))) {
-			priv->dma_mapping_error++;
+			tx->dma_mapping_error++;
 			goto unmap_drop;
 		}
 		tx->info[idx].skb = NULL;
@@ -565,12 +563,13 @@ static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 	return 1 + payload_nfrags;
 
 unmap_drop:
-	i--;
-	for (last_mapped = i + seg_idx_bias; last_mapped >= 0; last_mapped--) {
-		idx = (tx->req + last_mapped) & tx->mask;
-		gve_tx_unmap_buf(tx->dev, &tx->info[idx]);
+	i += (payload_nfrags == shinfo->nr_frags ? 1 : 2);
+	while (i--) {
+		idx--;
+		gve_tx_unmap_buf(tx->dev, &tx->info[idx & tx->mask]);
 	}
-
+drop:
+	tx->dropped_pkt++;
 	return 0;
 }
 
@@ -601,20 +600,17 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 	if (nsegs) {
 		netdev_tx_sent_queue(tx->netdev_txq, skb->len);
 		skb_tx_timestamp(skb);
-
-		/* Give packets to NIC. Even if this packet failed to send the
-		 * doorbell might need to be rung because of xmit_more.
-		 */
 		tx->req += nsegs;
 	} else {
-		/* Failed to transmit the packet, drop it */
 		dev_kfree_skb_any(skb);
-		tx->dropped_pkt++;
 	}
 
 	if (!netif_xmit_stopped(tx->netdev_txq) && netdev_xmit_more())
 		return NETDEV_TX_OK;
 
+	/* Give packets to NIC. Even if this packet failed to send the doorbell
+	 * might need to be rung because of xmit_more.
+	 */
 	gve_tx_put_doorbell(priv, tx->q_resources, tx->req);
 	return NETDEV_TX_OK;
 }
@@ -641,7 +637,7 @@ static int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
 
 		/* Unmap the buffer */
 		if (tx->raw_addressing)
-			gve_tx_unmap_buf(tx->dev, &tx->info[idx]);
+			gve_tx_unmap_buf(tx->dev, info);
 		tx->done++;
 		/* Mark as free */
 		if (skb) {

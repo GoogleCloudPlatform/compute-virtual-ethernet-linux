@@ -210,7 +210,7 @@ static int gve_napi_poll(struct napi_struct *napi, int budget)
 	if (reschedule)
 		return budget;
 
-	/* Complete processing - don't unmask irq if busy polling is enabled */
+       /* Complete processing - don't unmask irq if busy polling is enabled */
 	if (likely(napi_complete_done(napi, work_done))) {
 		irq_doorbell = gve_irq_doorbell(priv, block);
 		iowrite32be(GVE_IRQ_ACK | GVE_IRQ_EVENT, irq_doorbell);
@@ -729,11 +729,10 @@ static int gve_destroy_rings(struct gve_priv *priv)
 		return err;
 	}
 	netif_dbg(priv, drv, priv->dev, "destroyed rx queues\n");
-
 	return 0;
 }
 
-static inline void gve_rx_free_rings(struct gve_priv *priv)
+static void gve_rx_free_rings(struct gve_priv *priv)
 {
 	if (gve_is_gqi(priv))
 		gve_rx_free_rings_gqi(priv);
@@ -770,7 +769,7 @@ int gve_alloc_page(struct gve_priv *priv, struct device *dev,
 		   struct page **page, dma_addr_t *dma,
 		   enum dma_data_direction dir, gfp_t gfp_flags)
 {
-        *page = alloc_page(gfp_flags);
+	*page = alloc_page(gfp_flags);
 	if (!*page) {
 		priv->page_alloc_fail++;
 		return -ENOMEM;
@@ -1042,8 +1041,8 @@ int gve_adjust_queues(struct gve_priv *priv,
 		 * up again.
 		 */
 		err = gve_close(priv->dev);
-		/* We have already tried to reset in close, just fail at this
-		 * point.
+		/* we have already tried to reset in close,
+		 * just fail at this point
 		 */
 		if (err)
 			return err;
@@ -1171,11 +1170,12 @@ static void gve_tx_timeout(struct net_device *dev, unsigned int txqueue)
 		iowrite32be(GVE_IRQ_MASK, gve_irq_doorbell(priv, block));
 		napi_schedule_irqoff(&block->napi);
 		tx->last_kick_msec = current_time;
-	       goto out;
+		goto out;
 	} // Else reset.
 
 reset:
 	gve_schedule_reset(priv);
+
 out:
 	if (tx)
 		tx->queue_timeout++;
@@ -1309,8 +1309,7 @@ void gve_handle_report_stats(struct gve_priv *priv)
 			};
 			stats[stats_idx++] = (struct stats) {
 				.stat_name = cpu_to_be32(TX_TIMEOUT_CNT),
-				.value = cpu_to_be64(
-					priv->tx[idx].queue_timeout),
+				.value = cpu_to_be64(priv->tx[idx].queue_timeout),
 				.queue_id = cpu_to_be32(idx),
 			};
 		}
@@ -1415,7 +1414,6 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 
 	priv->tx_cfg.num_queues = priv->tx_cfg.max_queues;
 	priv->rx_cfg.num_queues = priv->rx_cfg.max_queues;
-
 	if (priv->default_num_queues > 0) {
 		priv->tx_cfg.num_queues = min_t(int, priv->default_num_queues,
 						priv->tx_cfg.num_queues);

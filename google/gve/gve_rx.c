@@ -757,7 +757,7 @@ static int gve_clean_rx_done(struct gve_rx_ring *rx, int budget,
 		 * falls below a threshold.
 		 */
 		if (!gve_rx_refill_buffers(priv, rx))
-			return false;
+			return 0;
 
 		/* If we were not able to completely refill buffers, we'll want
 		 * to schedule this queue for work again to refill buffers.
