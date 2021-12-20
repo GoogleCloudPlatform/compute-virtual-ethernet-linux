@@ -1549,7 +1549,7 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	err = pci_enable_device(pdev);
 	if (err)
-		return -ENXIO;
+		return err;
 
 	err = pci_request_regions(pdev, "gvnic-cfg");
 	if (err)
@@ -1596,6 +1596,7 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	dev = alloc_etherdev_mqs(sizeof(*priv), max_tx_queues, max_rx_queues);
 	if (!dev) {
 		dev_err(&pdev->dev, "could not allocate netdev\n");
+		err = -ENOMEM;
 		goto abort_with_db_bar;
 	}
 	SET_NETDEV_DEV(dev, &pdev->dev);
@@ -1678,7 +1679,7 @@ abort_with_pci_region:
 
 abort_with_enabled:
 	pci_disable_device(pdev);
-	return -ENXIO;
+	return err;
 }
 
 static void gve_remove(struct pci_dev *pdev)
