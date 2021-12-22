@@ -1174,6 +1174,7 @@ static void gve_tx_timeout(struct net_device *dev, unsigned int txqueue)
 
 reset:
 	gve_schedule_reset(priv);
+
 out:
 	if (tx)
 		tx->queue_timeout++;
@@ -1413,7 +1414,6 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 
 	priv->tx_cfg.num_queues = priv->tx_cfg.max_queues;
 	priv->rx_cfg.num_queues = priv->rx_cfg.max_queues;
-
 	if (priv->default_num_queues > 0) {
 		priv->tx_cfg.num_queues = min_t(int, priv->default_num_queues,
 						priv->tx_cfg.num_queues);
@@ -1564,6 +1564,7 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		err = -ENOMEM;
 		goto abort_with_pci_region;
 	}
+
 	db_bar = pci_iomap(pdev, GVE_DOORBELL_BAR, 0);
 	if (!db_bar) {
 		dev_err(&pdev->dev, "Failed to map doorbell bar!\n");
@@ -1681,6 +1682,23 @@ static void gve_remove(struct pci_dev *pdev)
 	pci_disable_device(pdev);
 }
 
+static void gve_shutdown(struct pci_dev *pdev)
+{
+	struct net_device *netdev = pci_get_drvdata(pdev);
+	struct gve_priv *priv = netdev_priv(netdev);
+	bool was_up = netif_carrier_ok(priv->dev);
+
+	rtnl_lock();
+	if (was_up && gve_close(priv->dev)) {
+		/* If the dev was up, attempt to close, if close fails, reset */
+		gve_reset_and_teardown(priv, was_up);
+	} else {
+		/* If the dev wasn't up or close worked, finish tearing down */
+		gve_teardown_priv_resources(priv);
+	}
+	rtnl_unlock();
+}
+
 #ifdef CONFIG_PM
 static int gve_suspend(struct pci_dev *pdev, pm_message_t state)
 {
@@ -1726,9 +1744,10 @@ static struct pci_driver gvnic_driver = {
 	.id_table	= gve_id_table,
 	.probe		= gve_probe,
 	.remove		= gve_remove,
+	.shutdown	= gve_shutdown,
 #ifdef CONFIG_PM
-	.suspend	= gve_suspend,
-	.resume		= gve_resume,
+	.suspend        = gve_suspend,
+	.resume         = gve_resume,
 #endif
 };
 
