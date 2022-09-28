@@ -36,16 +36,16 @@ already be multi-kernel compatible. You can skip down to Compiling the Driver.
 ### Building the multi-kernel compatible driver source
 
 If you downloaded the source from GitHub: To install this driver on anything
-other than the current upstream kernel, you will need to download coccinelle,
-and untar it. It can be found here: http://coccinelle.lip6.fr/download.php
+other than the current upstream kernel, you will need to download Coccinelle,
+and untar it. It can be found here: https://coccinelle.gitlabpages.inria.fr/website/download.html
 
-NOTE: Most distros will include a version of coccinelle in their package manager
+NOTE: Most distros will include a version of Coccinelle in their package manager
 but we require version 1.0.6 or newer, available from the official website.
 
 To build the multi-kernel compatible driver source:
 
 ```bash
-export SPATCH='/path/to/coccinelle/spatch.opt'
+export SPATCH='/path/to/coccinelle/spatch'
 ./build_src.sh --target=oot
 ```
 
@@ -54,7 +54,10 @@ TIP: The spatch path may be omitted if it has been installed on the search path.
 ### Compiling the driver
 
 Building and installing this driver requires that you have the headers installed
-for your current kernel version. Ensure the drivers are installed, then build,
+for your current kernel version. On CentOS, you might have to additionally
+install the `kernel-devel` package.
+
+Ensure the headers are installed, then build,
 install, and load `gve.ko`:
 
 ```bash
