@@ -16,6 +16,12 @@
 #include <generated/utsrelease.h>
 #endif /* UTS_RELEASE */
 
+#ifndef LINUX_VERSION_MAJOR
+#define LINUX_VERSION_MAJOR (((LINUX_VERSION_CODE) >> 16) & 0xff)
+#define LINUX_VERSION_SUBLEVEL (((LINUX_VERSION_CODE) >> 8) & 0xff)
+#define LINUX_VERSION_PATCHLEVEL ((LINUX_VERSION_CODE) & 0xff)
+#endif
+
 #ifndef RHEL_RELEASE_CODE
 #define RHEL_RELEASE_CODE 0
 #endif /* RHEL_RELEASE_CODE */
