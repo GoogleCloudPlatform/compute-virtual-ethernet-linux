@@ -76,7 +76,7 @@ static const char gve_gstrings_adminq_stats[][ETH_GSTRING_LEN] = {
 	"adminq_destroy_tx_queue_cnt", "adminq_destroy_rx_queue_cnt",
 	"adminq_dcfg_device_resources_cnt", "adminq_set_driver_parameter_cnt",
 	"adminq_report_stats_cnt", "adminq_report_link_speed_cnt",
-	"adminq_cfg_flow_rule"
+	"adminq_cfg_flow_rule", "adminq_cfg_rss_cnt"
 };
 
 static const char gve_gstrings_priv_flags[][ETH_GSTRING_LEN] = {
@@ -436,6 +436,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	data[i++] = priv->adminq_report_stats_cnt;
 	data[i++] = priv->adminq_report_link_speed_cnt;
 	data[i++] = priv->adminq_cfg_flow_rule_cnt;
+	data[i++] = priv->adminq_cfg_rss_cnt;
 }
 
 static void gve_get_channels(struct net_device *netdev,
@@ -699,6 +700,86 @@ static int gve_set_coalesce(struct net_device *netdev,
 	}
 
 	return 0;
+}
+
+static u32 gve_get_rxfh_key_size(struct net_device *netdev)
+{
+	return GVE_RSS_KEY_SIZE;
+}
+
+static u32 gve_get_rxfh_indir_size(struct net_device *netdev)
+{
+	return GVE_RSS_INDIR_SIZE;
+}
+
+static int gve_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key,
+			u8 *hfunc)
+{
+	struct gve_priv *priv = netdev_priv(netdev);
+	struct gve_rss_config *rss_config = &priv->rss_config;
+	u16 i;
+
+	if (hfunc) {
+		switch (rss_config->alg) {
+		case GVE_RSS_HASH_TOEPLITZ:
+			*hfunc = ETH_RSS_HASH_TOP;
+			break;
+		case GVE_RSS_HASH_UNDEFINED:
+		default:
+			return -EOPNOTSUPP;
+		}
+	}
+	if (key)
+		memcpy(key, rss_config->key, rss_config->key_size);
+
+	if (indir)
+		/* Each 32 bits pointed by 'indir' is stored with a lut entry */
+		for (i = 0; i < rss_config->indir_size; i++)
+			indir[i] = (u32)rss_config->indir[i];
+
+	return 0;
+}
+
+static int gve_set_rxfh(struct net_device *netdev, const u32 *indir,
+			const u8 *key, const u8 hfunc)
+{
+	struct gve_priv *priv = netdev_priv(netdev);
+	struct gve_rss_config *rss_config = &priv->rss_config;
+	bool init = false;
+	u16 i;
+	int err = 0;
+
+	/* Initialize RSS if not configured before */
+	if (rss_config->alg == GVE_RSS_HASH_UNDEFINED) {
+		err = gve_rss_config_init(priv);
+		if (err)
+			return err;
+		init = true;
+	}
+
+	switch (hfunc) {
+	case ETH_RSS_HASH_NO_CHANGE:
+		break;
+	case ETH_RSS_HASH_TOP:
+		rss_config->alg = GVE_RSS_HASH_TOEPLITZ;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	if (!key && !indir && !init)
+		return 0;
+
+	if (key)
+		memcpy(rss_config->key, key, rss_config->key_size);
+
+	if (indir) {
+		/* Each 32 bits pointed by 'indir' is stored with a lut entry */
+		for (i = 0; i < rss_config->indir_size; i++)
+			rss_config->indir[i] = indir[i];
+	}
+
+	return gve_adminq_configure_rss(priv, rss_config);
 }
 
 static const char *gve_flow_type_name(enum gve_adminq_flow_type flow_type)
@@ -1248,6 +1329,10 @@ const struct ethtool_ops gve_ethtool_ops = {
 	.get_channels = gve_get_channels,
 	.set_rxnfc = gve_set_rxnfc,
 	.get_rxnfc = gve_get_rxnfc,
+	.get_rxfh_indir_size = gve_get_rxfh_indir_size,
+	.get_rxfh_key_size = gve_get_rxfh_key_size,
+	.get_rxfh = gve_get_rxfh,
+	.set_rxfh = gve_set_rxfh,
 	.get_link = ethtool_op_get_link,
 	.get_coalesce = gve_get_coalesce,
 	.set_coalesce = gve_set_coalesce,

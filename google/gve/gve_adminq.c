@@ -441,6 +441,9 @@ static int gve_adminq_issue_cmd(struct gve_priv *priv,
 	case GVE_ADMINQ_DECONFIGURE_DEVICE_RESOURCES:
 		priv->adminq_dcfg_device_resources_cnt++;
 		break;
+	case GVE_ADMINQ_CONFIGURE_RSS:
+		priv->adminq_cfg_rss_cnt++;
+		break;
 	case GVE_ADMINQ_SET_DRIVER_PARAMETER:
 		priv->adminq_set_driver_parameter_cnt++;
 		break;
@@ -1195,3 +1198,69 @@ int gve_adminq_reset_flow_rules(struct gve_priv *priv)
 	};
 	return gve_adminq_configure_flow_rule(priv, &flow_rule_cmd);
 }
+
+int gve_adminq_configure_rss(struct gve_priv *priv,
+			     struct gve_rss_config  *rss_config)
+{
+	dma_addr_t indir_bus = 0, key_bus = 0;
+	union gve_adminq_command cmd;
+	__be32 *indir = NULL;
+	u8 *key = NULL;
+	int err = 0;
+	int i;
+
+	if (rss_config->indir_size) {
+		indir = dma_alloc_coherent(&priv->pdev->dev,
+					   rss_config->indir_size *
+						   sizeof(*rss_config->indir),
+					   &indir_bus, GFP_KERNEL);
+		if (!indir) {
+			err = -ENOMEM;
+			goto out;
+		}
+		for (i = 0; i < rss_config->indir_size; i++)
+			indir[i] = cpu_to_be32(rss_config->indir[i]);
+	}
+
+	if (rss_config->key_size) {
+		key = dma_alloc_coherent(&priv->pdev->dev,
+					 rss_config->key_size *
+						 sizeof(*rss_config->key),
+					 &key_bus, GFP_KERNEL);
+		if (!key) {
+			err = -ENOMEM;
+			goto out;
+		}
+		memcpy(key, rss_config->key, rss_config->key_size);
+	}
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.opcode = cpu_to_be32(GVE_ADMINQ_CONFIGURE_RSS);
+	cmd.configure_rss = (struct gve_adminq_configure_rss) {
+		.hash_types = cpu_to_be16(GVE_RSS_HASH_TCPV4 |
+					  GVE_RSS_HASH_UDPV4 |
+					  GVE_RSS_HASH_TCPV6 |
+					  GVE_RSS_HASH_UDPV6),
+		.halg = rss_config->alg,
+		.hkey_len = cpu_to_be16(rss_config->key_size),
+		.indir_len = cpu_to_be16(rss_config->indir_size),
+		.hkey_addr = cpu_to_be64(key_bus),
+		.indir_addr = cpu_to_be64(indir_bus),
+	};
+
+	err = gve_adminq_execute_cmd(priv, &cmd);
+
+out:
+	if (indir)
+		dma_free_coherent(&priv->pdev->dev,
+				  rss_config->indir_size *
+					  sizeof(*rss_config->indir),
+				  indir, indir_bus);
+	if (key)
+		dma_free_coherent(&priv->pdev->dev,
+				  rss_config->key_size *
+					  sizeof(*rss_config->key),
+				  key, key_bus);
+	return err;
+}
+
