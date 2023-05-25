@@ -555,6 +555,31 @@ enum gve_queue_format {
 	GVE_DQO_RDA_FORMAT		= 0x3,
 };
 
+struct gve_flow_spec {
+	__be32 src_ip[4];
+	__be32 dst_ip[4];
+	union {
+		struct {
+			__be16 src_port;
+			__be16 dst_port;
+		};
+		__be32 spi;
+	};
+	union {
+		u8 tos;
+		u8 tclass;
+	};
+};
+
+struct gve_flow_rule {
+	struct list_head list;
+	u16 loc;
+	u16 flow_type;
+	u16 action;
+	struct gve_flow_spec key;
+	struct gve_flow_spec mask;
+};
+
 struct gve_priv {
 	struct net_device *dev;
 	struct gve_tx_ring *tx; /* array of tx_cfg.num_queues */
@@ -616,6 +641,7 @@ struct gve_priv {
 	u32 adminq_report_link_speed_cnt;
 	u32 adminq_get_ptype_map_cnt;
 	u32 adminq_verify_driver_compatibility_cnt;
+	u32 adminq_cfg_flow_rule_cnt;
 
 	/* Global stats */
 	u32 interface_up_cnt; /* count of times interface turned up since last reset */
@@ -664,6 +690,14 @@ struct gve_priv {
 	u16 header_buf_size;
 	u8 header_split_strict;
 	struct dma_pool *header_buf_pool;
+
+	/* The maximum number of rules for flow-steering.
+	 * A non-zero value enables flow-steering.
+	 */
+	u16 flow_rules_max;
+	u16 flow_rules_cnt;
+	struct list_head flow_rules;
+	spinlock_t flow_rules_lock;
 };
 
 enum gve_service_task_flags_bit {
@@ -1009,6 +1043,8 @@ int gve_reset(struct gve_priv *priv, bool attempt_teardown);
 int gve_adjust_queues(struct gve_priv *priv,
 		      struct gve_queue_config new_rx_config,
 		      struct gve_queue_config new_tx_config);
+int gve_flow_rules_reset(struct gve_priv *priv);
+
 /* report stats handling */
 void gve_handle_report_stats(struct gve_priv *priv);
 /* exported by ethtool.c */

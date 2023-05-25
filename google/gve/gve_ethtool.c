@@ -75,7 +75,8 @@ static const char gve_gstrings_adminq_stats[][ETH_GSTRING_LEN] = {
 	"adminq_create_tx_queue_cnt", "adminq_create_rx_queue_cnt",
 	"adminq_destroy_tx_queue_cnt", "adminq_destroy_rx_queue_cnt",
 	"adminq_dcfg_device_resources_cnt", "adminq_set_driver_parameter_cnt",
-	"adminq_report_stats_cnt", "adminq_report_link_speed_cnt"
+	"adminq_report_stats_cnt", "adminq_report_link_speed_cnt",
+	"adminq_cfg_flow_rule"
 };
 
 static const char gve_gstrings_priv_flags[][ETH_GSTRING_LEN] = {
@@ -434,6 +435,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	data[i++] = priv->adminq_set_driver_parameter_cnt;
 	data[i++] = priv->adminq_report_stats_cnt;
 	data[i++] = priv->adminq_report_link_speed_cnt;
+	data[i++] = priv->adminq_cfg_flow_rule_cnt;
 }
 
 static void gve_get_channels(struct net_device *netdev,
@@ -699,6 +701,541 @@ static int gve_set_coalesce(struct net_device *netdev,
 	return 0;
 }
 
+static const char *gve_flow_type_name(enum gve_adminq_flow_type flow_type)
+{
+	switch (flow_type) {
+	case GVE_FLOW_TYPE_TCPV4:
+	case GVE_FLOW_TYPE_TCPV6:
+		return "TCP";
+	case GVE_FLOW_TYPE_UDPV4:
+	case GVE_FLOW_TYPE_UDPV6:
+		return "UDP";
+	case GVE_FLOW_TYPE_SCTPV4:
+	case GVE_FLOW_TYPE_SCTPV6:
+		return "SCTP";
+	case GVE_FLOW_TYPE_AHV4:
+	case GVE_FLOW_TYPE_AHV6:
+		return "AH";
+	case GVE_FLOW_TYPE_ESPV4:
+	case GVE_FLOW_TYPE_ESPV6:
+		return "ESP";
+	}
+	return NULL;
+}
+
+static void gve_print_flow_rule(struct gve_priv *priv,
+				struct gve_flow_rule *rule)
+{
+	const char *proto = gve_flow_type_name(rule->flow_type);
+
+	if (!proto)
+		return;
+
+	switch (rule->flow_type) {
+	case GVE_FLOW_TYPE_TCPV4:
+	case GVE_FLOW_TYPE_UDPV4:
+	case GVE_FLOW_TYPE_SCTPV4:
+		dev_info(&priv->pdev->dev, "Rule ID: %u dst_ip: %pI4 src_ip %pI4 %s: dst_port %hu src_port %hu\n",
+			 rule->loc,
+			 &rule->key.dst_ip[0],
+			 &rule->key.src_ip[0],
+			 proto,
+			 ntohs(rule->key.dst_port),
+			 ntohs(rule->key.src_port));
+		break;
+	case GVE_FLOW_TYPE_AHV4:
+	case GVE_FLOW_TYPE_ESPV4:
+		dev_info(&priv->pdev->dev, "Rule ID: %u dst_ip: %pI4 src_ip %pI4 %s: spi %hu\n",
+			 rule->loc,
+			 &rule->key.dst_ip[0],
+			 &rule->key.src_ip[0],
+			 proto,
+			 ntohl(rule->key.spi));
+		break;
+	case GVE_FLOW_TYPE_TCPV6:
+	case GVE_FLOW_TYPE_UDPV6:
+	case GVE_FLOW_TYPE_SCTPV6:
+		dev_info(&priv->pdev->dev, "Rule ID: %u dst_ip: %pI6 src_ip %pI6 %s: dst_port %hu src_port %hu\n",
+			 rule->loc,
+			 &rule->key.dst_ip,
+			 &rule->key.src_ip,
+			 proto,
+			 ntohs(rule->key.dst_port),
+			 ntohs(rule->key.src_port));
+		break;
+	case GVE_FLOW_TYPE_AHV6:
+	case GVE_FLOW_TYPE_ESPV6:
+		dev_info(&priv->pdev->dev, "Rule ID: %u dst_ip: %pI6 src_ip %pI6 %s: spi %hu\n",
+			 rule->loc,
+			 &rule->key.dst_ip,
+			 &rule->key.src_ip,
+			 proto,
+			 ntohl(rule->key.spi));
+		break;
+	default:
+		break;
+	}
+}
+
+static bool gve_flow_rule_is_dup_rule(struct gve_priv *priv, struct gve_flow_rule *rule)
+{
+	struct gve_flow_rule *tmp;
+
+	list_for_each_entry(tmp, &priv->flow_rules, list) {
+		if (tmp->flow_type != rule->flow_type)
+			continue;
+
+		if (!memcmp(&tmp->key, &rule->key,
+			    sizeof(struct gve_flow_spec)) &&
+		    !memcmp(&tmp->mask, &rule->mask,
+			    sizeof(struct gve_flow_spec)))
+			return true;
+	}
+	return false;
+}
+
+static struct gve_flow_rule *gve_find_flow_rule_by_loc(struct gve_priv *priv, u16 loc)
+{
+	struct gve_flow_rule *rule;
+
+	list_for_each_entry(rule, &priv->flow_rules, list)
+		if (rule->loc == loc)
+			return rule;
+
+	return NULL;
+}
+
+static void gve_flow_rules_add_rule(struct gve_priv *priv, struct gve_flow_rule *rule)
+{
+	struct gve_flow_rule *tmp, *parent = NULL;
+
+	list_for_each_entry(tmp, &priv->flow_rules, list) {
+		if (tmp->loc >= rule->loc)
+			break;
+		parent = tmp;
+	}
+
+	if (parent)
+		list_add(&rule->list, &parent->list);
+	else
+		list_add(&rule->list, &priv->flow_rules);
+
+	priv->flow_rules_cnt++;
+}
+
+static void gve_flow_rules_del_rule(struct gve_priv *priv, struct gve_flow_rule *rule)
+{
+	list_del(&rule->list);
+	kvfree(rule);
+	priv->flow_rules_cnt--;
+}
+
+static int
+gve_get_flow_rule_entry(struct gve_priv *priv, struct ethtool_rxnfc *cmd)
+{
+	struct ethtool_rx_flow_spec *fsp = (struct ethtool_rx_flow_spec *)&cmd->fs;
+	struct gve_flow_rule *rule = NULL;
+	int err = 0;
+
+	if (priv->flow_rules_max == 0)
+		return -EOPNOTSUPP;
+
+	spin_lock_bh(&priv->flow_rules_lock);
+	rule = gve_find_flow_rule_by_loc(priv, fsp->location);
+	if (!rule) {
+		err = -EINVAL;
+		goto ret;
+	}
+
+	switch (rule->flow_type) {
+	case GVE_FLOW_TYPE_TCPV4:
+		fsp->flow_type = TCP_V4_FLOW;
+		break;
+	case GVE_FLOW_TYPE_UDPV4:
+		fsp->flow_type = UDP_V4_FLOW;
+		break;
+	case GVE_FLOW_TYPE_SCTPV4:
+		fsp->flow_type = SCTP_V4_FLOW;
+		break;
+	case GVE_FLOW_TYPE_AHV4:
+		fsp->flow_type = AH_V4_FLOW;
+		break;
+	case GVE_FLOW_TYPE_ESPV4:
+		fsp->flow_type = ESP_V4_FLOW;
+		break;
+	case GVE_FLOW_TYPE_TCPV6:
+		fsp->flow_type = TCP_V6_FLOW;
+		break;
+	case GVE_FLOW_TYPE_UDPV6:
+		fsp->flow_type = UDP_V6_FLOW;
+		break;
+	case GVE_FLOW_TYPE_SCTPV6:
+		fsp->flow_type = SCTP_V6_FLOW;
+		break;
+	case GVE_FLOW_TYPE_AHV6:
+		fsp->flow_type = AH_V6_FLOW;
+		break;
+	case GVE_FLOW_TYPE_ESPV6:
+		fsp->flow_type = ESP_V6_FLOW;
+		break;
+	default:
+		err = -EINVAL;
+		goto ret;
+	}
+
+	memset(&fsp->h_u, 0, sizeof(fsp->h_u));
+	memset(&fsp->h_ext, 0, sizeof(fsp->h_ext));
+	memset(&fsp->m_u, 0, sizeof(fsp->m_u));
+	memset(&fsp->m_ext, 0, sizeof(fsp->m_ext));
+
+	switch (fsp->flow_type) {
+	case TCP_V4_FLOW:
+	case UDP_V4_FLOW:
+	case SCTP_V4_FLOW:
+		fsp->h_u.tcp_ip4_spec.ip4src = rule->key.src_ip[0];
+		fsp->h_u.tcp_ip4_spec.ip4dst = rule->key.dst_ip[0];
+		fsp->h_u.tcp_ip4_spec.psrc = rule->key.src_port;
+		fsp->h_u.tcp_ip4_spec.pdst = rule->key.dst_port;
+		fsp->h_u.tcp_ip4_spec.tos = rule->key.tos;
+		fsp->m_u.tcp_ip4_spec.ip4src = rule->mask.src_ip[0];
+		fsp->m_u.tcp_ip4_spec.ip4dst = rule->mask.dst_ip[0];
+		fsp->m_u.tcp_ip4_spec.psrc = rule->mask.src_port;
+		fsp->m_u.tcp_ip4_spec.pdst = rule->mask.dst_port;
+		fsp->m_u.tcp_ip4_spec.tos = rule->mask.tos;
+		break;
+	case AH_V4_FLOW:
+	case ESP_V4_FLOW:
+		fsp->h_u.ah_ip4_spec.ip4src = rule->key.src_ip[0];
+		fsp->h_u.ah_ip4_spec.ip4dst = rule->key.dst_ip[0];
+		fsp->h_u.ah_ip4_spec.spi = rule->key.spi;
+		fsp->h_u.ah_ip4_spec.tos = rule->key.tos;
+		fsp->m_u.ah_ip4_spec.ip4src = rule->mask.src_ip[0];
+		fsp->m_u.ah_ip4_spec.ip4dst = rule->mask.dst_ip[0];
+		fsp->m_u.ah_ip4_spec.spi = rule->mask.spi;
+		fsp->m_u.ah_ip4_spec.tos = rule->mask.tos;
+		break;
+	case TCP_V6_FLOW:
+	case UDP_V6_FLOW:
+	case SCTP_V6_FLOW:
+		memcpy(fsp->h_u.tcp_ip6_spec.ip6src, &rule->key.src_ip,
+		       sizeof(struct in6_addr));
+		memcpy(fsp->h_u.tcp_ip6_spec.ip6dst, &rule->key.dst_ip,
+		       sizeof(struct in6_addr));
+		fsp->h_u.tcp_ip6_spec.psrc = rule->key.src_port;
+		fsp->h_u.tcp_ip6_spec.pdst = rule->key.dst_port;
+		fsp->h_u.tcp_ip6_spec.tclass = rule->key.tclass;
+		memcpy(fsp->m_u.tcp_ip6_spec.ip6src, &rule->mask.src_ip,
+		       sizeof(struct in6_addr));
+		memcpy(fsp->m_u.tcp_ip6_spec.ip6dst, &rule->mask.dst_ip,
+		       sizeof(struct in6_addr));
+		fsp->m_u.tcp_ip6_spec.psrc = rule->mask.src_port;
+		fsp->m_u.tcp_ip6_spec.pdst = rule->mask.dst_port;
+		fsp->m_u.tcp_ip6_spec.tclass = rule->mask.tclass;
+		break;
+	case AH_V6_FLOW:
+	case ESP_V6_FLOW:
+		memcpy(fsp->h_u.ah_ip6_spec.ip6src, &rule->key.src_ip,
+		       sizeof(struct in6_addr));
+		memcpy(fsp->h_u.ah_ip6_spec.ip6dst, &rule->key.dst_ip,
+		       sizeof(struct in6_addr));
+		fsp->h_u.ah_ip6_spec.spi = rule->key.spi;
+		fsp->h_u.ah_ip6_spec.tclass = rule->key.tclass;
+		memcpy(fsp->m_u.ah_ip6_spec.ip6src, &rule->mask.src_ip,
+		       sizeof(struct in6_addr));
+		memcpy(fsp->m_u.ah_ip6_spec.ip6dst, &rule->mask.dst_ip,
+		       sizeof(struct in6_addr));
+		fsp->m_u.ah_ip6_spec.spi = rule->mask.spi;
+		fsp->m_u.ah_ip6_spec.tclass = rule->mask.tclass;
+		break;
+	default:
+		err = -EINVAL;
+		goto ret;
+	}
+
+	fsp->ring_cookie = rule->action;
+
+ret:
+	spin_unlock_bh(&priv->flow_rules_lock);
+	return err;
+}
+
+static int
+gve_get_flow_rule_ids(struct gve_priv *priv, struct ethtool_rxnfc *cmd,
+		      u32 *rule_locs)
+{
+	struct gve_flow_rule *rule;
+	unsigned int cnt = 0;
+	int err = 0;
+
+	if (priv->flow_rules_max == 0)
+		return -EOPNOTSUPP;
+
+	cmd->data = priv->flow_rules_max;
+
+	spin_lock_bh(&priv->flow_rules_lock);
+	list_for_each_entry(rule, &priv->flow_rules, list) {
+		if (cnt == cmd->rule_cnt) {
+			err = -EMSGSIZE;
+			goto ret;
+		}
+		rule_locs[cnt] = rule->loc;
+		cnt++;
+	}
+	cmd->rule_cnt = cnt;
+
+ret:
+	spin_unlock_bh(&priv->flow_rules_lock);
+	return err;
+}
+
+static int
+gve_add_flow_rule_info(struct gve_priv *priv, struct ethtool_rx_flow_spec *fsp,
+		       struct gve_flow_rule *rule)
+{
+	u32 flow_type, q_index = 0;
+
+	if (fsp->ring_cookie == RX_CLS_FLOW_DISC)
+		return -EOPNOTSUPP;
+
+	q_index = fsp->ring_cookie;
+	if (q_index >= priv->rx_cfg.num_queues)
+		return -EINVAL;
+
+	rule->action = q_index;
+	rule->loc = fsp->location;
+
+	flow_type = fsp->flow_type & ~(FLOW_EXT | FLOW_MAC_EXT | FLOW_RSS);
+	switch (flow_type) {
+	case TCP_V4_FLOW:
+		rule->flow_type = GVE_FLOW_TYPE_TCPV4;
+		break;
+	case UDP_V4_FLOW:
+		rule->flow_type = GVE_FLOW_TYPE_UDPV4;
+		break;
+	case SCTP_V4_FLOW:
+		rule->flow_type = GVE_FLOW_TYPE_SCTPV4;
+		break;
+	case AH_V4_FLOW:
+		rule->flow_type = GVE_FLOW_TYPE_AHV4;
+		break;
+	case ESP_V4_FLOW:
+		rule->flow_type = GVE_FLOW_TYPE_ESPV4;
+		break;
+	case TCP_V6_FLOW:
+		rule->flow_type = GVE_FLOW_TYPE_TCPV6;
+		break;
+	case UDP_V6_FLOW:
+		rule->flow_type = GVE_FLOW_TYPE_UDPV6;
+		break;
+	case SCTP_V6_FLOW:
+		rule->flow_type = GVE_FLOW_TYPE_SCTPV6;
+		break;
+	case AH_V6_FLOW:
+		rule->flow_type = GVE_FLOW_TYPE_AHV6;
+		break;
+	case ESP_V6_FLOW:
+		rule->flow_type = GVE_FLOW_TYPE_ESPV6;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	switch (flow_type) {
+	case TCP_V4_FLOW:
+	case UDP_V4_FLOW:
+	case SCTP_V4_FLOW:
+		rule->key.src_ip[0] = fsp->h_u.tcp_ip4_spec.ip4src;
+		rule->key.dst_ip[0] = fsp->h_u.tcp_ip4_spec.ip4dst;
+		rule->key.src_port = fsp->h_u.tcp_ip4_spec.psrc;
+		rule->key.dst_port = fsp->h_u.tcp_ip4_spec.pdst;
+		rule->mask.src_ip[0] = fsp->m_u.tcp_ip4_spec.ip4src;
+		rule->mask.dst_ip[0] = fsp->m_u.tcp_ip4_spec.ip4dst;
+		rule->mask.src_port = fsp->m_u.tcp_ip4_spec.psrc;
+		rule->mask.dst_port = fsp->m_u.tcp_ip4_spec.pdst;
+		break;
+	case AH_V4_FLOW:
+	case ESP_V4_FLOW:
+		rule->key.src_ip[0] = fsp->h_u.tcp_ip4_spec.ip4src;
+		rule->key.dst_ip[0] = fsp->h_u.tcp_ip4_spec.ip4dst;
+		rule->key.spi = fsp->h_u.ah_ip4_spec.spi;
+		rule->mask.src_ip[0] = fsp->m_u.tcp_ip4_spec.ip4src;
+		rule->mask.dst_ip[0] = fsp->m_u.tcp_ip4_spec.ip4dst;
+		rule->mask.spi = fsp->m_u.ah_ip4_spec.spi;
+		break;
+	case TCP_V6_FLOW:
+	case UDP_V6_FLOW:
+	case SCTP_V6_FLOW:
+		memcpy(&rule->key.src_ip, fsp->h_u.tcp_ip6_spec.ip6src,
+		       sizeof(struct in6_addr));
+		memcpy(&rule->key.dst_ip, fsp->h_u.tcp_ip6_spec.ip6dst,
+		       sizeof(struct in6_addr));
+		rule->key.src_port = fsp->h_u.tcp_ip6_spec.psrc;
+		rule->key.dst_port = fsp->h_u.tcp_ip6_spec.pdst;
+		memcpy(&rule->mask.src_ip, fsp->m_u.tcp_ip6_spec.ip6src,
+		       sizeof(struct in6_addr));
+		memcpy(&rule->mask.dst_ip, fsp->m_u.tcp_ip6_spec.ip6dst,
+		       sizeof(struct in6_addr));
+		rule->mask.src_port = fsp->m_u.tcp_ip6_spec.psrc;
+		rule->mask.dst_port = fsp->m_u.tcp_ip6_spec.pdst;
+		break;
+	case AH_V6_FLOW:
+	case ESP_V6_FLOW:
+		memcpy(&rule->key.src_ip, fsp->h_u.usr_ip6_spec.ip6src,
+		       sizeof(struct in6_addr));
+		memcpy(&rule->key.dst_ip, fsp->h_u.usr_ip6_spec.ip6dst,
+		       sizeof(struct in6_addr));
+		rule->key.spi = fsp->h_u.ah_ip6_spec.spi;
+		memcpy(&rule->mask.src_ip, fsp->m_u.usr_ip6_spec.ip6src,
+		       sizeof(struct in6_addr));
+		memcpy(&rule->mask.dst_ip, fsp->m_u.usr_ip6_spec.ip6dst,
+		       sizeof(struct in6_addr));
+		rule->key.spi = fsp->h_u.ah_ip6_spec.spi;
+		break;
+	default:
+		/* not doing un-parsed flow types */
+		return -EINVAL;
+	}
+
+	if (gve_flow_rule_is_dup_rule(priv, rule))
+		return -EEXIST;
+
+	return 0;
+}
+
+static int gve_add_flow_rule(struct gve_priv *priv, struct ethtool_rxnfc *cmd)
+{
+	struct ethtool_rx_flow_spec *fsp = &cmd->fs;
+	struct gve_flow_rule *rule = NULL;
+	int err;
+
+	if (priv->flow_rules_max == 0)
+		return -EOPNOTSUPP;
+
+	if (priv->flow_rules_cnt >= priv->flow_rules_max) {
+		dev_err(&priv->pdev->dev,
+			"Reached the limit of max allowed flow rules (%u)\n",
+			priv->flow_rules_max);
+		return -ENOSPC;
+	}
+
+	spin_lock_bh(&priv->flow_rules_lock);
+	if (gve_find_flow_rule_by_loc(priv, fsp->location)) {
+		dev_err(&priv->pdev->dev, "Flow rule %d already exists\n",
+			fsp->location);
+		err = -EEXIST;
+		goto ret;
+	}
+
+	rule = kvzalloc(sizeof(*rule), GFP_KERNEL);
+	if (!rule) {
+		err = -ENOMEM;
+		goto ret;
+	}
+
+	err = gve_add_flow_rule_info(priv, fsp, rule);
+	if (err)
+		goto ret;
+
+	err = gve_adminq_add_flow_rule(priv, rule);
+	if (err)
+		goto ret;
+
+	gve_flow_rules_add_rule(priv, rule);
+	gve_print_flow_rule(priv, rule);
+
+ret:
+	spin_unlock_bh(&priv->flow_rules_lock);
+	if (err && rule)
+		kfree(rule);
+	return err;
+}
+
+static int gve_del_flow_rule(struct gve_priv *priv, struct ethtool_rxnfc *cmd)
+{
+	struct ethtool_rx_flow_spec *fsp = (struct ethtool_rx_flow_spec *)&cmd->fs;
+	struct gve_flow_rule *rule = NULL;
+	int err = 0;
+
+	if (priv->flow_rules_max == 0)
+		return -EOPNOTSUPP;
+
+	spin_lock_bh(&priv->flow_rules_lock);
+	rule = gve_find_flow_rule_by_loc(priv, fsp->location);
+	if (!rule) {
+		err = -EINVAL;
+		goto ret;
+	}
+
+	err = gve_adminq_del_flow_rule(priv, fsp->location);
+	if (err)
+		goto ret;
+
+	gve_flow_rules_del_rule(priv, rule);
+
+ret:
+	spin_unlock_bh(&priv->flow_rules_lock);
+	return err;
+}
+
+static int gve_set_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd)
+{
+	struct gve_priv *priv = netdev_priv(netdev);
+	int err = -EOPNOTSUPP;
+
+	if (!(netdev->features & NETIF_F_NTUPLE))
+		return err;
+
+	switch (cmd->cmd) {
+	case ETHTOOL_SRXCLSRLINS:
+		err = gve_add_flow_rule(priv, cmd);
+		break;
+	case ETHTOOL_SRXCLSRLDEL:
+		err = gve_del_flow_rule(priv, cmd);
+		break;
+	case ETHTOOL_SRXFH:
+		/* not supported */
+		break;
+	default:
+		break;
+	}
+
+	return err;
+}
+
+static int gve_get_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd,
+			 u32 *rule_locs)
+{
+	struct gve_priv *priv = netdev_priv(netdev);
+	int err = -EOPNOTSUPP;
+
+	switch (cmd->cmd) {
+	case ETHTOOL_GRXRINGS:
+		cmd->data = priv->rx_cfg.num_queues;
+		err = 0;
+		break;
+	case ETHTOOL_GRXCLSRLCNT:
+		if (priv->flow_rules_max == 0)
+			break;
+		cmd->rule_cnt = priv->flow_rules_cnt;
+		cmd->data = priv->flow_rules_max;
+		err = 0;
+		break;
+	case ETHTOOL_GRXCLSRULE:
+		err = gve_get_flow_rule_entry(priv, cmd);
+		break;
+	case ETHTOOL_GRXCLSRLALL:
+		err = gve_get_flow_rule_ids(priv, cmd, (u32 *)rule_locs);
+		break;
+	case ETHTOOL_GRXFH:
+		/* not supported */
+		break;
+	default:
+		break;
+	}
+
+	return err;
+}
+
 const struct ethtool_ops gve_ethtool_ops = {
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS,
 	.get_drvinfo = gve_get_drvinfo,
@@ -709,6 +1246,8 @@ const struct ethtool_ops gve_ethtool_ops = {
 	.get_msglevel = gve_get_msglevel,
 	.set_channels = gve_set_channels,
 	.get_channels = gve_get_channels,
+	.set_rxnfc = gve_set_rxnfc,
+	.get_rxnfc = gve_get_rxnfc,
 	.get_link = ethtool_op_get_link,
 	.get_coalesce = gve_get_coalesce,
 	.set_coalesce = gve_set_coalesce,

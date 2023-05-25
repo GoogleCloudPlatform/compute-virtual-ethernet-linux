@@ -40,7 +40,8 @@ void gve_parse_device_option(struct gve_priv *priv,
 			     struct gve_device_option_gqi_qpl **dev_op_gqi_qpl,
 			     struct gve_device_option_dqo_rda **dev_op_dqo_rda,
 			     struct gve_device_option_jumbo_frames **dev_op_jumbo_frames,
-			     struct gve_device_option_buffer_sizes **dev_op_buffer_sizes)
+			     struct gve_device_option_buffer_sizes **dev_op_buffer_sizes,
+			     struct gve_device_option_flow_steering **dev_op_flow_steering)
 {
 	u32 req_feat_mask = be32_to_cpu(option->required_features_mask);
 	u16 option_length = be16_to_cpu(option->option_length);
@@ -151,6 +152,24 @@ void gve_parse_device_option(struct gve_priv *priv,
 		if ((*dev_op_buffer_sizes)->header_buffer_size)
 			priv->ethtool_defaults |= BIT(GVE_PRIV_FLAGS_ENABLE_HEADER_SPLIT);
 		break;
+	case GVE_DEV_OPT_ID_FLOW_STEERING:
+		if (option_length < sizeof(**dev_op_flow_steering) ||
+		    req_feat_mask != GVE_DEV_OPT_REQ_FEAT_MASK_FLOW_STEERING) {
+			dev_warn(&priv->pdev->dev, GVE_DEVICE_OPTION_ERROR_FMT,
+				 "Flow Steering",
+				 (int)sizeof(**dev_op_flow_steering),
+				 GVE_DEV_OPT_REQ_FEAT_MASK_FLOW_STEERING,
+				 option_length, req_feat_mask);
+			break;
+		}
+
+		if (option_length > sizeof(**dev_op_flow_steering)) {
+			dev_warn(&priv->pdev->dev,
+				 GVE_DEVICE_OPTION_TOO_BIG_FMT,
+				 "Flow Steering");
+		}
+		*dev_op_flow_steering = (void *)(option + 1);
+		break;
 	default:
 		/* If we don't recognize the option just continue
 		 * without doing anything.
@@ -168,7 +187,8 @@ gve_process_device_options(struct gve_priv *priv,
 			   struct gve_device_option_gqi_qpl **dev_op_gqi_qpl,
 			   struct gve_device_option_dqo_rda **dev_op_dqo_rda,
 			   struct gve_device_option_jumbo_frames **dev_op_jumbo_frames,
-			   struct gve_device_option_buffer_sizes **dev_op_buffer_sizes)
+			   struct gve_device_option_buffer_sizes **dev_op_buffer_sizes,
+			   struct gve_device_option_flow_steering **dev_op_flow_steering)
 {
 	const int num_options = be16_to_cpu(descriptor->num_device_options);
 	struct gve_device_option *dev_opt;
@@ -189,7 +209,7 @@ gve_process_device_options(struct gve_priv *priv,
 		gve_parse_device_option(priv, descriptor, dev_opt,
 					dev_op_gqi_rda, dev_op_gqi_qpl,
 					dev_op_dqo_rda, dev_op_jumbo_frames,
-					dev_op_buffer_sizes);
+					dev_op_buffer_sizes, dev_op_flow_steering);
 		dev_opt = next_opt;
 	}
 
@@ -220,6 +240,7 @@ int gve_adminq_alloc(struct device *dev, struct gve_priv *priv)
 	priv->adminq_report_stats_cnt = 0;
 	priv->adminq_report_link_speed_cnt = 0;
 	priv->adminq_get_ptype_map_cnt = 0;
+	priv->adminq_cfg_flow_rule_cnt = 0;
 
 	/* Setup Admin queue with the device */
 	iowrite32be(priv->adminq_bus_addr / PAGE_SIZE,
@@ -389,6 +410,8 @@ static int gve_adminq_issue_cmd(struct gve_priv *priv,
 
 	memcpy(cmd, cmd_orig, sizeof(*cmd_orig));
 	opcode = be32_to_cpu(READ_ONCE(cmd->opcode));
+	if (opcode == GVE_ADMINQ_EXTENDED_COMMAND)
+		opcode = be32_to_cpu(cmd->extended_command.inner_opcode);
 
 	switch (opcode) {
 	case GVE_ADMINQ_DESCRIBE_DEVICE:
@@ -433,6 +456,9 @@ static int gve_adminq_issue_cmd(struct gve_priv *priv,
 	case GVE_ADMINQ_VERIFY_DRIVER_COMPATIBILITY:
 		priv->adminq_verify_driver_compatibility_cnt++;
 		break;
+	case GVE_ADMINQ_CONFIGURE_FLOW_RULE:
+		priv->adminq_cfg_flow_rule_cnt++;
+		break;
 	default:
 		dev_err(&priv->pdev->dev, "unknown AQ command opcode %d\n", opcode);
 	}
@@ -463,6 +489,39 @@ static int gve_adminq_execute_cmd(struct gve_priv *priv,
 
 	return gve_adminq_kick_and_wait(priv);
 }
+
+static int gve_adminq_execute_extended_cmd(struct gve_priv *priv,
+					   uint32_t opcode, size_t cmd_size,
+					   void *cmd_orig)
+{
+	union gve_adminq_command cmd;
+	dma_addr_t inner_cmd_bus;
+	void *inner_cmd;
+	int err;
+
+	inner_cmd = dma_alloc_coherent(&priv->pdev->dev, cmd_size,
+				       &inner_cmd_bus, GFP_KERNEL);
+	if (!inner_cmd)
+		return -ENOMEM;
+
+	memcpy(inner_cmd, cmd_orig, cmd_size);
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.opcode = cpu_to_be32(GVE_ADMINQ_EXTENDED_COMMAND);
+	cmd.extended_command = (struct gve_adminq_extended_command) {
+		.inner_opcode = cpu_to_be32(opcode),
+		.inner_length = cpu_to_be32(cmd_size),
+		.inner_command_addr = cpu_to_be64(inner_cmd_bus),
+	};
+
+	err = gve_adminq_execute_cmd(priv, &cmd);
+
+	dma_free_coherent(&priv->pdev->dev,
+			  cmd_size,
+			  inner_cmd, inner_cmd_bus);
+	return err;
+}
+
 
 /* The device specifies that the management vector can either be the first irq
  * or the last irq. ntfy_blk_msix_base_idx indicates the first irq assigned to
@@ -714,7 +773,8 @@ static void gve_enable_supported_features(
 	struct gve_priv *priv,
 	u32 supported_features_mask,
 	const struct gve_device_option_jumbo_frames *dev_op_jumbo_frames,
-	const struct gve_device_option_buffer_sizes *dev_op_buffer_sizes)
+	const struct gve_device_option_buffer_sizes *dev_op_buffer_sizes,
+	const struct gve_device_option_flow_steering *dev_op_flow_steering)
 {
 	int buf_size;
 
@@ -761,10 +821,19 @@ static void gve_enable_supported_features(
 		}
 	}
 
+	if (dev_op_flow_steering &&
+	    (supported_features_mask & GVE_SUP_FLOW_STEERING_MASK)) {
+		dev_info(&priv->pdev->dev,
+			 "FLOW STEERING device option enabled.\n");
+		priv->flow_rules_max =
+			be16_to_cpu(dev_op_flow_steering->max_num_rules);
+	}
+
 }
 
 int gve_adminq_describe_device(struct gve_priv *priv)
 {
+	struct gve_device_option_flow_steering *dev_op_flow_steering = NULL;
 	struct gve_device_option_buffer_sizes *dev_op_buffer_sizes = NULL;
 	struct gve_device_option_jumbo_frames *dev_op_jumbo_frames = NULL;
 	struct gve_device_option_gqi_rda *dev_op_gqi_rda = NULL;
@@ -797,7 +866,8 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	err = gve_process_device_options(priv, descriptor, &dev_op_gqi_rda,
 					 &dev_op_gqi_qpl, &dev_op_dqo_rda,
 					 &dev_op_jumbo_frames,
-					 &dev_op_buffer_sizes);
+					 &dev_op_buffer_sizes,
+					 &dev_op_flow_steering);
 	if (err)
 		goto free_device_descriptor;
 
@@ -831,8 +901,9 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	if (gve_is_gqi(priv)) {
 		err = gve_set_desc_cnt(priv, descriptor);
 	} else {
-		/* DQO supports LRO. */
+		/* DQO supports LRO and flow-steering */
 		priv->dev->hw_features |= NETIF_F_LRO;
+		priv->dev->hw_features |= NETIF_F_NTUPLE;
 		err = gve_set_desc_cnt_dqo(priv, descriptor, dev_op_dqo_rda);
 	}
 	if (err)
@@ -863,7 +934,8 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 
 	gve_enable_supported_features(priv, supported_features_mask,
 				      dev_op_jumbo_frames,
-				      dev_op_buffer_sizes);
+				      dev_op_buffer_sizes,
+				      dev_op_flow_steering);
 
 free_device_descriptor:
 	dma_free_coherent(&priv->pdev->dev, PAGE_SIZE, descriptor,
@@ -1025,4 +1097,101 @@ err:
 	dma_free_coherent(&priv->pdev->dev, sizeof(*ptype_map), ptype_map,
 			  ptype_map_bus);
 	return err;
+}
+
+static int gve_adminq_configure_flow_rule(struct gve_priv *priv,
+		struct gve_adminq_configure_flow_rule *flow_rule_cmd)
+{
+	return gve_adminq_execute_extended_cmd(priv,
+			GVE_ADMINQ_CONFIGURE_FLOW_RULE,
+			sizeof(struct gve_adminq_configure_flow_rule),
+			flow_rule_cmd);
+}
+
+int gve_adminq_add_flow_rule(struct gve_priv *priv,
+			     struct gve_flow_rule *rule)
+{
+	struct gve_adminq_configure_flow_rule flow_rule_cmd = {
+		.cmd = cpu_to_be16(GVE_RULE_ADD),
+		.loc = cpu_to_be16(rule->loc),
+		.rule = {
+			.flow_type = cpu_to_be16(rule->flow_type),
+			.action = cpu_to_be16(rule->action),
+			.key = {
+				.src_ip = { rule->key.src_ip[0],
+					    rule->key.src_ip[1],
+					    rule->key.src_ip[2],
+					    rule->key.src_ip[3] },
+				.dst_ip = { rule->key.dst_ip[0],
+					    rule->key.dst_ip[1],
+					    rule->key.dst_ip[2],
+					    rule->key.dst_ip[3] },
+			},
+			.mask = {
+				.src_ip = { rule->mask.src_ip[0],
+					    rule->mask.src_ip[1],
+					    rule->mask.src_ip[2],
+					    rule->mask.src_ip[3] },
+				.dst_ip = { rule->mask.dst_ip[0],
+					    rule->mask.dst_ip[1],
+					    rule->mask.dst_ip[2],
+					    rule->mask.dst_ip[3] },
+			},
+		},
+	};
+	switch (rule->flow_type) {
+	case GVE_FLOW_TYPE_TCPV4:
+	case GVE_FLOW_TYPE_UDPV4:
+	case GVE_FLOW_TYPE_SCTPV4:
+		flow_rule_cmd.rule.key.src_port = rule->key.src_port;
+		flow_rule_cmd.rule.key.dst_port = rule->key.dst_port;
+		flow_rule_cmd.rule.key.tos = rule->key.tos;
+		flow_rule_cmd.rule.mask.src_port = rule->mask.src_port;
+		flow_rule_cmd.rule.mask.dst_port = rule->mask.dst_port;
+		flow_rule_cmd.rule.mask.tos = rule->mask.tos;
+		break;
+	case GVE_FLOW_TYPE_AHV4:
+	case GVE_FLOW_TYPE_ESPV4:
+		flow_rule_cmd.rule.key.spi = rule->key.spi;
+		flow_rule_cmd.rule.key.tos = rule->key.tos;
+		flow_rule_cmd.rule.mask.spi = rule->mask.spi;
+		flow_rule_cmd.rule.mask.tos = rule->mask.tos;
+		break;
+	case GVE_FLOW_TYPE_TCPV6:
+	case GVE_FLOW_TYPE_UDPV6:
+	case GVE_FLOW_TYPE_SCTPV6:
+		flow_rule_cmd.rule.key.src_port = rule->key.src_port;
+		flow_rule_cmd.rule.key.dst_port = rule->key.dst_port;
+		flow_rule_cmd.rule.key.tclass = rule->key.tclass;
+		flow_rule_cmd.rule.mask.src_port = rule->mask.src_port;
+		flow_rule_cmd.rule.mask.dst_port = rule->mask.dst_port;
+		flow_rule_cmd.rule.mask.tclass = rule->mask.tclass;
+		break;
+	case GVE_FLOW_TYPE_AHV6:
+	case GVE_FLOW_TYPE_ESPV6:
+		flow_rule_cmd.rule.key.spi = rule->key.spi;
+		flow_rule_cmd.rule.key.tclass = rule->key.tclass;
+		flow_rule_cmd.rule.mask.spi = rule->mask.spi;
+		flow_rule_cmd.rule.mask.tclass = rule->mask.tclass;
+		break;
+	}
+
+	return gve_adminq_configure_flow_rule(priv, &flow_rule_cmd);
+}
+
+int gve_adminq_del_flow_rule(struct gve_priv *priv, int loc)
+{
+	struct gve_adminq_configure_flow_rule flow_rule_cmd = {
+		.cmd = cpu_to_be16(GVE_RULE_DEL),
+		.loc = cpu_to_be16(loc),
+	};
+	return gve_adminq_configure_flow_rule(priv, &flow_rule_cmd);
+}
+
+int gve_adminq_reset_flow_rules(struct gve_priv *priv)
+{
+	struct gve_adminq_configure_flow_rule flow_rule_cmd = {
+		.cmd = cpu_to_be16(GVE_RULE_RESET),
+	};
+	return gve_adminq_configure_flow_rule(priv, &flow_rule_cmd);
 }

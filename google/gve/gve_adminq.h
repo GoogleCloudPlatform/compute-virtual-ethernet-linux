@@ -25,6 +25,11 @@ enum gve_adminq_opcodes {
 	GVE_ADMINQ_REPORT_LINK_SPEED		= 0xD,
 	GVE_ADMINQ_GET_PTYPE_MAP		= 0xE,
 	GVE_ADMINQ_VERIFY_DRIVER_COMPATIBILITY	= 0xF,
+
+	/* For commands that are larger than 56 bytes */
+	GVE_ADMINQ_EXTENDED_COMMAND		= 0xFF,
+
+	GVE_ADMINQ_CONFIGURE_FLOW_RULE		= 0x101,
 };
 
 /* Admin queue status codes */
@@ -125,6 +130,14 @@ struct gve_device_option_buffer_sizes {
 
 static_assert(sizeof(struct gve_device_option_buffer_sizes) == 8);
 
+struct gve_device_option_flow_steering {
+	__be32 supported_features_mask;
+	__be16 max_num_rules;
+	u8 padding[2];
+};
+
+static_assert(sizeof(struct gve_device_option_flow_steering) == 8);
+
 /* Terminology:
  *
  * RDA - Raw DMA Addressing - Buffers associated with SKBs are directly DMA
@@ -140,6 +153,7 @@ enum gve_dev_opt_id {
 	GVE_DEV_OPT_ID_DQO_RDA = 0x4,
 	GVE_DEV_OPT_ID_JUMBO_FRAMES = 0x8,
 	GVE_DEV_OPT_ID_BUFFER_SIZES = 0xa,
+	GVE_DEV_OPT_ID_FLOW_STEERING = 0xb,
 };
 
 enum gve_dev_opt_req_feat_mask {
@@ -149,11 +163,13 @@ enum gve_dev_opt_req_feat_mask {
 	GVE_DEV_OPT_REQ_FEAT_MASK_DQO_RDA = 0x0,
 	GVE_DEV_OPT_REQ_FEAT_MASK_JUMBO_FRAMES = 0x0,
 	GVE_DEV_OPT_REQ_FEAT_MASK_BUFFER_SIZES = 0x0,
+	GVE_DEV_OPT_REQ_FEAT_MASK_FLOW_STEERING = 0x0,
 };
 
 enum gve_sup_feature_mask {
 	GVE_SUP_JUMBO_FRAMES_MASK = 1 << 2,
 	GVE_SUP_BUFFER_SIZES_MASK = 1 << 4,
+	GVE_SUP_FLOW_STEERING_MASK = 1 << 5,
 };
 
 #define GVE_DEV_OPT_LEN_GQI_RAW_ADDRESSING 0x0
@@ -184,6 +200,13 @@ enum gve_driver_capbility {
 #define GVE_DRIVER_CAPABILITY_FLAGS2 0x0
 #define GVE_DRIVER_CAPABILITY_FLAGS3 0x0
 #define GVE_DRIVER_CAPABILITY_FLAGS4 0x0
+
+struct gve_adminq_extended_command {
+	__be32 inner_opcode;
+	__be32 inner_length;
+	__be64 inner_command_addr;
+};
+static_assert(sizeof(struct gve_adminq_extended_command) == 16);
 
 struct gve_driver_info {
 	u8 os_type;	/* 0x01 = Linux */
@@ -388,6 +411,58 @@ struct gve_adminq_get_ptype_map {
 	__be64 ptype_map_addr;
 };
 
+/* Flow-steering related definitions */
+enum gve_adminq_flow_rule_cmd {
+	GVE_RULE_ADD = 0,
+	GVE_RULE_DEL = 1,
+	GVE_RULE_RESET = 2,
+};
+
+enum gve_adminq_flow_type {
+	GVE_FLOW_TYPE_TCPV4 = 0,
+	GVE_FLOW_TYPE_UDPV4 = 1,
+	GVE_FLOW_TYPE_SCTPV4 = 2,
+	GVE_FLOW_TYPE_AHV4 = 3,
+	GVE_FLOW_TYPE_ESPV4 = 4,
+	GVE_FLOW_TYPE_TCPV6 = 5,
+	GVE_FLOW_TYPE_UDPV6 = 6,
+	GVE_FLOW_TYPE_SCTPV6 = 7,
+	GVE_FLOW_TYPE_AHV6 = 8,
+	GVE_FLOW_TYPE_ESPV6 = 9,
+};
+
+struct gve_adminq_flow_spec {
+	__be32 src_ip[4];
+	__be32 dst_ip[4];
+	union {
+		struct {
+			__be16 src_port;
+			__be16 dst_port;
+		};
+		__be32 spi;
+	};
+	union {
+		u8 tos;
+		u8 tclass;
+	};
+};
+static_assert(sizeof(struct gve_adminq_flow_spec) == 40);
+
+/* Flow-steering command */
+struct gve_adminq_flow_rule {
+	__be16 flow_type;
+	__be16 action; /* Queue */
+	struct gve_adminq_flow_spec key;
+	struct gve_adminq_flow_spec mask; /* ports can be 0 or 0xffff */
+};
+
+struct gve_adminq_configure_flow_rule {
+	__be16 cmd;
+	__be16 loc;
+	struct gve_adminq_flow_rule rule;
+};
+static_assert(sizeof(struct gve_adminq_configure_flow_rule) == 88);
+
 union gve_adminq_command {
 	struct {
 		__be32 opcode;
@@ -408,6 +483,7 @@ union gve_adminq_command {
 			struct gve_adminq_get_ptype_map get_ptype_map;
 			struct gve_adminq_verify_driver_compatibility
 						verify_driver_compatibility;
+			struct gve_adminq_extended_command extended_command;
 		};
 	};
 	u8 reserved[64];
@@ -439,6 +515,10 @@ int gve_adminq_verify_driver_compatibility(struct gve_priv *priv,
 					   u64 driver_info_len,
 					   dma_addr_t driver_info_addr);
 int gve_adminq_report_link_speed(struct gve_priv *priv);
+int gve_adminq_add_flow_rule(struct gve_priv *priv,
+			     struct gve_flow_rule *rule);
+int gve_adminq_del_flow_rule(struct gve_priv *priv, int loc);
+int gve_adminq_reset_flow_rules(struct gve_priv *priv);
 
 struct gve_ptype_lut;
 int gve_adminq_get_ptype_map_dqo(struct gve_priv *priv,

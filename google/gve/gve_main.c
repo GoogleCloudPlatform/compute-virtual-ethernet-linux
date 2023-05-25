@@ -1681,6 +1681,26 @@ static int gve_xdp(struct net_device *dev, struct netdev_bpf *xdp)
 	}
 }
 
+int gve_flow_rules_reset(struct gve_priv *priv)
+{
+	struct gve_flow_rule *cur, *next;
+	int err;
+
+	if (priv->flow_rules_cnt == 0)
+		return 0;
+
+	err = gve_adminq_reset_flow_rules(priv);
+	if (err)
+		return err;
+
+	list_for_each_entry_safe(cur, next, &priv->flow_rules, list) {
+		list_del(&cur->list);
+		kvfree(cur);
+		priv->flow_rules_cnt--;
+	}
+	return 0;
+}
+
 static int gve_adjust_queue_count(struct gve_priv *priv,
 				  struct gve_queue_config new_rx_config,
 				  struct gve_queue_config new_tx_config)
@@ -1695,6 +1715,8 @@ static int gve_adjust_queue_count(struct gve_priv *priv,
 	else
 		priv->data_buffer_size_dqo = GVE_RX_BUFFER_SIZE_DQO;
 
+
+	err = gve_flow_rules_reset(priv);
 	return err;
 }
 
@@ -1873,6 +1895,9 @@ static int gve_set_features(struct net_device *netdev,
 				goto err;
 		}
 	}
+
+	if ((netdev->features & NETIF_F_NTUPLE) && !(features & NETIF_F_NTUPLE))
+		gve_flow_rules_reset(priv);
 
 	return 0;
 err:
@@ -2076,6 +2101,9 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 	 */
 	priv->num_ntfy_blks = (num_ntfy - 1) & ~0x1;
 	priv->mgmt_msix_idx = priv->num_ntfy_blks;
+
+	spin_lock_init(&priv->flow_rules_lock);
+	INIT_LIST_HEAD(&priv->flow_rules);
 
 	priv->tx_cfg.max_queues =
 		min_t(int, priv->tx_cfg.max_queues, priv->num_ntfy_blks / 2);
