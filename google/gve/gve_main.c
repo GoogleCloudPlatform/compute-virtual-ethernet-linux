@@ -1309,12 +1309,6 @@ static int gve_open(struct net_device *dev)
 	if (err)
 		goto reset;
 
-	if (!gve_is_gqi(priv)) {
-		/* Hard code this for now. This may be tuned in the future for
-		 * performance.
-		 */
-		priv->data_buffer_size_dqo = GVE_RX_BUFFER_SIZE_DQO;
-	}
 	err = gve_create_rings(priv);
 	if (err)
 		goto reset;
@@ -1687,36 +1681,51 @@ static int gve_xdp(struct net_device *dev, struct netdev_bpf *xdp)
 	}
 }
 
+static int gve_adjust_queue_count(struct gve_priv *priv,
+				  struct gve_queue_config new_rx_config,
+				  struct gve_queue_config new_tx_config)
+{
+	int err = 0;
+
+	priv->rx_cfg = new_rx_config;
+	priv->tx_cfg = new_tx_config;
+
+	if (gve_get_enable_max_rx_buffer_size(priv))
+		priv->data_buffer_size_dqo = GVE_MAX_RX_BUFFER_SIZE;
+	else
+		priv->data_buffer_size_dqo = GVE_RX_BUFFER_SIZE_DQO;
+
+	return err;
+}
+
 int gve_adjust_queues(struct gve_priv *priv,
 		      struct gve_queue_config new_rx_config,
 		      struct gve_queue_config new_tx_config)
 {
 	int err;
-
 	if (netif_carrier_ok(priv->dev)) {
 		/* To make this process as simple as possible we teardown the
 		 * device, set the new configuration, and then bring the device
 		 * up again.
 		 */
 		err = gve_close(priv->dev);
-		/* we have already tried to reset in close,
-		 * just fail at this point
+		/* We have already tried to reset in close, just fail at this
+		 * point.
 		 */
 		if (err)
 			return err;
-		priv->tx_cfg = new_tx_config;
-		priv->rx_cfg = new_rx_config;
-
+		err = gve_adjust_queue_count(priv, new_rx_config, new_tx_config);
+		if (err)
+			goto err;
 		err = gve_open(priv->dev);
 		if (err)
 			goto err;
-
 		return 0;
 	}
 	/* Set the config for the next up. */
-	priv->tx_cfg = new_tx_config;
-	priv->rx_cfg = new_rx_config;
-
+	err = gve_adjust_queue_count(priv, new_rx_config, new_tx_config);
+	if (err)
+		goto err;
 	return 0;
 err:
 	netif_err(priv, drv, priv->dev,
@@ -2277,6 +2286,7 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	priv->service_task_flags = 0x0;
 	priv->state_flags = 0x0;
 	priv->ethtool_flags = 0x0;
+	priv->ethtool_defaults = 0x0;
 
 	gve_set_probe_in_progress(priv);
 	priv->gve_wq = alloc_ordered_workqueue("gve", 0);

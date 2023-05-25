@@ -46,6 +46,12 @@
 #define GVE_NUM_PTYPES	1024
 
 #define GVE_RX_BUFFER_SIZE_DQO 2048
+#define GVE_MIN_RX_BUFFER_SIZE 2048
+#define GVE_MAX_RX_BUFFER_SIZE 4096
+
+#define GVE_HEADER_BUFFER_SIZE_MIN 64
+#define GVE_HEADER_BUFFER_SIZE_MAX 256
+#define GVE_HEADER_BUFFER_SIZE_DEFAULT 128
 
 #define GVE_XDP_ACTIONS 5
 
@@ -124,6 +130,11 @@ struct gve_rx_compl_queue_dqo {
 	u32 mask; /* Mask for indices to the size of the ring */
 };
 
+struct gve_header_buf {
+	u8 *data;
+	dma_addr_t addr;
+};
+
 /* Stores state for tracking buffers posted to HW */
 struct gve_rx_buf_state_dqo {
 	/* The page posted to HW. */
@@ -136,6 +147,9 @@ struct gve_rx_buf_state_dqo {
 	 * which point every other offset is free to be reused.
 	 */
 	u32 last_single_ref_offset;
+
+	/* Pointer to the header buffer when header-split is active */
+	struct gve_header_buf *hdr_buf;
 
 	/* Linked list index to next element in the list, or -1 if none */
 	s16 next;
@@ -217,19 +231,27 @@ struct gve_rx_ring {
 			 * which cannot be reused yet.
 			 */
 			struct gve_index_list used_buf_states;
+
+			/* Array of buffers for header-split */
+			struct gve_header_buf *hdr_bufs;
 		} dqo;
 	};
 
 	u64 rbytes; /* free-running bytes received */
+	u64 rheader_bytes; /* free-running header bytes received */
 	u64 rpackets; /* free-running packets received */
 	u32 cnt; /* free-running total number of completed packets */
 	u32 fill_cnt; /* free-running total number of descs and buffs posted */
 	u32 mask; /* masks the cnt and fill_cnt to the size of the ring */
+	u64 rx_hsplit_pkt; /* free-running packets with headers split */
+	u64 rx_hsplit_hbo_pkt; /* free-running packets with header buffer overflow */
 	u64 rx_copybreak_pkt; /* free-running count of copybreak packets */
 	u64 rx_copied_pkt; /* free-running total number of copied packets */
 	u64 rx_skb_alloc_fail; /* free-running count of skb alloc fails */
 	u64 rx_buf_alloc_fail; /* free-running count of buffer alloc fails */
 	u64 rx_desc_err_dropped_pkt; /* free-running count of packets dropped by descriptor error */
+	/* free-running count of packets dropped by header-split overflow */
+	u64 rx_hsplit_err_dropped_pkt;
 	u64 rx_cont_packet_cnt; /* free-running multi-fragment packets received */
 	u64 rx_frag_flip_cnt; /* free-running count of rx segments where page_flip was used */
 	u64 rx_frag_copy_cnt; /* free-running count of rx segments copied */
@@ -614,6 +636,7 @@ struct gve_priv {
 	u64 stats_report_len;
 	dma_addr_t stats_report_bus; /* dma address for the stats report */
 	unsigned long ethtool_flags;
+	unsigned long ethtool_defaults; /* default flags */
 
 	unsigned long stats_report_timer_period;
 	struct timer_list stats_report_timer;
@@ -627,12 +650,20 @@ struct gve_priv {
 
 	/* Must be a power of two. */
 	int data_buffer_size_dqo;
+	int dev_max_rx_buffer_size; /* The max rx buffer size that device support*/
 
 	enum gve_queue_format queue_format;
 
 	/* Interrupt coalescing settings */
 	u32 tx_coalesce_usecs;
 	u32 rx_coalesce_usecs;
+
+	/* The size of buffers to allocate for the headers.
+	 * A non-zero value enables header-split.
+	 */
+	u16 header_buf_size;
+	u8 header_split_strict;
+	struct dma_pool *header_buf_pool;
 };
 
 enum gve_service_task_flags_bit {
@@ -651,7 +682,16 @@ enum gve_state_flags_bit {
 
 enum gve_ethtool_flags_bit {
 	GVE_PRIV_FLAGS_REPORT_STATS		= 0,
+	GVE_PRIV_FLAGS_ENABLE_HEADER_SPLIT	= 1,
+	GVE_PRIV_FLAGS_ENABLE_STRICT_HEADER_SPLIT = 2,
+	GVE_PRIV_FLAGS_ENABLE_MAX_RX_BUFFER_SIZE = 3,
 };
+
+#define GVE_PRIV_FLAGS_MASK \
+	(BIT(GVE_PRIV_FLAGS_REPORT_STATS)		| \
+	 BIT(GVE_PRIV_FLAGS_ENABLE_HEADER_SPLIT)	| \
+	 BIT(GVE_PRIV_FLAGS_ENABLE_STRICT_HEADER_SPLIT)		| \
+	 BIT(GVE_PRIV_FLAGS_ENABLE_MAX_RX_BUFFER_SIZE))
 
 static inline bool gve_get_do_reset(struct gve_priv *priv)
 {
@@ -784,6 +824,16 @@ static inline bool gve_get_report_stats(struct gve_priv *priv)
 static inline void gve_clear_report_stats(struct gve_priv *priv)
 {
 	clear_bit(GVE_PRIV_FLAGS_REPORT_STATS, &priv->ethtool_flags);
+}
+
+static inline bool gve_get_enable_header_split(struct gve_priv *priv)
+{
+	return test_bit(GVE_PRIV_FLAGS_ENABLE_HEADER_SPLIT, &priv->ethtool_flags);
+}
+
+static inline bool gve_get_enable_max_rx_buffer_size(struct gve_priv *priv)
+{
+	return test_bit(GVE_PRIV_FLAGS_ENABLE_MAX_RX_BUFFER_SIZE, &priv->ethtool_flags);
 }
 
 /* Returns the address of the ntfy_blocks irq doorbell

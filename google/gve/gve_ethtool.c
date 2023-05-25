@@ -40,15 +40,17 @@ static u32 gve_get_msglevel(struct net_device *netdev)
  * as declared in enum xdp_action inside file uapi/linux/bpf.h .
  */
 static const char gve_gstrings_main_stats[][ETH_GSTRING_LEN] = {
-	"rx_packets", "tx_packets", "rx_bytes", "tx_bytes",
-	"rx_dropped", "tx_dropped", "tx_timeouts",
+	"rx_packets", "rx_packets_sph", "rx_packets_hbo", "tx_packets",
+	"rx_bytes", "tx_bytes", "rx_dropped", "tx_dropped", "tx_timeouts",
 	"rx_skb_alloc_fail", "rx_buf_alloc_fail", "rx_desc_err_dropped_pkt",
+	"rx_hsplit_err_dropped_pkt",
 	"interface_up_cnt", "interface_down_cnt", "reset_cnt",
 	"page_alloc_fail", "dma_mapping_error", "stats_report_trigger_cnt",
 };
 
 static const char gve_gstrings_rx_stats[][ETH_GSTRING_LEN] = {
-	"rx_posted_desc[%u]", "rx_completed_desc[%u]", "rx_consumed_desc[%u]", "rx_bytes[%u]",
+	"rx_posted_desc[%u]", "rx_completed_desc[%u]", "rx_consumed_desc[%u]",
+	"rx_bytes[%u]", "rx_header_bytes[%u]",
 	"rx_cont_packet_cnt[%u]", "rx_frag_flip_cnt[%u]", "rx_frag_copy_cnt[%u]",
 	"rx_frag_alloc_cnt[%u]",
 	"rx_dropped_pkt[%u]", "rx_copybreak_pkt[%u]", "rx_copied_pkt[%u]",
@@ -77,7 +79,8 @@ static const char gve_gstrings_adminq_stats[][ETH_GSTRING_LEN] = {
 };
 
 static const char gve_gstrings_priv_flags[][ETH_GSTRING_LEN] = {
-	"report-stats",
+	"report-stats", "enable-header-split", "enable-strict-header-split",
+	"enable-max-rx-buffer-size"
 };
 
 #define GVE_MAIN_STATS_LEN  ARRAY_SIZE(gve_gstrings_main_stats)
@@ -154,11 +157,13 @@ static void
 gve_get_ethtool_stats(struct net_device *netdev,
 		      struct ethtool_stats *stats, u64 *data)
 {
-	u64 tmp_rx_pkts, tmp_rx_bytes, tmp_rx_skb_alloc_fail,
-		tmp_rx_buf_alloc_fail, tmp_rx_desc_err_dropped_pkt,
+	u64 tmp_rx_pkts, tmp_rx_pkts_sph, tmp_rx_pkts_hbo, tmp_rx_bytes,
+		tmp_rx_hbytes, tmp_rx_skb_alloc_fail, tmp_rx_buf_alloc_fail,
+		tmp_rx_desc_err_dropped_pkt, tmp_rx_hsplit_err_dropped_pkt,
 		tmp_tx_pkts, tmp_tx_bytes;
-	u64 rx_buf_alloc_fail, rx_desc_err_dropped_pkt, rx_pkts,
-		rx_skb_alloc_fail, rx_bytes, tx_pkts, tx_bytes, tx_dropped;
+	u64 rx_buf_alloc_fail, rx_desc_err_dropped_pkt, rx_hsplit_err_dropped_pkt,
+		rx_pkts, rx_pkts_sph, rx_pkts_hbo, rx_skb_alloc_fail, rx_bytes,
+		tx_pkts, tx_bytes, tx_dropped;
 	int stats_idx, base_stats_idx, max_stats_idx;
 	struct stats *report_stats;
 	int *rx_qid_to_stats_idx;
@@ -185,8 +190,10 @@ gve_get_ethtool_stats(struct net_device *netdev,
 		kfree(rx_qid_to_stats_idx);
 		return;
 	}
-	for (rx_pkts = 0, rx_bytes = 0, rx_skb_alloc_fail = 0,
-	     rx_buf_alloc_fail = 0, rx_desc_err_dropped_pkt = 0, ring = 0;
+	for (rx_pkts = 0, rx_bytes = 0, rx_pkts_sph = 0, rx_pkts_hbo = 0,
+	     rx_skb_alloc_fail = 0, rx_buf_alloc_fail = 0,
+	     rx_desc_err_dropped_pkt = 0, rx_hsplit_err_dropped_pkt = 0,
+	     ring = 0;
 	     ring < priv->rx_cfg.num_queues; ring++) {
 		if (priv->rx) {
 			do {
@@ -195,18 +202,25 @@ gve_get_ethtool_stats(struct net_device *netdev,
 				start =
 				  u64_stats_fetch_begin(&priv->rx[ring].statss);
 				tmp_rx_pkts = rx->rpackets;
+				tmp_rx_pkts_sph = rx->rx_hsplit_pkt;
+				tmp_rx_pkts_hbo = rx->rx_hsplit_hbo_pkt;
 				tmp_rx_bytes = rx->rbytes;
 				tmp_rx_skb_alloc_fail = rx->rx_skb_alloc_fail;
 				tmp_rx_buf_alloc_fail = rx->rx_buf_alloc_fail;
 				tmp_rx_desc_err_dropped_pkt =
 					rx->rx_desc_err_dropped_pkt;
+				tmp_rx_hsplit_err_dropped_pkt =
+					rx->rx_hsplit_err_dropped_pkt;
 			} while (u64_stats_fetch_retry(&priv->rx[ring].statss,
 						       start));
 			rx_pkts += tmp_rx_pkts;
+			rx_pkts_sph += tmp_rx_pkts_sph;
+			rx_pkts_hbo += tmp_rx_pkts_hbo;
 			rx_bytes += tmp_rx_bytes;
 			rx_skb_alloc_fail += tmp_rx_skb_alloc_fail;
 			rx_buf_alloc_fail += tmp_rx_buf_alloc_fail;
 			rx_desc_err_dropped_pkt += tmp_rx_desc_err_dropped_pkt;
+			rx_hsplit_err_dropped_pkt += tmp_rx_hsplit_err_dropped_pkt;
 		}
 	}
 	for (tx_pkts = 0, tx_bytes = 0, tx_dropped = 0, ring = 0;
@@ -227,6 +241,8 @@ gve_get_ethtool_stats(struct net_device *netdev,
 
 	i = 0;
 	data[i++] = rx_pkts;
+	data[i++] = rx_pkts_sph;
+	data[i++] = rx_pkts_hbo;
 	data[i++] = tx_pkts;
 	data[i++] = rx_bytes;
 	data[i++] = tx_bytes;
@@ -238,6 +254,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	data[i++] = rx_skb_alloc_fail;
 	data[i++] = rx_buf_alloc_fail;
 	data[i++] = rx_desc_err_dropped_pkt;
+	data[i++] = rx_hsplit_err_dropped_pkt;
 	data[i++] = priv->interface_up_cnt;
 	data[i++] = priv->interface_down_cnt;
 	data[i++] = priv->reset_cnt;
@@ -277,6 +294,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 				start =
 				  u64_stats_fetch_begin(&priv->rx[ring].statss);
 				tmp_rx_bytes = rx->rbytes;
+				tmp_rx_hbytes = rx->rheader_bytes;
 				tmp_rx_skb_alloc_fail = rx->rx_skb_alloc_fail;
 				tmp_rx_buf_alloc_fail = rx->rx_buf_alloc_fail;
 				tmp_rx_desc_err_dropped_pkt =
@@ -284,6 +302,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 			} while (u64_stats_fetch_retry(&priv->rx[ring].statss,
 						       start));
 			data[i++] = tmp_rx_bytes;
+			data[i++] = tmp_rx_hbytes;
 			data[i++] = rx->rx_cont_packet_cnt;
 			data[i++] = rx->rx_frag_flip_cnt;
 			data[i++] = rx->rx_frag_copy_cnt;
@@ -535,30 +554,47 @@ static int gve_set_tunable(struct net_device *netdev,
 static u32 gve_get_priv_flags(struct net_device *netdev)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
-	u32 ret_flags = 0;
-
-	/* Only 1 flag exists currently: report-stats (BIT(O)), so set that flag. */
-	if (priv->ethtool_flags & BIT(0))
-		ret_flags |= BIT(0);
-	return ret_flags;
+	return priv->ethtool_flags & GVE_PRIV_FLAGS_MASK;
 }
 
 static int gve_set_priv_flags(struct net_device *netdev, u32 flags)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
-	u64 ori_flags, new_flags;
+	bool need_adjust_queues = false;
+	u64 ori_flags, flag_diff;
 	int num_tx_queues;
+
+	/* If turning off header split, strict header split will be turned off too*/
+	if (gve_get_enable_header_split(priv) &&
+		!(flags & BIT(GVE_PRIV_FLAGS_ENABLE_HEADER_SPLIT))) {
+		flags &= ~BIT(GVE_PRIV_FLAGS_ENABLE_HEADER_SPLIT);
+		flags &= ~BIT(GVE_PRIV_FLAGS_ENABLE_STRICT_HEADER_SPLIT);
+	}
+
+	/* If strict header-split is requested, turn on regular header-split */
+	if (flags & BIT(GVE_PRIV_FLAGS_ENABLE_STRICT_HEADER_SPLIT))
+		flags |= BIT(GVE_PRIV_FLAGS_ENABLE_HEADER_SPLIT);
+
+	/* Make sure header-split is available */
+	if ((flags & BIT(GVE_PRIV_FLAGS_ENABLE_HEADER_SPLIT)) &&
+		!(priv->ethtool_defaults & BIT(GVE_PRIV_FLAGS_ENABLE_HEADER_SPLIT))) {
+		dev_err(&priv->pdev->dev,
+			"Header-split not available\n");
+		return -EINVAL;
+	}
+
+	if ((flags & BIT(GVE_PRIV_FLAGS_ENABLE_MAX_RX_BUFFER_SIZE)) &&
+			priv->dev_max_rx_buffer_size <= GVE_MIN_RX_BUFFER_SIZE) {
+		dev_err(&priv->pdev->dev,
+			"Max-rx-buffer-size not available\n");
+		return -EINVAL;
+	}
 
 	num_tx_queues = gve_num_tx_queues(priv);
 	ori_flags = READ_ONCE(priv->ethtool_flags);
-	new_flags = ori_flags;
 
-	/* Only one priv flag exists: report-stats (BIT(0))*/
-	if (flags & BIT(0))
-		new_flags |= BIT(0);
-	else
-		new_flags &= ~(BIT(0));
-	priv->ethtool_flags = new_flags;
+	priv->ethtool_flags = flags & GVE_PRIV_FLAGS_MASK;
+
 	/* start report-stats timer when user turns report stats on. */
 	if (flags & BIT(0)) {
 		mod_timer(&priv->stats_report_timer,
@@ -577,6 +613,19 @@ static int gve_set_priv_flags(struct net_device *netdev, u32 flags)
 				   sizeof(struct stats));
 		del_timer_sync(&priv->stats_report_timer);
 	}
+	priv->header_split_strict =
+		(priv->ethtool_flags &
+		 BIT(GVE_PRIV_FLAGS_ENABLE_STRICT_HEADER_SPLIT)) ? true : false;
+
+	flag_diff = priv->ethtool_flags ^ ori_flags;
+
+	if ((flag_diff & BIT(GVE_PRIV_FLAGS_ENABLE_HEADER_SPLIT)) ||
+		(flag_diff & BIT(GVE_PRIV_FLAGS_ENABLE_MAX_RX_BUFFER_SIZE)))
+		need_adjust_queues = true;
+
+	if (need_adjust_queues)
+		return gve_adjust_queues(priv, priv->rx_cfg, priv->tx_cfg);
+
 	return 0;
 }
 

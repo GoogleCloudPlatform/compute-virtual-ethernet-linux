@@ -109,6 +109,13 @@ static void gve_enqueue_buf_state(struct gve_rx_ring *rx,
 	}
 }
 
+static void gve_recycle_buf(struct gve_rx_ring *rx,
+			    struct gve_rx_buf_state_dqo *buf_state)
+{
+	buf_state->hdr_buf = NULL;
+	gve_enqueue_buf_state(rx, &rx->dqo.recycled_buf_states, buf_state);
+}
+
 static struct gve_rx_buf_state_dqo *
 gve_get_recycled_buf_state(struct gve_rx_ring *rx)
 {
@@ -218,6 +225,16 @@ static void gve_rx_free_ring_dqo(struct gve_priv *priv, int idx)
 	kvfree(rx->dqo.buf_states);
 	rx->dqo.buf_states = NULL;
 
+	if (rx->dqo.hdr_bufs) {
+		for (i = 0; i < buffer_queue_slots; i++)
+			if (rx->dqo.hdr_bufs[i].data)
+				dma_pool_free(priv->header_buf_pool,
+					      rx->dqo.hdr_bufs[i].data,
+					      rx->dqo.hdr_bufs[i].addr);
+		kvfree(rx->dqo.hdr_bufs);
+		rx->dqo.hdr_bufs = NULL;
+	}
+
 	netif_dbg(priv, drv, priv->dev, "freed rx ring %d\n", idx);
 }
 
@@ -249,6 +266,23 @@ static int gve_rx_alloc_ring_dqo(struct gve_priv *priv, int idx)
 				      GFP_KERNEL);
 	if (!rx->dqo.buf_states)
 		return -ENOMEM;
+
+	/* Allocate header buffers for header-split */
+	if (priv->header_buf_pool) {
+		rx->dqo.hdr_bufs = kvcalloc(buffer_queue_slots,
+					    sizeof(rx->dqo.hdr_bufs[0]),
+					    GFP_KERNEL);
+		if (!rx->dqo.hdr_bufs)
+			goto err;
+		for (i = 0; i < buffer_queue_slots; i++) {
+			rx->dqo.hdr_bufs[i].data =
+				dma_pool_alloc(priv->header_buf_pool,
+					       GFP_KERNEL,
+					       &rx->dqo.hdr_bufs[i].addr);
+			if (!rx->dqo.hdr_bufs[i].data)
+				goto err;
+		}
+	}
 
 	/* Set up linked list of buffer IDs */
 	for (i = 0; i < rx->dqo.num_buf_states - 1; i++)
@@ -300,7 +334,18 @@ void gve_rx_write_doorbell_dqo(const struct gve_priv *priv, int queue_idx)
 int gve_rx_alloc_rings_dqo(struct gve_priv *priv)
 {
 	int err = 0;
-	int i;
+	int i = 0;
+
+	if (gve_get_enable_header_split(priv)) {
+		priv->header_buf_pool = dma_pool_create("header_bufs",
+							&priv->pdev->dev,
+							priv->header_buf_size,
+							64, 0);
+		if (!priv->header_buf_pool) {
+			err = -ENOMEM;
+			goto err;
+		}
+	}
 
 	for (i = 0; i < priv->rx_cfg.num_queues; i++) {
 		err = gve_rx_alloc_ring_dqo(priv, i);
@@ -327,6 +372,9 @@ void gve_rx_free_rings_dqo(struct gve_priv *priv)
 
 	for (i = 0; i < priv->rx_cfg.num_queues; i++)
 		gve_rx_free_ring_dqo(priv, i);
+
+	dma_pool_destroy(priv->header_buf_pool);
+	priv->header_buf_pool = NULL;
 }
 
 void gve_rx_post_buffers_dqo(struct gve_rx_ring *rx)
@@ -364,6 +412,12 @@ void gve_rx_post_buffers_dqo(struct gve_rx_ring *rx)
 		desc->buf_id = cpu_to_le16(buf_state - rx->dqo.buf_states);
 		desc->buf_addr = cpu_to_le64(buf_state->addr +
 					     buf_state->page_info.page_offset);
+		if (rx->dqo.hdr_bufs) {
+			struct gve_header_buf *hdr_buf =
+				&rx->dqo.hdr_bufs[bufq->tail];
+			buf_state->hdr_buf = hdr_buf;
+			desc->header_buf_addr = cpu_to_le64(hdr_buf->addr);
+		}
 
 		bufq->tail = (bufq->tail + 1) & bufq->mask;
 		complq->num_free_slots--;
@@ -410,7 +464,7 @@ static void gve_try_recycle_buf(struct gve_priv *priv, struct gve_rx_ring *rx,
 		goto mark_used;
 	}
 
-	gve_enqueue_buf_state(rx, &rx->dqo.recycled_buf_states, buf_state);
+	gve_recycle_buf(rx, buf_state);
 	return;
 
 mark_used:
@@ -520,10 +574,13 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 		      int queue_idx)
 {
 	const u16 buffer_id = le16_to_cpu(compl_desc->buf_id);
+	const bool hbo = compl_desc->header_buffer_overflow != 0;
 	const bool eop = compl_desc->end_of_packet != 0;
+	const bool sph = compl_desc->split_header != 0;
 	struct gve_rx_buf_state_dqo *buf_state;
 	struct gve_priv *priv = rx->gve;
 	u16 buf_len;
+	u16 hdr_len;
 
 	if (unlikely(buffer_id >= rx->dqo.num_buf_states)) {
 		net_err_ratelimited("%s: Invalid RX buffer_id=%u\n",
@@ -538,17 +595,55 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 	}
 
 	if (unlikely(compl_desc->rx_error)) {
-		gve_enqueue_buf_state(rx, &rx->dqo.recycled_buf_states,
-				      buf_state);
+		net_err_ratelimited("%s: Descriptor error=%u\n",
+				    priv->dev->name, compl_desc->rx_error);
+		gve_recycle_buf(rx, buf_state);
 		return -EINVAL;
 	}
 
 	buf_len = compl_desc->packet_len;
+	hdr_len = compl_desc->header_len;
+
+	if (unlikely(sph && !hdr_len)) {
+		gve_recycle_buf(rx, buf_state);
+		return -EINVAL;
+	}
+
+	if (unlikely(hdr_len && buf_state->hdr_buf == NULL)) {
+		gve_recycle_buf(rx, buf_state);
+		return -EINVAL;
+	}
+
+	if (unlikely(hbo && priv->header_split_strict)) {
+		gve_recycle_buf(rx, buf_state);
+		return -EFAULT;
+	}
 
 	/* Page might have not been used for awhile and was likely last written
 	 * by a different thread.
 	 */
 	prefetch(buf_state->page_info.page);
+
+	/* Copy the header into the skb in the case of header split */
+	if (sph) {
+		dma_sync_single_for_cpu(&priv->pdev->dev,
+					buf_state->hdr_buf->addr,
+					hdr_len, DMA_FROM_DEVICE);
+
+		rx->ctx.skb_head = gve_rx_copy_data(priv->dev, napi,
+						    buf_state->hdr_buf->data,
+						    hdr_len);
+		if (unlikely(!rx->ctx.skb_head))
+			goto error;
+
+		rx->ctx.skb_tail = rx->ctx.skb_head;
+
+		u64_stats_update_begin(&rx->statss);
+		rx->rx_hsplit_pkt++;
+		rx->rx_hsplit_hbo_pkt += hbo;
+		rx->rheader_bytes += hdr_len;
+		u64_stats_update_end(&rx->statss);
+	}
 
 	/* Sync the portion of dma buffer for CPU to read. */
 	dma_sync_single_range_for_cpu(&priv->pdev->dev, buf_state->addr,
@@ -558,10 +653,8 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 	/* Append to current skb if one exists. */
 	if (rx->ctx.skb_head) {
 		if (unlikely(gve_rx_append_frags(napi, buf_state, buf_len, rx,
-						 priv)) != 0) {
+						 priv)) != 0)
 			goto error;
-		}
-
 		gve_try_recycle_buf(priv, rx, buf_state);
 		return 0;
 	}
@@ -578,8 +671,7 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 		rx->rx_copybreak_pkt++;
 		u64_stats_update_end(&rx->statss);
 
-		gve_enqueue_buf_state(rx, &rx->dqo.recycled_buf_states,
-				      buf_state);
+		gve_recycle_buf(rx, buf_state);
 		return 0;
 	}
 
@@ -597,7 +689,8 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 	return 0;
 
 error:
-	gve_enqueue_buf_state(rx, &rx->dqo.recycled_buf_states, buf_state);
+	dev_err(&priv->pdev->dev, "%s: Error return", priv->dev->name);
+	gve_recycle_buf(rx, buf_state);
 	return -ENOMEM;
 }
 
@@ -696,6 +789,8 @@ int gve_rx_poll_dqo(struct gve_notify_block *block, int budget)
 				rx->rx_skb_alloc_fail++;
 			else if (err == -EINVAL)
 				rx->rx_desc_err_dropped_pkt++;
+			else if (err == -EFAULT)
+				rx->rx_hsplit_err_dropped_pkt++;
 			u64_stats_update_end(&rx->statss);
 		}
 
