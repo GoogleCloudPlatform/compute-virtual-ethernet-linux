@@ -1071,6 +1071,7 @@ void gve_handle_report_stats(struct gve_priv *priv);
 /* RSS support */
 int gve_rss_config_init(struct gve_priv *priv);
 void gve_rss_set_default_indir(struct gve_priv *priv);
+void gve_rss_config_release(struct gve_rss_config *rss_config);
 
 /* exported by ethtool.c */
 extern const struct ethtool_ops gve_ethtool_ops;

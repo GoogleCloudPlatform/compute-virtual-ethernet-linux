@@ -550,6 +550,7 @@ static void gve_teardown_device_resources(struct gve_priv *priv)
 
 	/* Tell device its resources are being freed */
 	if (gve_get_device_resources_ok(priv)) {
+		gve_flow_rules_reset(priv);
 		/* detach the stats report */
 		err = gve_adminq_report_stats(priv, 0, 0x0, GVE_STATS_REPORT_TIMER_PERIOD);
 		if (err) {
@@ -569,6 +570,7 @@ static void gve_teardown_device_resources(struct gve_priv *priv)
 	kvfree(priv->ptype_lut_dqo);
 	priv->ptype_lut_dqo = NULL;
 
+	gve_rss_config_release(&priv->rss_config);
 	gve_free_counter_array(priv);
 	gve_free_notify_blocks(priv);
 	gve_free_stats_report(priv);
@@ -1705,6 +1707,7 @@ static int gve_adjust_queue_count(struct gve_priv *priv,
 				  struct gve_queue_config new_rx_config,
 				  struct gve_queue_config new_tx_config)
 {
+	struct gve_queue_config old_rx_config = priv->rx_cfg;
 	int err = 0;
 
 	priv->rx_cfg = new_rx_config;
@@ -1716,12 +1719,14 @@ static int gve_adjust_queue_count(struct gve_priv *priv,
 		priv->data_buffer_size_dqo = GVE_RX_BUFFER_SIZE_DQO;
 
 
-	err = gve_flow_rules_reset(priv);
-	if (err)
-		return err;
+	if (old_rx_config.num_queues != new_rx_config.num_queues) {
+		err = gve_flow_rules_reset(priv);
+		if (err)
+			return err;
 
-	if (priv->rss_config.alg != GVE_RSS_HASH_UNDEFINED)
-		err = gve_rss_config_init(priv);
+		if (priv->rss_config.alg != GVE_RSS_HASH_UNDEFINED)
+			err = gve_rss_config_init(priv);
+	}
 
 	return err;
 }
@@ -2449,17 +2454,18 @@ void gve_rss_set_default_indir(struct gve_priv *priv)
 		rss_config->indir[i] = i % priv->rx_cfg.num_queues;
 }
 
+void gve_rss_config_release(struct gve_rss_config *rss_config)
+{
+	kvfree(rss_config->key);
+	kvfree(rss_config->indir);
+	memset(rss_config, 0, sizeof(*rss_config));
+}
+
 int gve_rss_config_init(struct gve_priv *priv)
 {
 	struct gve_rss_config *rss_config = &priv->rss_config;
 
-	if (rss_config->key)
-		kvfree(rss_config->key);
-
-	if (rss_config->indir)
-		kvfree(rss_config->indir);
-
-	memset(rss_config, 0, sizeof(*rss_config));
+	gve_rss_config_release(rss_config);
 
 	rss_config->key = kvzalloc(GVE_RSS_KEY_SIZE, GFP_KERNEL);
 	if (!rss_config->key)
@@ -2473,7 +2479,6 @@ int gve_rss_config_init(struct gve_priv *priv)
 	if (!rss_config->indir)
 		goto err;
 
-
 	rss_config->alg = GVE_RSS_HASH_TOEPLITZ;
 	rss_config->key_size = GVE_RSS_KEY_SIZE;
 	rss_config->indir_size = GVE_RSS_INDIR_SIZE;
@@ -2482,10 +2487,8 @@ int gve_rss_config_init(struct gve_priv *priv)
 	return gve_adminq_configure_rss(priv, rss_config);
 
 err:
-	if (rss_config->key) {
-		kvfree(rss_config->key);
-		rss_config->key = NULL;
-	}
+	kvfree(rss_config->key);
+	rss_config->key = NULL;
 	return -ENOMEM;
 }
 
