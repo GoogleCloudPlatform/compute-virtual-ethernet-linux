@@ -212,6 +212,76 @@ static void gve_free_stats_report(struct gve_priv *priv)
 	priv->stats_report = NULL;
 }
 
+static void gve_tx_timeout_for_miss_path(struct net_device *dev, unsigned int txqueue)
+{
+	struct gve_notify_block *block;
+	struct gve_tx_ring *tx = NULL;
+	bool has_work = false;
+	struct gve_priv *priv;
+	u32 ntfy_idx;
+
+	priv = netdev_priv(dev);
+
+	ntfy_idx = gve_tx_idx_to_ntfy(priv, txqueue);
+	if (ntfy_idx > priv->num_ntfy_blks)
+		return;
+
+	block = &priv->ntfy_blocks[ntfy_idx];
+	tx = block->tx;
+	if (!tx)
+		return;
+
+	/* Check to see if there is pending work */
+	has_work = gve_tx_work_pending_dqo(tx);
+	if (!has_work)
+		return;
+
+	if (READ_ONCE(tx->dqo_compl.kicked)) {
+		netdev_warn(dev,
+			    "TX timeout on queue %d. Scheduling reset.",
+			    txqueue);
+		gve_schedule_reset(priv);
+	}
+
+	gve_write_irq_doorbell_dqo(priv, block, GVE_ITR_NO_UPDATE_DQO);
+
+	netdev_info(dev, "Kicking tx queue %d for miss path", txqueue);
+	napi_schedule(&block->napi);
+	WRITE_ONCE(tx->dqo_compl.kicked, true);
+}
+
+static void gve_tx_timeout_timer(struct timer_list *t)
+{
+	struct gve_priv *priv = from_timer(priv, t, tx_timeout_timer);
+	int i;
+
+	for(i = 0; i < priv->tx_cfg.num_queues; i++) {
+		if (time_after(jiffies, READ_ONCE(priv->tx[i].dqo_compl.last_processed)
+			       + priv->tx_timeout_period)) {
+			gve_tx_timeout_for_miss_path(priv->dev, i);
+		}
+	}
+	mod_timer(&priv->tx_timeout_timer,
+		  jiffies + priv->tx_timeout_period);
+}
+
+static int gve_setup_tx_timeout_timer(struct gve_priv *priv)
+{
+	/* Set up 1 sec timer to check no reinjection on miss path */
+	if (gve_is_gqi(priv))
+		return 0;
+	priv->tx_timeout_period = GVE_TX_TIMEOUT_PERIOD;
+	timer_setup(&priv->tx_timeout_timer, gve_tx_timeout_timer, 0);
+	return 0;
+}
+
+static void gve_free_tx_timeout_timer(struct gve_priv *priv)
+{
+	if (gve_is_gqi(priv))
+		return;
+	del_timer_sync(&priv->tx_timeout_timer);
+}
+
 static irqreturn_t gve_mgmnt_intr(int irq, void *arg)
 {
 	struct gve_priv *priv = arg;
@@ -490,9 +560,12 @@ static int gve_setup_device_resources(struct gve_priv *priv)
 	err = gve_alloc_notify_blocks(priv);
 	if (err)
 		goto abort_with_counter;
+	err = gve_setup_tx_timeout_timer(priv);
+	if(err)
+		goto abort_with_ntfy_blocks;
 	err = gve_alloc_stats_report(priv);
 	if (err)
-		goto abort_with_ntfy_blocks;
+		goto abort_with_tx_timeout;
 	err = gve_adminq_configure_device_resources(priv,
 						    priv->counter_array_bus,
 						    priv->num_event_counters,
@@ -534,6 +607,8 @@ abort_with_ptype_lut:
 	priv->ptype_lut_dqo = NULL;
 abort_with_stats_report:
 	gve_free_stats_report(priv);
+abort_with_tx_timeout:
+	gve_free_tx_timeout_timer(priv);
 abort_with_ntfy_blocks:
 	gve_free_notify_blocks(priv);
 abort_with_counter:
@@ -574,6 +649,7 @@ static void gve_teardown_device_resources(struct gve_priv *priv)
 	gve_free_counter_array(priv);
 	gve_free_notify_blocks(priv);
 	gve_free_stats_report(priv);
+	gve_free_tx_timeout_timer(priv);
 	gve_clear_device_resources_ok(priv);
 }
 
@@ -1322,6 +1398,10 @@ static int gve_open(struct net_device *dev)
 			  round_jiffies(jiffies +
 				msecs_to_jiffies(priv->stats_report_timer_period)));
 
+	if (!gve_is_gqi(priv))
+		mod_timer(&priv->tx_timeout_timer,
+			jiffies + priv->tx_timeout_period);
+
 	gve_turnup(priv);
 	queue_work(priv->gve_wq, &priv->service_task);
 	priv->interface_up_cnt++;
@@ -1365,6 +1445,7 @@ static int gve_close(struct net_device *dev)
 		gve_clear_device_rings_ok(priv);
 	}
 	del_timer_sync(&priv->stats_report_timer);
+	del_timer_sync(&priv->tx_timeout_timer);
 
 	gve_unreg_xdp_info(priv);
 	gve_free_rings(priv);

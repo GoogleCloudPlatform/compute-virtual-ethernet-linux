@@ -35,6 +35,7 @@
 netdev_tx_t gve_tx_dqo(struct sk_buff *skb, struct net_device *dev);
 bool gve_tx_poll_dqo(struct gve_notify_block *block, bool do_clean);
 int gve_rx_poll_dqo(struct gve_notify_block *block, int budget);
+bool gve_tx_work_pending_dqo(struct gve_tx_ring *tx);
 int gve_tx_alloc_rings_dqo(struct gve_priv *priv);
 void gve_tx_free_rings_dqo(struct gve_priv *priv);
 int gve_rx_alloc_rings_dqo(struct gve_priv *priv);

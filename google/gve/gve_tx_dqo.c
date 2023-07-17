@@ -995,6 +995,9 @@ int gve_clean_tx_done_dqo(struct gve_priv *priv, struct gve_tx_ring *tx,
 	remove_miss_completions(priv, tx);
 	remove_timed_out_completions(priv, tx);
 
+	WRITE_ONCE(tx->dqo_compl.last_processed, jiffies);
+	WRITE_ONCE(tx->dqo_compl.kicked, false);
+
 	u64_stats_update_begin(&tx->statss);
 	tx->bytes_done += pkt_compl_bytes + reinject_compl_bytes;
 	tx->pkt_done += pkt_compl_pkts + reinject_compl_pkts;
@@ -1025,4 +1028,10 @@ bool gve_tx_poll_dqo(struct gve_notify_block *block, bool do_clean)
 	/* Return true if we still have work. */
 	compl_desc = &tx->dqo.compl_ring[tx->dqo_compl.head];
 	return compl_desc->generation != tx->dqo_compl.cur_gen_bit;
+}
+
+bool gve_tx_work_pending_dqo(struct gve_tx_ring *tx)
+{
+	struct gve_index_list *miss_comp_list = &tx->dqo_compl.miss_completions;
+	return READ_ONCE(miss_comp_list->head) != -1;
 }

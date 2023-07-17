@@ -42,6 +42,9 @@
 
 #define GVE_DATA_SLOT_ADDR_PAGE_MASK (~(PAGE_SIZE - 1))
 
+// TX timeout period to check the miss path
+#define GVE_TX_TIMEOUT_PERIOD 1 * HZ
+
 /* PTYPEs are always 10 bits. */
 #define GVE_NUM_PTYPES	1024
 
@@ -429,6 +432,10 @@ struct gve_tx_ring {
 			/* Tracks the current gen bit of compl_q */
 			u8 cur_gen_bit;
 
+			/* the jiffies when  last TX completion was processed*/
+			unsigned long last_processed;
+			bool kicked;
+
 			/* Linked list of gve_tx_pending_packet_dqo. Index into
 			 * pending_packets, or -1 if empty.
 			 *
@@ -683,6 +690,10 @@ struct gve_priv {
 
 	unsigned long stats_report_timer_period;
 	struct timer_list stats_report_timer;
+
+	unsigned long tx_timeout_period;
+	/* tx timeout timer for the miss path */
+	struct timer_list tx_timeout_timer;
 
 	/* Gvnic device link speed from hypervisor. */
 	u64 link_speed;
