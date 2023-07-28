@@ -497,11 +497,78 @@ static void gve_get_ringparam(struct net_device *netdev,
 			      struct netlink_ext_ack *extack)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
-
-	cmd->rx_max_pending = priv->rx_desc_cnt;
-	cmd->tx_max_pending = priv->tx_desc_cnt;
+	cmd->rx_max_pending = priv->max_rx_desc_cnt;
+	cmd->tx_max_pending = priv->max_tx_desc_cnt;
 	cmd->rx_pending = priv->rx_desc_cnt;
 	cmd->tx_pending = priv->tx_desc_cnt;
+}
+
+static int gve_set_ringparam(struct net_device *netdev,
+			     struct ethtool_ringparam *cmd,
+			     struct kernel_ethtool_ringparam *kernel_cmd,
+			     struct netlink_ext_ack *extack)
+{
+	struct gve_priv *priv = netdev_priv(netdev);
+	int old_rx_desc_cnt = priv->rx_desc_cnt;
+	int old_tx_desc_cnt = priv->tx_desc_cnt;
+	int new_tx_desc_cnt = cmd->tx_pending;
+	int new_rx_desc_cnt = cmd->rx_pending;
+	int new_max_registered_pages =
+		new_rx_desc_cnt * gve_num_rx_qpls(priv) +
+			GVE_TX_PAGE_COUNT * gve_num_tx_qpls(priv);
+
+	if (new_tx_desc_cnt < GVE_RING_LENGTH_LIMIT_MIN ||
+		new_rx_desc_cnt < GVE_RING_LENGTH_LIMIT_MIN) {
+		dev_err(&priv->pdev->dev, "Ring size cannot be less than %d\n",
+			GVE_RING_LENGTH_LIMIT_MIN);
+		return -EINVAL;
+	}
+
+	if (new_tx_desc_cnt > GVE_RING_LENGTH_LIMIT_MAX ||
+		new_rx_desc_cnt > GVE_RING_LENGTH_LIMIT_MAX) {
+		dev_err(&priv->pdev->dev,
+			"Ring size cannot be greater than %d\n",
+			GVE_RING_LENGTH_LIMIT_MAX);
+		return -EINVAL;
+	}
+
+	/* Ring size must be a power of 2, will fail if passed values are not
+	 * In the future we may want to update to round down to the
+	 * closest valid ring size
+	 */
+	if ((new_tx_desc_cnt & (new_tx_desc_cnt - 1)) != 0 ||
+		(new_rx_desc_cnt & (new_rx_desc_cnt - 1)) != 0) {
+		dev_err(&priv->pdev->dev, "Ring size must be a power of 2\n");
+		return -EINVAL;
+	}
+
+	if (new_tx_desc_cnt > priv->max_tx_desc_cnt) {
+		dev_err(&priv->pdev->dev,
+			"Tx ring size passed %d is larger than max tx ring size %u\n",
+			new_tx_desc_cnt, priv->max_tx_desc_cnt);
+		return -EINVAL;
+	}
+
+	if (new_rx_desc_cnt > priv->max_rx_desc_cnt) {
+		dev_err(&priv->pdev->dev,
+			"Rx ring size passed %d is larger than max rx ring size %u\n",
+			new_rx_desc_cnt, priv->max_rx_desc_cnt);
+		return -EINVAL;
+	}
+
+	if (new_max_registered_pages > priv->max_registered_pages) {
+		dev_err(&priv->pdev->dev,
+				"Allocating too many pages %d; max %llu",
+				new_max_registered_pages,
+				priv->max_registered_pages);
+		return -EINVAL;
+	}
+
+	// Nothing to change return success
+	if (new_tx_desc_cnt == old_tx_desc_cnt && new_rx_desc_cnt == old_rx_desc_cnt)
+		return 0;
+
+	return gve_adjust_ring_sizes(priv, new_tx_desc_cnt, new_rx_desc_cnt);
 }
 
 static int gve_user_reset(struct net_device *netdev, u32 *flags)
@@ -1352,6 +1419,7 @@ const struct ethtool_ops gve_ethtool_ops = {
 	.get_coalesce = gve_get_coalesce,
 	.set_coalesce = gve_set_coalesce,
 	.get_ringparam = gve_get_ringparam,
+	.set_ringparam = gve_set_ringparam,
 	.reset = gve_user_reset,
 	.get_tunable = gve_get_tunable,
 	.set_tunable = gve_set_tunable,

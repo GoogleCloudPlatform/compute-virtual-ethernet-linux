@@ -1179,8 +1179,7 @@ static int gve_alloc_xdp_qpls(struct gve_priv *priv)
 
 	start_id = gve_tx_qpl_id(priv, gve_xdp_tx_start_queue_id(priv));
 	for (i = start_id; i < start_id + gve_num_xdp_qpls(priv); i++) {
-		err = gve_alloc_queue_page_list(priv, i,
-						priv->tx_pages_per_qpl);
+		err = gve_alloc_queue_page_list(priv, i, GVE_TX_PAGE_COUNT);
 		if (err)
 			goto free_qpls;
 	}
@@ -1209,7 +1208,8 @@ static int gve_alloc_qpls(struct gve_priv *priv)
 		return -ENOMEM;
 
 	start_id = gve_tx_start_qpl_id(priv);
-	page_count = priv->tx_pages_per_qpl;
+	page_count = priv->queue_format == GVE_GQI_QPL_FORMAT ?
+		GVE_TX_PAGE_COUNT : priv->tx_pages_per_qpl;
 	for (i = start_id; i < start_id + gve_num_tx_qpls(priv); i++) {
 		err = gve_alloc_queue_page_list(priv, i, page_count);
 		if (err)
@@ -1223,7 +1223,7 @@ static int gve_alloc_qpls(struct gve_priv *priv)
 	 * more than descriptors (because of out of order completions).
 	 */
 	page_count = priv->queue_format == GVE_GQI_QPL_FORMAT ?
-		priv->rx_data_slot_cnt : priv->rx_pages_per_qpl;
+		priv->rx_desc_cnt : priv->rx_pages_per_qpl;
 	for (i = start_id; i < start_id + gve_num_rx_qpls(priv); i++) {
 		err = gve_alloc_queue_page_list(priv, i, page_count);
 		if (err)
@@ -1493,6 +1493,38 @@ err:
 	/* Otherwise reset before returning */
 	gve_reset_and_teardown(priv, true);
 	return gve_reset_recovery(priv, false);
+}
+
+int gve_adjust_ring_sizes(struct gve_priv *priv,
+			  int new_tx_desc_cnt,
+			  int new_rx_desc_cnt)
+{
+	int err;
+
+	if (netif_carrier_ok(priv->dev)) {
+		err = gve_close(priv->dev);
+		if (err)
+			return err;
+		priv->tx_desc_cnt = new_tx_desc_cnt;
+		priv->rx_desc_cnt = new_rx_desc_cnt;
+
+		err = gve_open(priv->dev);
+		if (err)
+			goto err;
+		return 0;
+	}
+
+	priv->tx_desc_cnt = new_tx_desc_cnt;
+	priv->rx_desc_cnt = new_rx_desc_cnt;
+
+	return 0;
+
+err:
+	dev_err(&priv->pdev->dev,
+		"Failed to adjust ring sizes: err=%d. Disabling all queues.\n",
+		err);
+	gve_turndown(priv);
+	return err;
 }
 
 static int gve_remove_xdp_queues(struct gve_priv *priv)
@@ -2240,6 +2272,8 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 		goto setup_device;
 
 	priv->queue_format = GVE_QUEUE_FORMAT_UNSPECIFIED;
+	priv->modify_ringsize_enabled = false;
+
 	/* Get the initial information we need from the device */
 	err = gve_adminq_describe_device(priv);
 	if (err) {

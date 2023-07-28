@@ -379,9 +379,7 @@ static int gve_rx_alloc_ring_dqo(struct gve_priv *priv, int idx)
 	struct device *hdev = &priv->pdev->dev;
 	size_t size;
 
-	const u32 buffer_queue_slots =
-		priv->queue_format == GVE_DQO_RDA_FORMAT ?
-		priv->options_dqo_rda.rx_buff_ring_entries : priv->rx_desc_cnt;
+	const u32 buffer_queue_slots = priv->rx_desc_cnt;
 	const u32 completion_queue_slots = priv->rx_desc_cnt;
 
 	netif_dbg(priv, drv, priv->dev, "allocating rx ring DQO\n");

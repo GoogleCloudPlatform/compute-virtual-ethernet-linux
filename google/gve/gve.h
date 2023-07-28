@@ -40,6 +40,18 @@
 #define NIC_TX_STATS_REPORT_NUM	0
 #define NIC_RX_STATS_REPORT_NUM	4
 
+/* Experiment derived */
+#define GVE_TX_PAGE_COUNT 64
+
+/* Minimum descriptor ring size in bytes */
+#define GVE_RING_SIZE_MIN 4096
+
+/* Sanity check min ring element length for tx and rx queues */
+#define GVE_RING_LENGTH_LIMIT_MIN 64
+
+/* Sanity check max ring element length for tx and rx queues */
+#define GVE_RING_LENGTH_LIMIT_MAX 2048
+
 #define GVE_DATA_SLOT_ADDR_PAGE_MASK (~(PAGE_SIZE - 1))
 
 // TX timeout period to check the miss path
@@ -630,11 +642,6 @@ struct gve_qpl_config {
 	unsigned long *qpl_id_map; /* bitmap of used qpl ids */
 };
 
-struct gve_options_dqo_rda {
-	u16 tx_comp_ring_entries; /* number of tx_comp descriptors */
-	u16 rx_buff_ring_entries; /* number of rx_buff descriptors */
-};
-
 struct gve_irq_db {
 	__be32 index;
 } ____cacheline_aligned;
@@ -715,14 +722,16 @@ struct gve_priv {
 	u16 num_event_counters;
 	u16 tx_desc_cnt; /* num desc per ring */
 	u16 rx_desc_cnt; /* num desc per ring */
+	u16 max_rx_desc_cnt; /* max num desc per rx ring */
+	u16 max_tx_desc_cnt; /* max num desc per tx ring */
 	u16 tx_pages_per_qpl; /* Suggested number of pages per qpl for TX queues by NIC */
 	u16 rx_pages_per_qpl; /* Suggested number of pages per qpl for RX queues by NIC */
-	u16 rx_data_slot_cnt; /* rx buffer length */
 	u64 max_registered_pages;
 	u64 num_registered_pages; /* num pages registered with NIC */
 	struct bpf_prog *xdp_prog; /* XDP BPF program */
 	u32 rx_copybreak; /* copy packets smaller than this */
 	u16 default_num_queues; /* default num queues to set up */
+	bool modify_ringsize_enabled;
 
 	u16 num_xdp_queues;
 	struct gve_queue_config tx_cfg;
@@ -795,7 +804,6 @@ struct gve_priv {
 	u64 link_speed;
 	bool up_before_suspend; /* True if dev was up before suspend */
 
-	struct gve_options_dqo_rda options_dqo_rda;
 	struct gve_ptype_lut *ptype_lut_dqo;
 
 	/* Must be a power of two. */
@@ -1190,6 +1198,9 @@ int gve_rss_config_init(struct gve_priv *priv);
 void gve_rss_set_default_indir(struct gve_priv *priv);
 void gve_rss_config_release(struct gve_rss_config *rss_config);
 
+int gve_adjust_ring_sizes(struct gve_priv *priv,
+			  int new_tx_desc_cnt,
+			  int new_rx_desc_cnt);
 /* exported by ethtool.c */
 extern const struct ethtool_ops gve_ethtool_ops;
 /* needed by ethtool */

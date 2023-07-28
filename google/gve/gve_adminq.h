@@ -82,7 +82,7 @@ struct gve_device_descriptor {
 	u8  mac[ETH_ALEN];
 	__be16 num_device_options;
 	__be16 total_length;
-	u8  reserved2[6];
+	u8  reserved3[6];
 };
 
 static_assert(sizeof(struct gve_device_descriptor) == 40);
@@ -109,8 +109,7 @@ static_assert(sizeof(struct gve_device_option_gqi_qpl) == 4);
 
 struct gve_device_option_dqo_rda {
 	__be32 supported_features_mask;
-	__be16 tx_comp_ring_entries;
-	__be16 rx_buff_ring_entries;
+	__be32 reserved;
 };
 
 static_assert(sizeof(struct gve_device_option_dqo_rda) == 8);
@@ -122,6 +121,14 @@ struct gve_device_option_dqo_qpl {
 };
 
 static_assert(sizeof(struct gve_device_option_dqo_qpl) == 8);
+
+struct gve_device_option_modify_ring {
+	__be32 supported_features_mask;
+	__be16 max_rx_ring_size;
+	__be16 max_tx_ring_size;
+};
+
+static_assert(sizeof(struct gve_device_option_modify_ring) == 8);
 
 struct gve_device_option_jumbo_frames {
 	__be32 supported_features_mask;
@@ -160,6 +167,7 @@ enum gve_dev_opt_id {
 	GVE_DEV_OPT_ID_GQI_RDA = 0x2,
 	GVE_DEV_OPT_ID_GQI_QPL = 0x3,
 	GVE_DEV_OPT_ID_DQO_RDA = 0x4,
+	GVE_DEV_OPT_ID_MODIFY_RING = 0x6,
 	GVE_DEV_OPT_ID_DQO_QPL = 0x7,
 	GVE_DEV_OPT_ID_JUMBO_FRAMES = 0x8,
 	GVE_DEV_OPT_ID_BUFFER_SIZES = 0xa,
@@ -171,6 +179,7 @@ enum gve_dev_opt_req_feat_mask {
 	GVE_DEV_OPT_REQ_FEAT_MASK_GQI_RDA = 0x0,
 	GVE_DEV_OPT_REQ_FEAT_MASK_GQI_QPL = 0x0,
 	GVE_DEV_OPT_REQ_FEAT_MASK_DQO_RDA = 0x0,
+	GVE_DEV_OPT_REQ_FEAT_MASK_MODIFY_RING = 0x0,
 	GVE_DEV_OPT_REQ_FEAT_MASK_JUMBO_FRAMES = 0x0,
 	GVE_DEV_OPT_REQ_FEAT_MASK_BUFFER_SIZES = 0x0,
 	GVE_DEV_OPT_REQ_FEAT_MASK_DQO_QPL = 0x0,
@@ -178,6 +187,7 @@ enum gve_dev_opt_req_feat_mask {
 };
 
 enum gve_sup_feature_mask {
+	GVE_SUP_MODIFY_RING_MASK  = 1 << 0,
 	GVE_SUP_JUMBO_FRAMES_MASK = 1 << 2,
 	GVE_SUP_BUFFER_SIZES_MASK = 1 << 4,
 	GVE_SUP_FLOW_STEERING_MASK = 1 << 5,

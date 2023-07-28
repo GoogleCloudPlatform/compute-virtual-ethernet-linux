@@ -39,7 +39,8 @@ void gve_parse_device_option(struct gve_priv *priv,
 			     struct gve_device_option_gqi_rda **dev_op_gqi_rda,
 			     struct gve_device_option_gqi_qpl **dev_op_gqi_qpl,
 			     struct gve_device_option_dqo_rda **dev_op_dqo_rda,
-			     struct gve_device_option_jumbo_frames **dev_op_jumbo_frames,
+			     struct gve_device_option_modify_ring **dev_op_modify_ring,
+				 struct gve_device_option_jumbo_frames **dev_op_jumbo_frames,
 			     struct gve_device_option_buffer_sizes **dev_op_buffer_sizes,
 			     struct gve_device_option_flow_steering **dev_op_flow_steering,
 			     struct gve_device_option_dqo_qpl **dev_op_dqo_qpl)
@@ -131,6 +132,23 @@ void gve_parse_device_option(struct gve_priv *priv,
 		}
 		*dev_op_dqo_qpl = (void *)(option + 1);
 		break;
+	case GVE_DEV_OPT_ID_MODIFY_RING:
+		if (option_length < sizeof(**dev_op_modify_ring) ||
+		    req_feat_mask != GVE_DEV_OPT_REQ_FEAT_MASK_MODIFY_RING) {
+			dev_warn(&priv->pdev->dev, GVE_DEVICE_OPTION_ERROR_FMT,
+				 "Modify Ring",
+				 (int)sizeof(**dev_op_modify_ring),
+				 GVE_DEV_OPT_REQ_FEAT_MASK_MODIFY_RING,
+				 option_length, req_feat_mask);
+			break;
+		}
+
+		if (option_length > sizeof(**dev_op_modify_ring)) {
+			dev_warn(&priv->pdev->dev,
+				 GVE_DEVICE_OPTION_TOO_BIG_FMT, "Modify Ring");
+		}
+		*dev_op_modify_ring = (void *)(option + 1);
+		break;
 	case GVE_DEV_OPT_ID_JUMBO_FRAMES:
 		if (option_length < sizeof(**dev_op_jumbo_frames) ||
 		    req_feat_mask != GVE_DEV_OPT_REQ_FEAT_MASK_JUMBO_FRAMES) {
@@ -203,6 +221,7 @@ gve_process_device_options(struct gve_priv *priv,
 			   struct gve_device_option_gqi_rda **dev_op_gqi_rda,
 			   struct gve_device_option_gqi_qpl **dev_op_gqi_qpl,
 			   struct gve_device_option_dqo_rda **dev_op_dqo_rda,
+			   struct gve_device_option_modify_ring **dev_op_modify_ring,
 			   struct gve_device_option_jumbo_frames **dev_op_jumbo_frames,
 			   struct gve_device_option_buffer_sizes **dev_op_buffer_sizes,
 			   struct gve_device_option_flow_steering **dev_op_flow_steering,
@@ -226,9 +245,9 @@ gve_process_device_options(struct gve_priv *priv,
 
 		gve_parse_device_option(priv, descriptor, dev_opt,
 					dev_op_gqi_rda, dev_op_gqi_qpl,
-					dev_op_dqo_rda, dev_op_jumbo_frames,
-					dev_op_buffer_sizes, dev_op_flow_steering,
-					dev_op_dqo_qpl);
+					dev_op_dqo_rda, dev_op_modify_ring,
+					dev_op_jumbo_frames, dev_op_buffer_sizes,
+					dev_op_flow_steering, dev_op_dqo_qpl);
 		dev_opt = next_opt;
 	}
 
@@ -600,7 +619,9 @@ static int gve_adminq_create_tx_queue(struct gve_priv *priv, u32 queue_index)
 		.queue_resources_addr =
 			cpu_to_be64(tx->q_resources_bus),
 		.tx_ring_addr = cpu_to_be64(tx->bus),
+		.tx_comp_ring_addr = cpu_to_be64(tx->complq_bus_dqo),
 		.ntfy_id = cpu_to_be32(tx->ntfy_id),
+		.tx_ring_size = cpu_to_be16(priv->tx_desc_cnt),
 	};
 
 	if (gve_is_gqi(priv)) {
@@ -609,24 +630,18 @@ static int gve_adminq_create_tx_queue(struct gve_priv *priv, u32 queue_index)
 
 		cmd.create_tx_queue.queue_page_list_id = cpu_to_be32(qpl_id);
 	} else {
-		u16 comp_ring_size;
 		u32 qpl_id = 0;
 
 		if (priv->queue_format == GVE_DQO_RDA_FORMAT) {
 			qpl_id = GVE_RAW_ADDRESSING_QPL_ID;
-			comp_ring_size =
-				priv->options_dqo_rda.tx_comp_ring_entries;
 		} else {
 			qpl_id = tx->dqo.qpl->id;
-			comp_ring_size = priv->tx_desc_cnt;
 		}
 		cmd.create_tx_queue.queue_page_list_id = cpu_to_be32(qpl_id);
-		cmd.create_tx_queue.tx_ring_size =
-			cpu_to_be16(priv->tx_desc_cnt);
 		cmd.create_tx_queue.tx_comp_ring_addr =
 			cpu_to_be64(tx->complq_bus_dqo);
 		cmd.create_tx_queue.tx_comp_ring_size =
-			cpu_to_be16(comp_ring_size);
+			cpu_to_be16(priv->tx_desc_cnt);
 	}
 
 	return gve_adminq_issue_cmd(priv, &cmd);
@@ -657,6 +672,7 @@ static int gve_adminq_create_rx_queue(struct gve_priv *priv, u32 queue_index)
 		.queue_id = cpu_to_be32(queue_index),
 		.ntfy_id = cpu_to_be32(rx->ntfy_id),
 		.queue_resources_addr = cpu_to_be64(rx->q_resources_bus),
+		.rx_ring_size = cpu_to_be16(priv->rx_desc_cnt),
 	};
 
 	if (gve_is_gqi(priv)) {
@@ -671,20 +687,14 @@ static int gve_adminq_create_rx_queue(struct gve_priv *priv, u32 queue_index)
 		cmd.create_rx_queue.queue_page_list_id = cpu_to_be32(qpl_id);
 		cmd.create_rx_queue.packet_buffer_size = cpu_to_be16(rx->packet_buffer_size);
 	} else {
-		u16 rx_buff_ring_entries;
 		u32 qpl_id = 0;
 
 		if (priv->queue_format == GVE_DQO_RDA_FORMAT) {
 			qpl_id = GVE_RAW_ADDRESSING_QPL_ID;
-			rx_buff_ring_entries =
-				priv->options_dqo_rda.rx_buff_ring_entries;
 		} else {
 			qpl_id = rx->dqo.qpl->id;
-			rx_buff_ring_entries = priv->rx_desc_cnt;
 		}
 		cmd.create_rx_queue.queue_page_list_id = cpu_to_be32(qpl_id);
-		cmd.create_rx_queue.rx_ring_size =
-			cpu_to_be16(priv->rx_desc_cnt);
 		cmd.create_rx_queue.rx_desc_ring_addr =
 			cpu_to_be64(rx->dqo.complq.bus);
 		cmd.create_rx_queue.rx_data_ring_addr =
@@ -692,7 +702,7 @@ static int gve_adminq_create_rx_queue(struct gve_priv *priv, u32 queue_index)
 		cmd.create_rx_queue.packet_buffer_size =
 			cpu_to_be16(priv->data_buffer_size_dqo);
 		cmd.create_rx_queue.rx_buff_ring_size =
-			cpu_to_be16(rx_buff_ring_entries);
+			cpu_to_be16(priv->rx_desc_cnt);
 		cmd.create_rx_queue.enable_rsc =
 			!!(priv->dev->features & NETIF_F_LRO);
 		if (rx->dqo.hdr_bufs)
@@ -785,14 +795,14 @@ static int gve_set_desc_cnt(struct gve_priv *priv,
 			    struct gve_device_descriptor *descriptor)
 {
 	priv->tx_desc_cnt = be16_to_cpu(descriptor->tx_queue_entries);
-	if (priv->tx_desc_cnt * sizeof(priv->tx->desc[0]) < PAGE_SIZE) {
+	if (priv->tx_desc_cnt * sizeof(priv->tx->desc[0]) < GVE_RING_SIZE_MIN) {
 		dev_err(&priv->pdev->dev, "Tx desc count %d too low\n",
 			priv->tx_desc_cnt);
 		return -EINVAL;
 	}
 	priv->rx_desc_cnt = be16_to_cpu(descriptor->rx_queue_entries);
 	if (priv->rx_desc_cnt * sizeof(priv->rx->desc.desc_ring[0])
-	    < PAGE_SIZE) {
+	    < GVE_RING_SIZE_MIN) {
 		dev_err(&priv->pdev->dev, "Rx desc count %d too low\n",
 			priv->rx_desc_cnt);
 		return -EINVAL;
@@ -803,18 +813,10 @@ static int gve_set_desc_cnt(struct gve_priv *priv,
 static int
 gve_set_desc_cnt_dqo(struct gve_priv *priv,
 		     const struct gve_device_descriptor *descriptor,
-		     const struct gve_device_option_dqo_rda *dev_op_dqo_rda)
+			 const struct gve_device_option_dqo_rda *dev_op_dqo_rda)
 {
 	priv->tx_desc_cnt = be16_to_cpu(descriptor->tx_queue_entries);
 	priv->rx_desc_cnt = be16_to_cpu(descriptor->rx_queue_entries);
-
-	if (priv->queue_format == GVE_DQO_QPL_FORMAT)
-		return 0;
-
-	priv->options_dqo_rda.tx_comp_ring_entries =
-		be16_to_cpu(dev_op_dqo_rda->tx_comp_ring_entries);
-	priv->options_dqo_rda.rx_buff_ring_entries =
-		be16_to_cpu(dev_op_dqo_rda->rx_buff_ring_entries);
 
 	return 0;
 }
@@ -822,14 +824,28 @@ gve_set_desc_cnt_dqo(struct gve_priv *priv,
 static void gve_enable_supported_features(
 	struct gve_priv *priv,
 	u32 supported_features_mask,
+	const struct gve_device_option_modify_ring *dev_op_modify_ring,
 	const struct gve_device_option_jumbo_frames *dev_op_jumbo_frames,
 	const struct gve_device_option_buffer_sizes *dev_op_buffer_sizes,
 	const struct gve_device_option_flow_steering *dev_op_flow_steering,
 	const struct gve_device_option_dqo_qpl *dev_op_dqo_qpl)
 {
 	int buf_size;
+	if (dev_op_modify_ring &&
+	    (supported_features_mask & GVE_SUP_MODIFY_RING_MASK)) {
+		priv->modify_ringsize_enabled = true;
+		dev_info(&priv->pdev->dev, "MODIFY RING device option enabled.\n");
+		priv->max_rx_desc_cnt = min_t(
+			int,
+			be16_to_cpu(dev_op_modify_ring->max_rx_ring_size),
+			GVE_RING_LENGTH_LIMIT_MAX);
+		priv->max_tx_desc_cnt = min_t(
+			int,
+			be16_to_cpu(dev_op_modify_ring->max_tx_ring_size),
+			GVE_RING_LENGTH_LIMIT_MAX);
+	}
 
-	/* Before control reaches this point, the page-size-capped max MTU in
+	/* Before control reaches this point, the page-size-capped max MTU from
 	 * the gve_device_descriptor field has already been stored in
 	 * priv->dev->max_mtu. We overwrite it with the true max MTU below.
 	 */
@@ -895,6 +911,7 @@ static void gve_enable_supported_features(
 
 int gve_adminq_describe_device(struct gve_priv *priv)
 {
+	struct gve_device_option_modify_ring *dev_op_modify_ring = NULL;
 	struct gve_device_option_flow_steering *dev_op_flow_steering = NULL;
 	struct gve_device_option_buffer_sizes *dev_op_buffer_sizes = NULL;
 	struct gve_device_option_jumbo_frames *dev_op_jumbo_frames = NULL;
@@ -928,6 +945,7 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 
 	err = gve_process_device_options(priv, descriptor, &dev_op_gqi_rda,
 					 &dev_op_gqi_qpl, &dev_op_dqo_rda,
+					 &dev_op_modify_ring,
 					 &dev_op_jumbo_frames,
 					 &dev_op_buffer_sizes,
 					 &dev_op_flow_steering,
@@ -977,6 +995,11 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	if (err)
 		goto free_device_descriptor;
 
+	/* Default max to current in case modify ring size option is disabled */
+	// hardcode to 2048 for now; should remove after device changes rollout to prod
+	priv->max_rx_desc_cnt = 2048;
+	priv->max_tx_desc_cnt = 2048;
+
 	priv->max_registered_pages =
 				be64_to_cpu(descriptor->max_registered_pages);
 	mtu = be16_to_cpu(descriptor->mtu);
@@ -990,18 +1013,15 @@ int gve_adminq_describe_device(struct gve_priv *priv)
 	eth_hw_addr_set(priv->dev, descriptor->mac);
 	mac = descriptor->mac;
 	dev_info(&priv->pdev->dev, "MAC addr: %pM\n", mac);
-	priv->tx_pages_per_qpl = be16_to_cpu(descriptor->tx_pages_per_qpl);
-	priv->rx_data_slot_cnt = be16_to_cpu(descriptor->rx_pages_per_qpl);
 
-	if (gve_is_gqi(priv) && priv->rx_data_slot_cnt < priv->rx_desc_cnt) {
-		dev_err(&priv->pdev->dev, "rx_data_slot_cnt cannot be smaller than rx_desc_cnt, setting rx_desc_cnt down to %d.\n",
-			priv->rx_data_slot_cnt);
-		priv->rx_desc_cnt = priv->rx_data_slot_cnt;
-	}
+	priv->tx_pages_per_qpl = be16_to_cpu(descriptor->tx_pages_per_qpl);
+	priv->rx_pages_per_qpl = be16_to_cpu(descriptor->rx_pages_per_qpl);
+
 	priv->default_num_queues = be16_to_cpu(descriptor->default_num_queues);
 
 	gve_enable_supported_features(priv, supported_features_mask,
-				      dev_op_jumbo_frames,
+				      dev_op_modify_ring,
+					  dev_op_jumbo_frames,
 				      dev_op_buffer_sizes,
 				      dev_op_flow_steering,
 				      dev_op_dqo_qpl);
