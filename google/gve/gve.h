@@ -1170,6 +1170,10 @@ int gve_rx_poll(struct gve_notify_block *block, int budget);
 bool gve_rx_work_pending(struct gve_rx_ring *rx);
 int gve_rx_alloc_rings(struct gve_priv *priv);
 void gve_rx_free_rings_gqi(struct gve_priv *priv);
+int gve_recreate_rx_rings(struct gve_priv *priv);
+int gve_reconfigure_rx_rings(struct gve_priv *priv,
+                             bool enable_hdr_split,
+                             int packet_buffer_size);
 /* Reset */
 void gve_schedule_reset(struct gve_priv *priv);
 int gve_reset(struct gve_priv *priv, bool attempt_teardown);

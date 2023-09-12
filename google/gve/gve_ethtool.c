@@ -563,8 +563,8 @@ static u32 gve_get_priv_flags(struct net_device *netdev)
 static int gve_set_priv_flags(struct net_device *netdev, u32 flags)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
-	bool need_adjust_queues = false;
-	u64 ori_flags, flag_diff;
+	u64 ori_flags, new_flags, flag_diff;
+	int new_packet_buffer_size;
 	int num_tx_queues;
 
 	/* If turning off header split, strict header split will be turned off too*/
@@ -596,7 +596,31 @@ static int gve_set_priv_flags(struct net_device *netdev, u32 flags)
 	num_tx_queues = gve_num_tx_queues(priv);
 	ori_flags = READ_ONCE(priv->ethtool_flags);
 
-	priv->ethtool_flags = flags & GVE_PRIV_FLAGS_MASK;
+	new_flags = flags & GVE_PRIV_FLAGS_MASK;
+
+	flag_diff = new_flags ^ ori_flags;
+
+	if ((flag_diff & BIT(GVE_PRIV_FLAGS_ENABLE_HEADER_SPLIT)) ||
+		(flag_diff & BIT(GVE_PRIV_FLAGS_ENABLE_MAX_RX_BUFFER_SIZE))) {
+		bool enable_hdr_split =
+			new_flags & BIT(GVE_PRIV_FLAGS_ENABLE_HEADER_SPLIT);
+		bool enable_max_buffer_size =
+			new_flags & BIT(GVE_PRIV_FLAGS_ENABLE_MAX_RX_BUFFER_SIZE);
+		int err;
+
+		if (enable_max_buffer_size)
+			new_packet_buffer_size = priv->dev_max_rx_buffer_size;
+		else
+			new_packet_buffer_size = GVE_RX_BUFFER_SIZE_DQO;
+
+		err = gve_reconfigure_rx_rings(priv,
+					      enable_hdr_split,
+					      new_packet_buffer_size);
+		if (err)
+			return err;
+	}
+
+	priv->ethtool_flags = new_flags;
 
 	/* start report-stats timer when user turns report stats on. */
 	if (flags & BIT(0)) {
@@ -619,15 +643,6 @@ static int gve_set_priv_flags(struct net_device *netdev, u32 flags)
 	priv->header_split_strict =
 		(priv->ethtool_flags &
 		 BIT(GVE_PRIV_FLAGS_ENABLE_STRICT_HEADER_SPLIT)) ? true : false;
-
-	flag_diff = priv->ethtool_flags ^ ori_flags;
-
-	if ((flag_diff & BIT(GVE_PRIV_FLAGS_ENABLE_HEADER_SPLIT)) ||
-		(flag_diff & BIT(GVE_PRIV_FLAGS_ENABLE_MAX_RX_BUFFER_SIZE)))
-		need_adjust_queues = true;
-
-	if (need_adjust_queues)
-		return gve_adjust_queues(priv, priv->rx_cfg, priv->tx_cfg);
 
 	return 0;
 }

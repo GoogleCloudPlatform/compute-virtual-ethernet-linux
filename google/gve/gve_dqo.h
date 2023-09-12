@@ -40,10 +40,12 @@ int gve_tx_alloc_rings_dqo(struct gve_priv *priv);
 void gve_tx_free_rings_dqo(struct gve_priv *priv);
 int gve_rx_alloc_rings_dqo(struct gve_priv *priv);
 void gve_rx_free_rings_dqo(struct gve_priv *priv);
+void gve_rx_reset_rings_dqo(struct gve_priv *priv);
 int gve_clean_tx_done_dqo(struct gve_priv *priv, struct gve_tx_ring *tx,
 			  struct napi_struct *napi);
 void gve_rx_post_buffers_dqo(struct gve_rx_ring *rx);
 void gve_rx_write_doorbell_dqo(const struct gve_priv *priv, int queue_idx);
+int gve_rx_handle_hdr_resources_dqo(struct gve_priv *priv, bool enable_hdr_split);
 
 static inline void
 gve_tx_put_doorbell_dqo(const struct gve_priv *priv,
