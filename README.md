@@ -24,7 +24,26 @@ Device Class  | `0x200`  | Ethernet
 
 # Supported Kernels
 
-4.16, 4.14, 4.9, 4.6, 4.4, 4.2, 3.19, 3.16, 3.13, 3.10
+This driver s supported on any of the [distros listed as supporting gVNIC](https://cloud.google.com/compute/docs/images/os-details#networking).
+Those distros have native drivers for gVNIC, but this driver can be used to
+replace the native driver to get the latest enhancements. Note that native
+drivers are likely to report version 1.0.0, this should be ignored. The
+upstream community has deprecated the use of driver versions it has not
+been updated since the initial upstream version.
+
+This driver is also supported on [clean Linux LTS kernels that are not EOL](https://www.kernel.org/category/releases.html).
+Linux kernels starting 5.4 have the driver built in, but this driver can be
+installed on any LTS kernel to get the latest enhancements.
+
+Debian 9 and 10 are supported since they use clean Linux LTS kernels
+(4.9 and 4.19 respectively).
+
+Versions that are not marked as a release candidate (rc) correspond to upstream
+versions of the driver. It is our intention that release candidates
+will be upstreamed in the near future, but when and in what form this happens
+depends on the Linux community and the upstream review process. We can't
+guarantee that a release candidate will land upstream as-is or if it
+will be accepted upstream at all.
 
 # Installation
 
