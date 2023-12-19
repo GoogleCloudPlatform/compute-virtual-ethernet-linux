@@ -85,6 +85,17 @@ depmod
 modprobe gve
 ```
 
+Check via `ethtool -i devname` that the new driver is installed. If not, you can
+install it manually.
+
+> [!WARNING]
+> Run this as a single line, as running `rmmod` alone will remove the existing
+> driver and disconnect you if connected over SSH.
+
+```bash
+sudo rmmod gve; sudo insmod ./build/gve.ko
+```
+
 # Configuration
 
 ## Ethtool
@@ -107,6 +118,12 @@ ethtool --set-channels devname [rx N] [tx N] [combined N]
 
 combined: attempts to set both rx and tx queues to N rx: attempts to set rx
 queues to N tx: attempts to set tx queues to N
+
+## XDP
+
+To attach an XDP program to the driver, the number of RX and TX queues must be
+no more than half their maximum values. The maximum values are based on the
+number of CPUs available.
 
 ### Manual Configuration
 
