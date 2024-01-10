@@ -1203,6 +1203,7 @@ int gve_adjust_ring_sizes(struct gve_priv *priv,
 			  int new_rx_desc_cnt);
 /* exported by ethtool.c */
 extern const struct ethtool_ops gve_ethtool_ops;
+extern char gve_driver_name[];
 /* needed by ethtool */
 extern const char gve_version_str[];
 #endif /* _GVE_H_ */
