@@ -49,9 +49,6 @@ will be accepted upstream at all.
 
 ## GitHub
 
-If you downloaded a release tarball from GitHub: This source code should
-already be multi-kernel compatible. You can skip down to Compiling the Driver.
-
 ### Building the multi-kernel compatible driver source
 
 If you downloaded the source from GitHub: To install this driver on anything
