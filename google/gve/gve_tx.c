@@ -132,6 +132,7 @@ static int gve_tx_alloc_fifo(struct gve_tx_fifo *fifo, size_t bytes,
 	return nfrags;
 }
 
+
 /* gve_tx_free_fifo - Return space to Tx FIFO
  * @fifo: FIFO to return fragments to
  * @bytes: Bytes to free
@@ -772,50 +773,63 @@ static int gve_tx_fill_xdp(struct gve_priv *priv, struct gve_tx_ring *tx,
 static int gve_tx_fill_xdp_multi_buffer(struct gve_priv *priv, struct gve_tx_ring *tx,
 			  struct xdp_desc first_desc)
 {
-	int pad, nfrags, ndescs, len,  nxdp_descs iovi, offset;
-  void* data;
-  bool eop = false;
-  // 5 is random. I need to figure this out. Probably make it the max hardware
-  //   buffers.
-  struct xdp_desc[GVE_TX_MAX_IOVEC] descs;
-  descs[0] = first_desc; 
-  nxdp_descs = 1;
-  len = first_desc.len;
-  while(!eop) {
-    if (!gve_can_tx(tx, GVE_TX_START_THRESH))
-			goto out;
+	int pad, hdr_nfrags, payload_nfrags, ndescs, tot_len,  payload_i iovi, offset;
+	void* data;
+	struct xdp_desc[1] payload_descs;
 
-		if (!xsk_tx_peek_desc(tx->xsk_pool, &descs[nxdp_descs])) {
-			tx->xdp_xsk_done = tx->xdp_xsk_wakeup;
+	struct gve_tx_buffer_state *info;
+	payload_i = 0;
+	// Calculate total length of packet by summing all buffers.
+	// TODO make this accept more than one sg
+	tot_len = first_desc.len;
+	while(!eop) {
+		// GVE only supports two buffers for payloads.
+		if (payload_i >= 1) {
+			netdev_warn(priv->dev, "TOO MANY BUFFERS");
 			goto out;
 		}
-    len += descs[nxdp_descs].len;
-    eop = descs[nxdp_descs].flags == 0;
-    ++nxdp_descs;
-  }
-	struct gve_tx_buffer_state *info;
-	u32 reqi = tx->req;
+		if (!gve_can_tx(tx, GVE_TX_START_THRESH))
+				goto out;
 
-	pad = gve_tx_fifo_pad_alloc_one_frag(&tx->tx_fifo, len);
+			if (!xsk_tx_peek_desc(tx->xsk_pool, &payload_descs[payload_i])) {
+				tx->xdp_xsk_done = tx->xdp_xsk_wakeup;
+				goto out;
+			}
+		tot_len += payload_descs[payload_i].len;
+		eop = payload_descs[payload_i].flags == 0;
+		++payload_i;
+		netdev_warn(priv->dev, "Tot_len: ", tot_len);
+	}
+
+	u32 reqi = tx->req;
+	pad = gve_tx_fifo_pad_alloc_one_frag(&tx->tx_fifo, first_desc.len);
 	if (pad >= GVE_GQ_TX_MIN_PKT_DESC_BYTES)
 		pad = 0;
 	info = &tx->info[reqi & tx->mask];
 	info->xdp_frame = frame_p;
-	info->xdp.size = len;
-	info->xdp.is_xsk = is_xsk;
+	info->xdp.is_xsk = true;
+	info->xdp.size = tot_len;
 
-	nfrags = gve_tx_alloc_fifo(&tx->tx_fifo, pad + len,
+
+	int payload_iov = 2;
+
+	hdr_nfrags = gve_tx_alloc_fifo(&tx->tx_fifo, pad + len,
 				   &info->iov[0]);
+	// Might be able to just let that check return 0
+	if (payload_i > 0) {
+		payload_nfrags = gve_tx_alloc_fifo(&tx->tx_fifo, tot_len - first_desc.len,
+						&info->iov[payload_iov]);
+	}
 	iovi = pad > 0;
-	ndescs = nfrags - iovi;
+	ndescs = hdr_nfrags - iovi + payload_nfrags;
 	offset = 0;
-
-	while (iovi < nfrags) {
+	data = xsk_buff_raw_get_data(tx->xsk_pool, first_desc.addr);
+	while (iovi < hdr_nfrags) {
 		if (!offset)
 			gve_tx_fill_pkt_desc(&tx->desc[reqi & tx->mask], 0,
 					     CHECKSUM_NONE, false, 0, ndescs,
 					     info->iov[iovi].iov_len,
-					     info->iov[iovi].iov_offset, len);
+					     info->iov[iovi].iov_offset, tot_len);
 		else
 			gve_tx_fill_seg_desc(&tx->desc[reqi & tx->mask],
 					     0, 0, false, false,
@@ -832,10 +846,35 @@ static int gve_tx_fill_xdp_multi_buffer(struct gve_priv *priv, struct gve_tx_rin
 		iovi++;
 		reqi++;
 	}
-  out: 
-    // ADD PRINT
-    return 0
+
+	if (payload_i > 0) {
+		iovi = 2;
+		offset = 0;
+		data = xsk_buff_raw_get_data(tx->xsk_pool, payload_descs[0].addr);
+		netdev_warn(priv->dev, "Processing a payload buffer pre loop");
+		while (payload_nfrags > 0 && iovi < payload_nfrags + payload_iov) {
+			netdev_warn(priv->dev, "Processing a payload buffer");
+			gve_tx_fill_seg_desc(&tx->desc[reqi & tx->mask],
+					0, 0, false, false,
+					info->iov[iovi].iov_len,
+					info->iov[iovi].iov_offset);
+			memcpy(tx->tx_fifo.base + info->iov[iovi].iov_offset,
+						data + offset, info->iov[iovi].iov_len);
+					gve_dma_sync_for_device(&priv->pdev->dev,
+								tx->tx_fifo.qpl->page_buses,
+								info->iov[iovi].iov_offset,
+								info->iov[iovi].iov_len);
+			offset += info->iov[iovi].iov_len;
+			iovi++;
+			reqi++;
+		}
+	}
+
 	return ndescs;
+  out:
+    // ADD PRINT
+	netdev_warn(priv->dev, "OUt in mutlibuffer handling");
+    return 0
 }
 
 
