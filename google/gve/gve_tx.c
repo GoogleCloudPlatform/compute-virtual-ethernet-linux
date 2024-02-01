@@ -723,7 +723,7 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 }
 
 static int gve_tx_fill_xdp(struct gve_priv *priv, struct gve_tx_ring *tx,
-			   void *data, int len, void *frame_p, bool is_xsk, bool is_first_desc)
+			   void *data, int len, void *frame_p, bool is_xsk)
 {
 	int pad, nfrags, ndescs, iovi, offset;
 	struct gve_tx_buffer_state *info;
@@ -744,7 +744,7 @@ static int gve_tx_fill_xdp(struct gve_priv *priv, struct gve_tx_ring *tx,
 	offset = 0;
 
 	while (iovi < nfrags) {
-		if (!offset && is_first_desc)
+		if (!offset)
 			gve_tx_fill_pkt_desc(&tx->desc[reqi & tx->mask], 0,
 					     CHECKSUM_NONE, false, 0, ndescs,
 					     info->iov[iovi].iov_len,
@@ -768,6 +768,76 @@ static int gve_tx_fill_xdp(struct gve_priv *priv, struct gve_tx_ring *tx,
 
 	return ndescs;
 }
+
+static int gve_tx_fill_xdp_multi_buffer(struct gve_priv *priv, struct gve_tx_ring *tx,
+			  struct xdp_desc first_desc)
+{
+	int pad, nfrags, ndescs, len,  nxdp_descs iovi, offset;
+  void* data;
+  bool eop = false;
+  // 5 is random. I need to figure this out. Probably make it the max hardware
+  //   buffers.
+  struct xdp_desc[GVE_TX_MAX_IOVEC] descs;
+  descs[0] = first_desc; 
+  nxdp_descs = 1;
+  len = first_desc.len;
+  while(!eop) {
+    if (!gve_can_tx(tx, GVE_TX_START_THRESH))
+			goto out;
+
+		if (!xsk_tx_peek_desc(tx->xsk_pool, &descs[nxdp_descs])) {
+			tx->xdp_xsk_done = tx->xdp_xsk_wakeup;
+			goto out;
+		}
+    len += descs[nxdp_descs].len;
+    eop = descs[nxdp_descs].flags == 0;
+    ++nxdp_descs;
+  }
+	struct gve_tx_buffer_state *info;
+	u32 reqi = tx->req;
+
+	pad = gve_tx_fifo_pad_alloc_one_frag(&tx->tx_fifo, len);
+	if (pad >= GVE_GQ_TX_MIN_PKT_DESC_BYTES)
+		pad = 0;
+	info = &tx->info[reqi & tx->mask];
+	info->xdp_frame = frame_p;
+	info->xdp.size = len;
+	info->xdp.is_xsk = is_xsk;
+
+	nfrags = gve_tx_alloc_fifo(&tx->tx_fifo, pad + len,
+				   &info->iov[0]);
+	iovi = pad > 0;
+	ndescs = nfrags - iovi;
+	offset = 0;
+
+	while (iovi < nfrags) {
+		if (!offset)
+			gve_tx_fill_pkt_desc(&tx->desc[reqi & tx->mask], 0,
+					     CHECKSUM_NONE, false, 0, ndescs,
+					     info->iov[iovi].iov_len,
+					     info->iov[iovi].iov_offset, len);
+		else
+			gve_tx_fill_seg_desc(&tx->desc[reqi & tx->mask],
+					     0, 0, false, false,
+					     info->iov[iovi].iov_len,
+					     info->iov[iovi].iov_offset);
+
+		memcpy(tx->tx_fifo.base + info->iov[iovi].iov_offset,
+		       data + offset, info->iov[iovi].iov_len);
+		gve_dma_sync_for_device(&priv->pdev->dev,
+					tx->tx_fifo.qpl->page_buses,
+					info->iov[iovi].iov_offset,
+					info->iov[iovi].iov_len);
+		offset += info->iov[iovi].iov_len;
+		iovi++;
+		reqi++;
+	}
+  out: 
+    // ADD PRINT
+    return 0
+	return ndescs;
+}
+
 
 int gve_xdp_xmit(struct net_device *dev, int n, struct xdp_frame **frames,
 		 u32 flags)
@@ -906,12 +976,17 @@ static int gve_xsk_tx(struct gve_priv *priv, struct gve_tx_ring *tx,
 
 		bool eop = false;
 		int ndescs = 0;
-		data = xsk_buff_raw_get_data(tx->xsk_pool, first_desc.addr);
-		nsegs = gve_tx_fill_xdp(priv, tx, data, first_desc.len, NULL, true, true);
-		union gve_tx_desc *original_desc = &tx->desc[tx->req & tx->mask];
-		tx->req += nsegs;
-		ndescs += nsegs;
 		eop = !(first_desc.options & XDP_PKT_CONTD);
+		if (eop) {
+		  data = xsk_buff_raw_get_data(tx->xsk_pool, first_desc.addr);
+			nsegs = gve_tx_fill_xdp(priv, tx, data, first_desc.len, NULL, true);
+		} else {
+			nsegs = gve_tx_fill_xdp_multi_buffer(priv, tx, &first_desc);
+		}
+		// union gve_tx_desc *original_desc = &tx->desc[tx->req & tx->mask];
+		tx->req += nsegs;
+		// ndescs += nsegs;
+		/*
 		// BOOM TODO might need to edit pad in gve_tx_fifo from gve_Tx_fill_xdp
 		while (!eop) {		
 			netdev_warn(priv->dev, "MULTIBUFFER DETECTED");
@@ -938,8 +1013,9 @@ static int gve_xsk_tx(struct gve_priv *priv, struct gve_tx_ring *tx,
 			tx->req += nsegs;
 			ndescs += nsegs;
 		}
-		original_desc->pkt.desc_cnt = ndescs;
-		netdev_warn(priv->dev, "Num Descs: %d", ndescs);
+		*/
+		// original_desc->pkt.desc_cnt = ndescs;
+		// netdev_warn(priv->dev, "Num Descs: %d", ndescs);
 		sent++;
 	}
 out:
