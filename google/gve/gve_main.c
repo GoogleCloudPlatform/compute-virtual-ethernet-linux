@@ -1705,11 +1705,12 @@ static int gve_xsk_pool_enable(struct net_device *dev,
 		dev_err(&priv->pdev->dev, "xsk pool invalid qid %d", qid);
 		return -EINVAL;
 	}
-	if (xsk_pool_get_rx_frame_size(pool) <
+	/*if (xsk_pool_get_rx_frame_size(pool) <
 	     priv->dev->max_mtu + sizeof(struct ethhdr)) {
-		dev_err(&priv->pdev->dev, "xsk pool frame_len too small");
+		dev_err(&priv->pdev->dev, "xsk pool frame_len too small: %d < %d + %d", xsk_pool_get_rx_frame_size(pool),
+	     priv->dev->max_mtu, sizeof(struct ethhdr));
 		return -EINVAL;
-	}
+	}*/
 
 	err = xsk_pool_dma_map(pool, &priv->pdev->dev,
 			       DMA_ATTR_SKIP_CPU_SYNC | DMA_ATTR_WEAK_ORDERING);
@@ -1828,6 +1829,7 @@ static int gve_xsk_wakeup(struct net_device *dev, u32 queue_id, u32 flags)
 static int verify_xdp_configuration(struct net_device *dev)
 {
 	struct gve_priv *priv = netdev_priv(dev);
+		netdev_warn(dev, "CUSTOM LOG OWENSULLIVAN");
 
 	if (dev->features & NETIF_F_LRO) {
 		netdev_warn(dev, "XDP is not supported when LRO is on.\n");
@@ -2239,11 +2241,15 @@ static void gve_service_task(struct work_struct *work)
 
 static void gve_set_netdev_xdp_features(struct gve_priv *priv)
 {
+
 	if (priv->queue_format == GVE_GQI_QPL_FORMAT) {
 		priv->dev->xdp_features = NETDEV_XDP_ACT_BASIC;
 		priv->dev->xdp_features |= NETDEV_XDP_ACT_REDIRECT;
 		priv->dev->xdp_features |= NETDEV_XDP_ACT_NDO_XMIT;
 		priv->dev->xdp_features |= NETDEV_XDP_ACT_XSK_ZEROCOPY;
+		priv->dev->xdp_features |= NETDEV_XDP_ACT_NDO_XMIT_SG;
+		priv->dev->xdp_features |= NETDEV_XDP_ACT_XSK_ZEROCOPY;
+		priv->dev->xdp_zc_max_segs = 4;
 	} else {
 		priv->dev->xdp_features = 0;
 	}

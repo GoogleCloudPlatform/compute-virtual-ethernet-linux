@@ -723,7 +723,7 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 }
 
 static int gve_tx_fill_xdp(struct gve_priv *priv, struct gve_tx_ring *tx,
-			   void *data, int len, void *frame_p, bool is_xsk)
+			   void *data, int len, void *frame_p, bool is_xsk, bool is_first_desc)
 {
 	int pad, nfrags, ndescs, iovi, offset;
 	struct gve_tx_buffer_state *info;
@@ -744,7 +744,7 @@ static int gve_tx_fill_xdp(struct gve_priv *priv, struct gve_tx_ring *tx,
 	offset = 0;
 
 	while (iovi < nfrags) {
-		if (!offset)
+		if (!offset && is_first_desc)
 			gve_tx_fill_pkt_desc(&tx->desc[reqi & tx->mask], 0,
 					     CHECKSUM_NONE, false, 0, ndescs,
 					     info->iov[iovi].iov_len,
@@ -813,7 +813,7 @@ int gve_xdp_xmit_one(struct gve_priv *priv, struct gve_tx_ring *tx,
 	if (!gve_can_tx(tx, len + GVE_GQ_TX_MIN_PKT_DESC_BYTES - 1))
 		return -EBUSY;
 
-	nsegs = gve_tx_fill_xdp(priv, tx, data, len, frame_p, false);
+	nsegs = gve_tx_fill_xdp(priv, tx, data, len, frame_p, false, true);
 	tx->req += nsegs;
 
 	return 0;
@@ -889,7 +889,8 @@ u32 gve_tx_load_event_counter(struct gve_priv *priv,
 static int gve_xsk_tx(struct gve_priv *priv, struct gve_tx_ring *tx,
 		      int budget)
 {
-	struct xdp_desc desc;
+	struct xdp_desc first_desc;
+	struct xdp_desc curr_desc;
 	int sent = 0, nsegs;
 	void *data;
 
@@ -898,14 +899,47 @@ static int gve_xsk_tx(struct gve_priv *priv, struct gve_tx_ring *tx,
 		if (!gve_can_tx(tx, GVE_TX_START_THRESH))
 			goto out;
 
-		if (!xsk_tx_peek_desc(tx->xsk_pool, &desc)) {
+		if (!xsk_tx_peek_desc(tx->xsk_pool, &first_desc)) {
 			tx->xdp_xsk_done = tx->xdp_xsk_wakeup;
 			goto out;
 		}
 
-		data = xsk_buff_raw_get_data(tx->xsk_pool, desc.addr);
-		nsegs = gve_tx_fill_xdp(priv, tx, data, desc.len, NULL, true);
+		bool eop = false;
+		int ndescs = 0;
+		data = xsk_buff_raw_get_data(tx->xsk_pool, first_desc.addr);
+		nsegs = gve_tx_fill_xdp(priv, tx, data, first_desc.len, NULL, true, true);
+		union gve_tx_desc *original_desc = &tx->desc[tx->req & tx->mask];
 		tx->req += nsegs;
+		ndescs += nsegs;
+		eop = !(first_desc.options & XDP_PKT_CONTD);
+		// BOOM TODO might need to edit pad in gve_tx_fifo from gve_Tx_fill_xdp
+		while (!eop) {		
+			netdev_warn(priv->dev, "MULTIBUFFER DETECTED");
+			
+			
+			if (!gve_can_tx(tx, GVE_TX_START_THRESH)) {
+				netdev_warn(priv->dev, "First out");
+				goto out;
+			}
+
+			if (!xsk_tx_peek_desc(tx->xsk_pool, &curr_desc)) {
+				netdev_warn(priv->dev, "Second out");
+				tx->xdp_xsk_done = tx->xdp_xsk_wakeup;
+				goto out;
+			}
+
+			eop = !(curr_desc.options & XDP_PKT_CONTD);
+			if (!eop) {
+				pr_err("MULTIBUFFER DETECTED Second check");
+
+			}
+			data = xsk_buff_raw_get_data(tx->xsk_pool, curr_desc.addr);
+			nsegs = gve_tx_fill_xdp(priv, tx, data, curr_desc.len, NULL, true, false);
+			tx->req += nsegs;
+			ndescs += nsegs;
+		}
+		original_desc->pkt.desc_cnt = ndescs;
+		netdev_warn(priv->dev, "Num Descs: %d", ndescs);
 		sent++;
 	}
 out:

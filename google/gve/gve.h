@@ -10,6 +10,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/netdevice.h>
 #include <linux/pci.h>
+#include <net/xdp.h>
 #include <linux/u64_stats_sync.h>
 
 #include "gve_desc.h"
