@@ -773,7 +773,7 @@ static int gve_tx_fill_xdp(struct gve_priv *priv, struct gve_tx_ring *tx,
 static int gve_tx_fill_xdp_multi_buffer(struct gve_priv *priv, struct gve_tx_ring *tx,
 			  struct xdp_desc first_desc)
 {
-	int pad, hdr_nfrags, payload_nfrags, ndescs, tot_len,  payload_i iovi, offset;
+	int pad, hdr_nfrags, payload_nfrags, ndescs, tot_len,  payload_i, iovi, offset;
 	void* data;
 	struct xdp_desc[1] payload_descs;
 
