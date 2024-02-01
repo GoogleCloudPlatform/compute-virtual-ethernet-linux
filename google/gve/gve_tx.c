@@ -784,7 +784,7 @@ static int gve_tx_fill_xdp_multi_buffer(struct gve_priv *priv, struct gve_tx_rin
 	// Calculate total length of packet by summing all buffers.
 	// TODO make this accept more than one sg
 	tot_len = first_desc.len;
-	bool eop = first_desc.flags == 0;
+	bool eop = !(first_desc.options & XDP_PKT_CONTD);;
 	while(!eop) {
 		// GVE only supports two buffers for payloads.
 		if (payload_i >= 1) {
@@ -799,9 +799,9 @@ static int gve_tx_fill_xdp_multi_buffer(struct gve_priv *priv, struct gve_tx_rin
 				goto out;
 			}
 		tot_len += payload_descs[payload_i].len;
-		eop = payload_descs[payload_i].flags == 0;
+		eop = payload_descs[payload_i].options == 0;
 		++payload_i;
-		netdev_warn(priv->dev, "Tot_len: ", tot_len);
+		netdev_warn(priv->dev, "Tot_len: %d", tot_len);
 	}
 
 	u32 reqi = tx->req;
@@ -1021,7 +1021,7 @@ static int gve_xsk_tx(struct gve_priv *priv, struct gve_tx_ring *tx,
 		  data = xsk_buff_raw_get_data(tx->xsk_pool, first_desc.addr);
 			nsegs = gve_tx_fill_xdp(priv, tx, data, first_desc.len, NULL, true);
 		} else {
-			nsegs = gve_tx_fill_xdp_multi_buffer(priv, tx, &first_desc);
+			nsegs = gve_tx_fill_xdp_multi_buffer(priv, tx, first_desc);
 		}
 		// union gve_tx_desc *original_desc = &tx->desc[tx->req & tx->mask];
 		tx->req += nsegs;
