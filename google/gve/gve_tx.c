@@ -723,6 +723,8 @@ netdev_tx_t gve_tx(struct sk_buff *skb, struct net_device *dev)
 	return NETDEV_TX_OK;
 }
 
+#define GVE_TX_START_THRESH	PAGE_SIZE
+
 static int gve_tx_fill_xdp(struct gve_priv *priv, struct gve_tx_ring *tx,
 			   void *data, int len, void *frame_p, bool is_xsk)
 {
@@ -775,13 +777,14 @@ static int gve_tx_fill_xdp_multi_buffer(struct gve_priv *priv, struct gve_tx_rin
 {
 	int pad, hdr_nfrags, payload_nfrags, ndescs, tot_len,  payload_i, iovi, offset;
 	void* data;
-	struct xdp_desc[1] payload_descs;
+	struct xdp_desc payload_descs[1];
 
 	struct gve_tx_buffer_state *info;
 	payload_i = 0;
 	// Calculate total length of packet by summing all buffers.
 	// TODO make this accept more than one sg
 	tot_len = first_desc.len;
+	bool eop = first_desc.flags == 0;
 	while(!eop) {
 		// GVE only supports two buffers for payloads.
 		if (payload_i >= 1) {
@@ -806,14 +809,14 @@ static int gve_tx_fill_xdp_multi_buffer(struct gve_priv *priv, struct gve_tx_rin
 	if (pad >= GVE_GQ_TX_MIN_PKT_DESC_BYTES)
 		pad = 0;
 	info = &tx->info[reqi & tx->mask];
-	info->xdp_frame = frame_p;
+	info->xdp_frame = NULL;
 	info->xdp.is_xsk = true;
 	info->xdp.size = tot_len;
 
 
 	int payload_iov = 2;
 
-	hdr_nfrags = gve_tx_alloc_fifo(&tx->tx_fifo, pad + len,
+	hdr_nfrags = gve_tx_alloc_fifo(&tx->tx_fifo, pad + first_desc.len,
 				   &info->iov[0]);
 	// Might be able to just let that check return 0
 	if (payload_i > 0) {
@@ -874,7 +877,7 @@ static int gve_tx_fill_xdp_multi_buffer(struct gve_priv *priv, struct gve_tx_rin
   out:
     // ADD PRINT
 	netdev_warn(priv->dev, "OUt in mutlibuffer handling");
-    return 0
+    return 0;
 }
 
 
@@ -922,13 +925,11 @@ int gve_xdp_xmit_one(struct gve_priv *priv, struct gve_tx_ring *tx,
 	if (!gve_can_tx(tx, len + GVE_GQ_TX_MIN_PKT_DESC_BYTES - 1))
 		return -EBUSY;
 
-	nsegs = gve_tx_fill_xdp(priv, tx, data, len, frame_p, false, true);
+	nsegs = gve_tx_fill_xdp(priv, tx, data, len, frame_p, false);
 	tx->req += nsegs;
 
 	return 0;
 }
-
-#define GVE_TX_START_THRESH	PAGE_SIZE
 
 static int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
 			     u32 to_do, bool try_to_wake)
@@ -999,7 +1000,7 @@ static int gve_xsk_tx(struct gve_priv *priv, struct gve_tx_ring *tx,
 		      int budget)
 {
 	struct xdp_desc first_desc;
-	struct xdp_desc curr_desc;
+	// struct xdp_desc curr_desc;
 	int sent = 0, nsegs;
 	void *data;
 
@@ -1014,7 +1015,7 @@ static int gve_xsk_tx(struct gve_priv *priv, struct gve_tx_ring *tx,
 		}
 
 		bool eop = false;
-		int ndescs = 0;
+		// int ndescs = 0;
 		eop = !(first_desc.options & XDP_PKT_CONTD);
 		if (eop) {
 		  data = xsk_buff_raw_get_data(tx->xsk_pool, first_desc.addr);
