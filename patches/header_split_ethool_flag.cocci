@@ -25,16 +25,19 @@ gve_get_ringparam(...)
 
 
 @ gve_set_ringparam @
-identifier gve_set_ringparam, err;
 @@
 gve_set_ringparam(...)
 {
 ...
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
-	return gve_set_hsplit_config(...);
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
-+	return 0;
+	int err;
+
+	err = gve_set_hsplit_config(...);
+	if (err)
+		return err;
+
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
+...
 }
 
 
