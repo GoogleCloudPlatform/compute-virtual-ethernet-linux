@@ -35,11 +35,11 @@ static void gve_stats_report_timer(timer_list *t)
 
 @ struct_size @
 identifier member;
-expression result, p, count;
+expression result, p, size1, size2;
 @@
 
-+#ifndef struct_size
-+result = sizeof(*p) + sizeof((p)->member[0]) * (count);
++#if !defined(struct_size) || !defined(size_add)
++result = sizeof(*p) + sizeof((p)->member[0]) * (size1 + size2);
 +#else
-result = struct_size(p, member, count);
+result = struct_size(p, member, size_add(size1, size2));
 +#endif
