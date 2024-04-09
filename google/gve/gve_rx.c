@@ -198,8 +198,7 @@ alloc_err_qpl:
 	}
 
 	/* Do not fully free QPL pages - only remove the bias added in this
-	 * function with gve_setup_rx_buffer.
-	 */
+	 * function with gve_setup_rx_buffer. */
 	while (i--)
 		page_ref_sub(rx->data.page_info[i].page,
 			     rx->data.page_info[i].pagecnt_bias - 1);
