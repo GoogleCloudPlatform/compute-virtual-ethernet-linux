@@ -5,7 +5,7 @@ identifier gve_ops, get_link_ksettings_func;
 const struct ethtool_ops gve_ops = {
 	.set_priv_flags = gve_set_priv_flags,
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
-	.get_link_ksettings = get_link_ksettings_func
+	.get_link_ksettings = get_link_ksettings_func,
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0) */
 };
 
