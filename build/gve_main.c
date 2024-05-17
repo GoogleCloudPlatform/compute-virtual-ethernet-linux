@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.2-0-a99ce6f-a99ce6f-oot"
+#define GVE_VERSION		 "1.4.2-1-8633c55-ec91668-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -1396,9 +1396,9 @@ static void gve_unreg_xdp_info(struct gve_priv *priv)
 static void gve_drain_page_cache(struct gve_priv *priv)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_VERSION_CODE < RHEL_RELEASE_VERSION(10,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(10,0)
 	struct page_frag_cache *nc;
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_VERSION_CODE < RHEL_RELEASE_VERSION(10,0) */
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(10,0) */
 	int i;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(10,0)
 	for (i = 0; i < priv->rx_cfg.num_queues; i++) {
