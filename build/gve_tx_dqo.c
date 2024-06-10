@@ -598,36 +598,26 @@ static int gve_prep_tso(struct sk_buff *skb)
 	if (unlikely(skb_shinfo(skb)->gso_size < GVE_TX_MIN_TSO_MSS_DQO))
 		return -1;
 
+	if (!(skb_shinfo(skb)->gso_type & (SKB_GSO_TCPV4 | SKB_GSO_TCPV6)))
+		return -EINVAL;
+
 	/* Needed because we will modify header. */
 	err = skb_cow_head(skb, 0);
 	if (err < 0)
 		return err;
 
 	tcp = tcp_hdr(skb);
-
-	/* Remove payload length from checksum. */
 	paylen = skb->len - skb_transport_offset(skb);
-
-	switch (skb_shinfo(skb)->gso_type) {
-	case SKB_GSO_TCPV4:
-	case SKB_GSO_TCPV6:
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0))
-		csum_replace_by_diff(&tcp->check,
-				     (__force __wsum)htonl(paylen));
+	csum_replace_by_diff(&tcp->check, (__force __wsum)htonl(paylen));
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0) */
-		tcp->check = csum_fold(csum_add((__force __wsum)htonl(paylen), ~csum_unfold(tcp->check)));
+	tcp->check = csum_fold(csum_add((__force __wsum)htonl(paylen), ~csum_unfold(tcp->check)));
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0) */
-
-		/* Compute length of segmentation header. */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,0,0))
-		header_len = skb_tcp_all_headers(skb);
+	header_len = skb_tcp_all_headers(skb);
 #else
-		header_len = skb_transport_offset(skb) + tcp_hdrlen(skb);
+	header_len = skb_transport_offset(skb) + tcp_hdrlen(skb);
 #endif
-		break;
-	default:
-		return -EINVAL;
-	}
 
 	if (unlikely(header_len > GVE_TX_MAX_HDR_SIZE_DQO))
 		return -EINVAL;
