@@ -801,6 +801,8 @@ struct gve_priv {
 
 	u16 header_buf_size; /* device configured, header-split supported if non-zero */
 	bool header_split_enabled; /* True if the header split is enabled by the user */
+
+	u32 max_flow_rules;
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0))
 	u8 header_split_strict;
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0) */
