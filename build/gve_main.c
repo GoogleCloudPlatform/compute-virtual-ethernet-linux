@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.2-11-8633c55-41e6a77-oot"
+#define GVE_VERSION		 "1.4.2-13-8633c55-8931f1c-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -156,6 +156,73 @@ backport_gve_get_stats(struct net_device *dev, struct rtnl_link_stats64 *s){
 	return s;
 }
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,11.0) */
+
+static int gve_alloc_flow_rule_caches(struct gve_priv *priv)
+{
+	struct gve_flow_rules_cache *flow_rules_cache = &priv->flow_rules_cache;
+	int err = 0;
+
+	if (!priv->max_flow_rules)
+		return 0;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
+	flow_rules_cache->rules_cache =
+		kvcalloc(GVE_FLOW_RULES_CACHE_SIZE, sizeof(*flow_rules_cache->rules_cache),
+			 GFP_KERNEL);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	flow_rules_cache->rules_cache = kcalloc(GVE_FLOW_RULES_CACHE_SIZE,
+						sizeof(*flow_rules_cache->rules_cache),
+						GFP_KERNEL);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	if (!flow_rules_cache->rules_cache) {
+		dev_err(&priv->pdev->dev, "Cannot alloc flow rules cache\n");
+		return -ENOMEM;
+	}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
+	flow_rules_cache->rule_ids_cache =
+		kvcalloc(GVE_FLOW_RULE_IDS_CACHE_SIZE, sizeof(*flow_rules_cache->rule_ids_cache),
+			 GFP_KERNEL);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	flow_rules_cache->rule_ids_cache = kcalloc(GVE_FLOW_RULE_IDS_CACHE_SIZE,
+						   sizeof(*flow_rules_cache->rule_ids_cache),
+						   GFP_KERNEL);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	if (!flow_rules_cache->rule_ids_cache) {
+		dev_err(&priv->pdev->dev, "Cannot alloc flow rule ids cache\n");
+		err = -ENOMEM;
+		goto free_rules_cache;
+	}
+
+	return 0;
+
+free_rules_cache:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
+	kvfree(flow_rules_cache->rules_cache);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	kfree(flow_rules_cache->rules_cache);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	flow_rules_cache->rules_cache = NULL;
+	return err;
+}
+
+static void gve_free_flow_rule_caches(struct gve_priv *priv)
+{
+	struct gve_flow_rules_cache *flow_rules_cache = &priv->flow_rules_cache;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
+	kvfree(flow_rules_cache->rule_ids_cache);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	kfree(flow_rules_cache->rule_ids_cache);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	flow_rules_cache->rule_ids_cache = NULL;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
+	kvfree(flow_rules_cache->rules_cache);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	kfree(flow_rules_cache->rules_cache);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	flow_rules_cache->rules_cache = NULL;
+}
 
 static int gve_alloc_counter_array(struct gve_priv *priv)
 {
@@ -650,9 +717,12 @@ static int gve_setup_device_resources(struct gve_priv *priv)
 {
 	int err;
 
-	err = gve_alloc_counter_array(priv);
+	err = gve_alloc_flow_rule_caches(priv);
 	if (err)
 		return err;
+	err = gve_alloc_counter_array(priv);
+	if (err)
+		goto abort_with_flow_rule_caches;
 	err = gve_alloc_notify_blocks(priv);
 	if (err)
 		goto abort_with_counter;
@@ -713,6 +783,8 @@ abort_with_ntfy_blocks:
 	gve_free_notify_blocks(priv);
 abort_with_counter:
 	gve_free_counter_array(priv);
+abort_with_flow_rule_caches:
+	gve_free_flow_rule_caches(priv);
 
 	return err;
 }
@@ -748,6 +820,7 @@ static void gve_teardown_device_resources(struct gve_priv *priv)
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
 	priv->ptype_lut_dqo = NULL;
 
+	gve_free_flow_rule_caches(priv);
 	gve_free_counter_array(priv);
 	gve_free_notify_blocks(priv);
 	gve_free_stats_report(priv);
