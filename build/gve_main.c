@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.2-17-8633c55-313865b-oot"
+#define GVE_VERSION		 "1.4.2-19-8633c55-1e04169-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -429,11 +429,11 @@ int gve_napi_poll(struct napi_struct *napi, int budget)
 		if (block->rx)
 			reschedule |= gve_rx_work_pending(block->rx);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,10) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0))
 		if (reschedule && napi_schedule(napi))
-#else /* LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,10) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0)) */
 			if (reschedule && napi_reschedule(napi))
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,10) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0)) */
 				iowrite32be(GVE_IRQ_MASK, irq_doorbell);
 	}
 	return work_done;
