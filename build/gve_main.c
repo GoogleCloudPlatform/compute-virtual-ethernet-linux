@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.2-21-8633c55-e68cf21-oot"
+#define GVE_VERSION		 "1.4.2-0--76fed9e-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -1799,7 +1799,7 @@ static int gve_set_xdp(struct gve_priv *priv, struct bpf_prog *prog,
 #else /* LINUX_VERSION_CODE < KERNEL_VERSION(3,20,0) */
 	old_prog = ACCESS_ONCE(priv->xdp_prog);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,20,0) */
-	if (!netif_carrier_ok(priv->dev)) {
+	if (!netif_running(priv->dev)) {
 		WRITE_ONCE(priv->xdp_prog, prog);
 		if (old_prog)
 			bpf_prog_put(old_prog);
@@ -2091,7 +2091,7 @@ int gve_adjust_queues(struct gve_priv *priv,
 	rx_alloc_cfg.qcfg = &new_rx_config;
 	tx_alloc_cfg.num_rings = new_tx_config.num_queues;
 
-	if (netif_carrier_ok(priv->dev)) {
+	if (netif_running(priv->dev)) {
 		err = gve_adjust_config(priv, &tx_alloc_cfg, &rx_alloc_cfg);
 		return err;
 	}
@@ -2344,7 +2344,7 @@ static int gve_set_features(struct net_device *netdev,
 
 	if ((netdev->features & NETIF_F_LRO) != (features & NETIF_F_LRO)) {
 		netdev->features ^= NETIF_F_LRO;
-		if (netif_carrier_ok(netdev)) {
+		if (netif_running(netdev)) {
 			err = gve_adjust_config(priv, &tx_alloc_cfg, &rx_alloc_cfg);
 			if (err)
 				goto revert_features;
@@ -2683,7 +2683,7 @@ err:
 
 int gve_reset(struct gve_priv *priv, bool attempt_teardown)
 {
-	bool was_up = netif_carrier_ok(priv->dev);
+	bool was_up = netif_running(priv->dev);
 	int err;
 
 	dev_info(&priv->pdev->dev, "Performing reset\n");
@@ -3038,7 +3038,7 @@ static void gve_shutdown(struct pci_dev *pdev)
 {
 	struct net_device *netdev = pci_get_drvdata(pdev);
 	struct gve_priv *priv = netdev_priv(netdev);
-	bool was_up = netif_carrier_ok(priv->dev);
+	bool was_up = netif_running(priv->dev);
 
 	rtnl_lock();
 	if (was_up && gve_close(priv->dev)) {
@@ -3056,7 +3056,7 @@ static int gve_suspend(struct pci_dev *pdev, pm_message_t state)
 {
 	struct net_device *netdev = pci_get_drvdata(pdev);
 	struct gve_priv *priv = netdev_priv(netdev);
-	bool was_up = netif_carrier_ok(priv->dev);
+	bool was_up = netif_running(priv->dev);
 
 	priv->suspend_cnt++;
 	rtnl_lock();

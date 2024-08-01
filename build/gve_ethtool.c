@@ -538,15 +538,7 @@ static int gve_set_channels(struct net_device *netdev,
 		return -EINVAL;
 	}
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,2,0))
-	if (old_settings.rx_count != new_rx && priv->num_flow_rules) {
-		dev_err(&priv->pdev->dev,
-			"Changing number of RX queues is disabled when flow rules are active");
-		return -EBUSY;
-	}
-#endif /* (LINUX_VERSION_CODE< KERNEL_VERSION(6,2,0)) */
-
-	if (!netif_carrier_ok(netdev)) {
+	if (!netif_running(netdev)) {
 		priv->tx_cfg.num_queues = new_tx;
 		priv->rx_cfg.num_queues = new_rx;
 		return 0;

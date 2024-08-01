@@ -183,7 +183,7 @@ DISK_NAME: The name of the boot disk on the VM instance that you just stopped.
 7. Use the image, which now has the gVNIC driver installed, to create and start a VM with a gVNIC network interface.
 ```shell
 gcloud compute instances create INSTANCE_NAME\
-		--source-image IMAGE_NAME \
+		--image IMAGE_NAME \
 		--zone <preferred compute zone> \
 		--network-interface=nic-type=GVNIC
 ```
