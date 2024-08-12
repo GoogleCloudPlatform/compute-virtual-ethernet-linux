@@ -846,6 +846,9 @@ struct gve_priv {
 	u32 num_flow_rules;
 
 	struct gve_flow_rules_cache flow_rules_cache;
+
+	u16 rss_key_size;
+	u16 rss_lut_size;
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0))
 	u8 header_split_strict;
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0) */
