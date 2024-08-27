@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.2-0--4013a57-oot"
+#define GVE_VERSION		 "1.4.2-0--e1ab947-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -2204,7 +2204,7 @@ static void gve_turnup_and_check_status(struct gve_priv *priv)
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9,0)) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1102) || defined(KUNIT_KERNEL))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL))
 static void gve_tx_timeout(struct net_device *dev, unsigned int txqueue)
 {
 	struct gve_notify_block *block;
@@ -2250,14 +2250,14 @@ out:
 		tx->queue_timeout++;
 	priv->tx_timeo_cnt++;
 }
-#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1102) || defined(KUNIT_KERNEL)) */
+#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL)) */
 static void
 backport_gve_tx_timeout(struct net_device *dev){
 	struct gve_priv *priv = netdev_priv(dev);
 	gve_schedule_reset(priv);
 	priv->tx_timeo_cnt++;
 }
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1102) || defined(KUNIT_KERNEL)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL)) */
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0))
 int gve_set_buffer_size_config(struct gve_priv *priv, bool enable_hdr_split,
@@ -2394,11 +2394,11 @@ static const struct net_device_ops gve_netdev_ops = {
 	
 	.ndo_get_stats64	=	gve_get_stats,
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,11.0) */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1102) || defined(KUNIT_KERNEL))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL))
 	.ndo_tx_timeout         =       gve_tx_timeout,
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1102) || defined(KUNIT_KERNEL) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL) */
 	.ndo_tx_timeout = backport_gve_tx_timeout,
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1102) || defined(KUNIT_KERNEL)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL)) */
 	
 	.ndo_set_features	=	gve_set_features,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
