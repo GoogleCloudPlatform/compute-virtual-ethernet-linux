@@ -22,9 +22,9 @@
 #include <linux/workqueue.h>
 #include <linux/utsname.h>
 #include <linux/version.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 #include <net/netdev_queues.h>
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9,0)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 #include <net/sch_generic.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 #include <net/xdp_sock_drv.h>
@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.3-0--82d3b91-oot"
+#define GVE_VERSION		 "1.4.3-1-72bc1c1-7cb0ace-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -2193,7 +2193,7 @@ static void gve_turnup(struct gve_priv *priv)
 	gve_set_napi_enabled(priv);
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 static void gve_turnup_and_check_status(struct gve_priv *priv)
 {
 	u32 status;
@@ -2202,7 +2202,7 @@ static void gve_turnup_and_check_status(struct gve_priv *priv)
 	status = ioread32be(&priv->reg_bar0->device_status);
 	gve_handle_link_status(priv, GVE_DEVICE_STATUS_LINK_STATUS_MASK & status);
 }
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9,0)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL))
 static void gve_tx_timeout(struct net_device *dev, unsigned int txqueue)
@@ -2734,7 +2734,7 @@ static void gve_write_version(u8 __iomem *driver_version_register)
 	writeb('\n', driver_version_register);
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 static int gve_rx_queue_stop(struct net_device *dev, void *per_q_mem, int idx)
 {
 	struct gve_priv *priv = netdev_priv(dev);
@@ -2773,9 +2773,9 @@ static int gve_rx_queue_stop(struct net_device *dev, void *per_q_mem, int idx)
 	memset(&priv->rx[idx], 0, sizeof(priv->rx[idx]));
 	return 0;
 }
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9,0)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 static void gve_rx_queue_mem_free(struct net_device *dev, void *per_q_mem)
 {
 	struct gve_priv *priv = netdev_priv(dev);
@@ -2790,9 +2790,9 @@ static void gve_rx_queue_mem_free(struct net_device *dev, void *per_q_mem)
 	else
 		gve_rx_free_ring_dqo(priv, gve_per_q_mem, &cfg);
 }
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9,0)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 static int gve_rx_queue_mem_alloc(struct net_device *dev, void *per_q_mem,
 				  int idx)
 {
@@ -2814,9 +2814,9 @@ static int gve_rx_queue_mem_alloc(struct net_device *dev, void *per_q_mem,
 
 	return err;
 }
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9,0)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 static int gve_rx_queue_start(struct net_device *dev, void *per_q_mem, int idx)
 {
 	struct gve_priv *priv = netdev_priv(dev);
@@ -2866,9 +2866,9 @@ abort:
 	memset(&priv->rx[idx], 0, sizeof(priv->rx[idx]));
 	return err;
 }
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9,0)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 static const struct netdev_queue_mgmt_ops gve_queue_mgmt_ops = {
 	.ndo_queue_mem_size	=	sizeof(struct gve_rx_ring),
 	.ndo_queue_mem_alloc	=	gve_rx_queue_mem_alloc,
@@ -2876,7 +2876,7 @@ static const struct netdev_queue_mgmt_ops gve_queue_mgmt_ops = {
 	.ndo_queue_start	=	gve_rx_queue_start,
 	.ndo_queue_stop		=	gve_rx_queue_stop,
 };
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9,0)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
 static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
@@ -2932,9 +2932,9 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pci_set_drvdata(pdev, dev);
 	dev->ethtool_ops = &gve_ethtool_ops;
 	dev->netdev_ops = &gve_netdev_ops;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 	dev->queue_mgmt_ops = &gve_queue_mgmt_ops;
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,9,0)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
 	/* Set default and supported features.
 	 *
