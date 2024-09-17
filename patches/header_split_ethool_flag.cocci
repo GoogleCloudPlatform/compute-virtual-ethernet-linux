@@ -170,7 +170,7 @@ static int gve_set_priv_flags(struct net_device *netdev, u32 flags)
 +	}
 +
 +	if ((flags & BIT(GVE_PRIV_FLAGS_ENABLE_MAX_RX_BUFFER_SIZE)) &&
-+	     priv->max_rx_buffer_size <= GVE_DEFAULT_HEADER_BUFFER_SIZE) {
++	     priv->max_rx_buffer_size <= GVE_DEFAULT_RX_BUFFER_SIZE) {
 +		dev_err(&priv->pdev->dev,
 +			"Max-rx-buffer-size not available\n");
 +		return -EINVAL;
