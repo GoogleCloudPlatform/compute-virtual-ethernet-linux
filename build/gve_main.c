@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.4-0--172345a-oot"
+#define GVE_VERSION		 "1.4.4-0--4c93cf9-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -2119,6 +2119,14 @@ static void gve_turndown(struct gve_priv *priv)
 
 		if (!gve_tx_was_added_to_block(priv, idx))
 			continue;
+
+		if (idx < priv->tx_cfg.num_queues) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0)
+			netif_queue_set_napi(priv->dev, idx,
+					     NETDEV_QUEUE_TYPE_TX, NULL);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
+		}
+
 		napi_disable(&block->napi);
 	}
 	for (idx = 0; idx < priv->rx_cfg.num_queues; idx++) {
@@ -2127,6 +2135,11 @@ static void gve_turndown(struct gve_priv *priv)
 
 		if (!gve_rx_was_added_to_block(priv, idx))
 			continue;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0)
+		netif_queue_set_napi(priv->dev, idx, NETDEV_QUEUE_TYPE_RX,
+				     NULL);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
 		napi_disable(&block->napi);
 	}
 
@@ -2153,6 +2166,15 @@ static void gve_turnup(struct gve_priv *priv)
 			continue;
 
 		napi_enable(&block->napi);
+
+		if (idx < priv->tx_cfg.num_queues) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0)
+			netif_queue_set_napi(priv->dev, idx,
+					     NETDEV_QUEUE_TYPE_TX,
+					     &block->napi);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
+		}
+
 		if (gve_is_gqi(priv)) {
 			iowrite32be(0, gve_irq_doorbell(priv, block));
 		} else {
@@ -2175,6 +2197,11 @@ static void gve_turnup(struct gve_priv *priv)
 			continue;
 
 		napi_enable(&block->napi);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0)
+		netif_queue_set_napi(priv->dev, idx, NETDEV_QUEUE_TYPE_RX,
+				     &block->napi);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
+
 		if (gve_is_gqi(priv)) {
 			iowrite32be(0, gve_irq_doorbell(priv, block));
 		} else {
