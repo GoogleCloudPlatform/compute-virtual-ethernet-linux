@@ -122,6 +122,9 @@ void gve_add_napi(struct gve_priv *priv, int ntfy_idx,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,5,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0)
 	napi_hash_add(&block->napi);
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,5,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0) */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0)
+	netif_napi_set_irq(&block->napi, block->irq);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
 }
 
 void gve_remove_napi(struct gve_priv *priv, int ntfy_idx)
