@@ -854,11 +854,11 @@ static int gve_get_link_ksettings(struct net_device *netdev,
 
 static int gve_get_coalesce(struct net_device *netdev,
 			    struct ethtool_coalesce *ec
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,4) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,2)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,6) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,2)
 			    ,
 			    struct kernel_ethtool_coalesce *kernel_ec,
 			    struct netlink_ext_ack *extack
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,4) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,2) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,6) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,2) */
 			    )
 {
 	struct gve_priv *priv = netdev_priv(netdev);
@@ -873,11 +873,11 @@ static int gve_get_coalesce(struct net_device *netdev,
 
 static int gve_set_coalesce(struct net_device *netdev,
 			    struct ethtool_coalesce *ec
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,4) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,2)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,6) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,2)
 			    ,
 			    struct kernel_ethtool_coalesce *kernel_ec,
 			    struct netlink_ext_ack *extack
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,4) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,2) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,6) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,2) */
 			    )
 {
 	struct gve_priv *priv = netdev_priv(netdev);
