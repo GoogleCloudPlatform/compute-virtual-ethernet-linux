@@ -12,9 +12,9 @@ int gve_buf_ref_cnt(struct gve_rx_buf_state_dqo *bs)
 	return page_count(bs->page_info.page) - bs->page_info.pagecnt_bias;
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 void gve_free_page_dqo(struct gve_priv *priv, struct gve_rx_buf_state_dqo *bs,
-		       bool free_page)
-{
+		       bool free_page){
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
 	page_ref_sub(bs->page_info.page, bs->page_info.pagecnt_bias - 1);
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0) */
@@ -27,6 +27,7 @@ void gve_free_page_dqo(struct gve_priv *priv, struct gve_rx_buf_state_dqo *bs,
 	bs->page_info.page = NULL;
 }
 
+#endif
 struct gve_rx_buf_state_dqo *gve_alloc_buf_state(struct gve_rx_ring *rx)
 {
 	struct gve_rx_buf_state_dqo *buf_state;
@@ -132,31 +133,83 @@ struct gve_rx_buf_state_dqo *gve_get_recycled_buf_state(struct gve_rx_ring *rx)
 
 		gve_enqueue_buf_state(rx, &rx->dqo.used_buf_states, buf_state);
 	}
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
 
-	/* For QPL, we cannot allocate any new buffers and must
-	 * wait for the existing ones to be available.
-	 */
-	if (rx->dqo.qpl)
-		return NULL;
-
+	return NULL;
+#else /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0)) */
+	if (rx->dqo.qpl)return NULL;
 	/* If there are no free buf states discard an entry from
 	 * `used_buf_states` so it can be used.
 	 */
 	if (unlikely(rx->dqo.free_buf_states == -1)) {
-		buf_state = gve_dequeue_buf_state(rx, &rx->dqo.used_buf_states);
+		buf_state = gve_dequeue_buf_state(rx,
+						  &rx->dqo.used_buf_states);
 		if (gve_buf_ref_cnt(buf_state) == 0)
 			return buf_state;
 
+		
 		gve_free_page_dqo(rx->gve, buf_state, true);
 		gve_free_buf_state(rx, buf_state);
 	}
 
 	return NULL;
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0)) */
 }
 
-int gve_alloc_page_dqo(struct gve_rx_ring *rx,
-		       struct gve_rx_buf_state_dqo *buf_state)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+int gve_alloc_qpl_page_dqo(struct gve_rx_ring *rx,
+			   struct gve_rx_buf_state_dqo *buf_state)
 {
+	struct gve_priv *priv = rx->gve;
+	u32 idx;
+
+	idx = rx->dqo.next_qpl_page_idx;
+	if (idx >= gve_get_rx_pages_per_qpl_dqo(priv->rx_desc_cnt)) {
+		net_err_ratelimited("%s: Out of QPL pages\n",
+				    priv->dev->name);
+		return -ENOMEM;
+	}
+	buf_state->page_info.page = rx->dqo.qpl->pages[idx];
+	buf_state->addr = rx->dqo.qpl->page_buses[idx];
+	rx->dqo.next_qpl_page_idx++;
+	buf_state->page_info.page_offset = 0;
+	buf_state->page_info.page_address =
+		page_address(buf_state->page_info.page);
+	buf_state->page_info.buf_size = priv->data_buffer_size_dqo;
+	buf_state->last_single_ref_offset = 0;
+
+	/* The page already has 1 ref. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
+	page_ref_add(buf_state->page_info.page, INT_MAX - 1);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0) */
+	atomic_add(INT_MAX - 1, &buf_state->page_info.page->_count);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0) */
+	buf_state->page_info.pagecnt_bias = INT_MAX;
+
+	return 0;
+}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+void gve_free_qpl_page_dqo(struct gve_rx_buf_state_dqo *buf_state)
+{
+	if (!buf_state->page_info.page)
+		return;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
+	page_ref_sub(buf_state->page_info.page,
+		     buf_state->page_info.pagecnt_bias - 1);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0) */
+	atomic_sub(buf_state->page_info.pagecnt_bias - 1,
+		   &buf_state->page_info.page->_count);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0) */
+	buf_state->page_info.page = NULL;
+}
+#endif
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
+int gve_alloc_page_dqo(struct gve_rx_ring *rx,
+		       struct gve_rx_buf_state_dqo *buf_state){
 	struct gve_priv *priv = rx->gve;
 	u32 idx;
 
@@ -165,11 +218,12 @@ int gve_alloc_page_dqo(struct gve_rx_ring *rx,
 
 		err = gve_alloc_page(priv, &priv->pdev->dev,
 				     &buf_state->page_info.page,
-				     &buf_state->addr,
-				     DMA_FROM_DEVICE, GFP_ATOMIC);
+				     &buf_state->addr, DMA_FROM_DEVICE,
+				     GFP_ATOMIC);
 		if (err)
 			return err;
-	} else {
+	}
+	else {
 		idx = rx->dqo.next_qpl_page_idx;
 		if (idx >= gve_get_rx_pages_per_qpl_dqo(priv->rx_desc_cnt)) {
 			net_err_ratelimited("%s: Out of QPL pages\n",
@@ -181,8 +235,7 @@ int gve_alloc_page_dqo(struct gve_rx_ring *rx,
 		rx->dqo.next_qpl_page_idx++;
 	}
 	buf_state->page_info.page_offset = 0;
-	buf_state->page_info.page_address =
-		page_address(buf_state->page_info.page);
+	buf_state->page_info.page_address = page_address(buf_state->page_info.page);
 	buf_state->last_single_ref_offset = 0;
 
 	/* The page already has 1 ref. */
@@ -196,6 +249,7 @@ int gve_alloc_page_dqo(struct gve_rx_ring *rx,
 	return 0;
 }
 
+#endif
 void gve_try_recycle_buf(struct gve_priv *priv, struct gve_rx_ring *rx,
 			 struct gve_rx_buf_state_dqo *buf_state)
 {
@@ -237,3 +291,125 @@ mark_used:
 	gve_enqueue_buf_state(rx, &rx->dqo.used_buf_states, buf_state);
 	rx->dqo.used_buf_states_cnt++;
 }
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+void gve_free_to_page_pool(struct gve_rx_ring *rx,
+			   struct gve_rx_buf_state_dqo *buf_state,
+			   bool allow_direct)
+{
+	struct page *page = buf_state->page_info.page;
+
+	if (!page)
+		return;
+
+	page_pool_put_page(page->pp, page, buf_state->page_info.buf_size,
+			   allow_direct);
+	buf_state->page_info.page = NULL;
+}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+static int gve_alloc_from_page_pool(struct gve_rx_ring *rx,
+				    struct gve_rx_buf_state_dqo *buf_state)
+{
+	struct gve_priv *priv = rx->gve;
+	struct page *page;
+
+	buf_state->page_info.buf_size = priv->data_buffer_size_dqo;
+	page = page_pool_alloc(rx->dqo.page_pool,
+			       &buf_state->page_info.page_offset,
+			       &buf_state->page_info.buf_size, GFP_ATOMIC);
+
+	if (!page)
+		return -ENOMEM;
+
+	buf_state->page_info.page = page;
+	buf_state->page_info.page_address = page_address(page);
+	buf_state->addr = page_pool_get_dma_addr(page);
+
+	return 0;
+}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+struct page_pool *gve_rx_create_page_pool(struct gve_priv *priv,
+					  struct gve_rx_ring *rx)
+{
+	u32 ntfy_id = gve_rx_idx_to_ntfy(priv, rx->q_num);
+	struct page_pool_params pp = {
+		.flags = PP_FLAG_DMA_MAP | PP_FLAG_DMA_SYNC_DEV,
+		.order = 0,
+		.pool_size = GVE_PAGE_POOL_SIZE_MULTIPLIER * priv->rx_desc_cnt,
+		.dev = &priv->pdev->dev,
+		.netdev = priv->dev,
+		.napi = &priv->ntfy_blocks[ntfy_id].napi,
+		.max_len = PAGE_SIZE,
+		.dma_dir = DMA_FROM_DEVICE,
+	};
+
+	return page_pool_create(&pp);
+}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+void gve_free_buffer(struct gve_rx_ring *rx,
+		     struct gve_rx_buf_state_dqo *buf_state)
+{
+	if (rx->dqo.page_pool) {
+		gve_free_to_page_pool(rx, buf_state, true);
+		gve_free_buf_state(rx, buf_state);
+	} else {
+		gve_enqueue_buf_state(rx, &rx->dqo.recycled_buf_states,
+				      buf_state);
+	}
+}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+void gve_reuse_buffer(struct gve_rx_ring *rx,
+		      struct gve_rx_buf_state_dqo *buf_state)
+{
+	if (rx->dqo.page_pool) {
+		buf_state->page_info.page = NULL;
+		gve_free_buf_state(rx, buf_state);
+	} else {
+		gve_dec_pagecnt_bias(&buf_state->page_info);
+		gve_try_recycle_buf(rx->gve, rx, buf_state);
+	}
+}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+int gve_alloc_buffer(struct gve_rx_ring *rx, struct gve_rx_desc_dqo *desc)
+{
+	struct gve_rx_buf_state_dqo *buf_state;
+
+	if (rx->dqo.page_pool) {
+		buf_state = gve_alloc_buf_state(rx);
+		if (WARN_ON_ONCE(!buf_state))
+			return -ENOMEM;
+
+		if (gve_alloc_from_page_pool(rx, buf_state))
+			goto free_buf_state;
+	} else {
+		buf_state = gve_get_recycled_buf_state(rx);
+		if (unlikely(!buf_state)) {
+			buf_state = gve_alloc_buf_state(rx);
+			if (unlikely(!buf_state))
+				return -ENOMEM;
+
+			if (unlikely(gve_alloc_qpl_page_dqo(rx, buf_state)))
+				goto free_buf_state;
+		}
+	}
+	desc->buf_id = cpu_to_le16(buf_state - rx->dqo.buf_states);
+	desc->buf_addr = cpu_to_le64(buf_state->addr +
+				     buf_state->page_info.page_offset);
+
+	return 0;
+
+free_buf_state:
+	gve_free_buf_state(rx, buf_state);
+	return -ENOMEM;
+}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
