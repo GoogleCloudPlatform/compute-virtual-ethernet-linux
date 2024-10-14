@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.4-0--25327fb-oot"
+#define GVE_VERSION		 "1.4.4-0--acc4067-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -2905,6 +2905,62 @@ static const struct netdev_queue_mgmt_ops gve_queue_mgmt_ops = {
 };
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
+static void gve_get_rx_queue_stats(struct net_device *dev, int idx,
+				   struct netdev_queue_stats_rx *rx_stats)
+{
+	struct gve_priv *priv = netdev_priv(dev);
+	struct gve_rx_ring *rx = &priv->rx[idx];
+	unsigned int start;
+
+	do {
+		start = u64_stats_fetch_begin(&rx->statss);
+		rx_stats->packets = rx->rpackets;
+		rx_stats->bytes = rx->rbytes;
+		rx_stats->alloc_fail = rx->rx_skb_alloc_fail +
+				       rx->rx_buf_alloc_fail;
+	} while (u64_stats_fetch_retry(&rx->statss, start));
+}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
+static void gve_get_tx_queue_stats(struct net_device *dev, int idx,
+				   struct netdev_queue_stats_tx *tx_stats)
+{
+	struct gve_priv *priv = netdev_priv(dev);
+	struct gve_tx_ring *tx = &priv->tx[idx];
+	unsigned int start;
+
+	do {
+		start = u64_stats_fetch_begin(&tx->statss);
+		tx_stats->packets = tx->pkt_done;
+		tx_stats->bytes = tx->bytes_done;
+	} while (u64_stats_fetch_retry(&tx->statss, start));
+}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
+static void gve_get_base_stats(struct net_device *dev,
+			       struct netdev_queue_stats_rx *rx,
+			       struct netdev_queue_stats_tx *tx)
+{
+	rx->packets = 0;
+	rx->bytes = 0;
+	rx->alloc_fail = 0;
+
+	tx->packets = 0;
+	tx->bytes = 0;
+}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
+static const struct netdev_stat_ops gve_stat_ops = {
+	.get_queue_stats_rx	= gve_get_rx_queue_stats,
+	.get_queue_stats_tx	= gve_get_tx_queue_stats,
+	.get_base_stats		= gve_get_base_stats,
+};
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
+
 static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	int max_tx_queues, max_rx_queues;
@@ -2961,6 +3017,9 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	dev->netdev_ops = &gve_netdev_ops;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 	dev->queue_mgmt_ops = &gve_queue_mgmt_ops;
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
+	dev->stat_ops = &gve_stat_ops;
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
 	/* Set default and supported features.
