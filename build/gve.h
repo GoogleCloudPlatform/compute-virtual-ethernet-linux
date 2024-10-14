@@ -1207,6 +1207,24 @@ bool gve_header_split_supported(const struct gve_priv *priv);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
 int gve_set_hsplit_config(struct gve_priv *priv, u8 tcp_data_split);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
+/* rx buffer handling */
+int gve_buf_ref_cnt(struct gve_rx_buf_state_dqo *bs);
+void gve_free_page_dqo(struct gve_priv *priv, struct gve_rx_buf_state_dqo *bs,
+		       bool free_page);
+struct gve_rx_buf_state_dqo *gve_alloc_buf_state(struct gve_rx_ring *rx);
+bool gve_buf_state_is_allocated(struct gve_rx_ring *rx,
+				struct gve_rx_buf_state_dqo *buf_state);
+void gve_free_buf_state(struct gve_rx_ring *rx,
+			struct gve_rx_buf_state_dqo *buf_state);
+struct gve_rx_buf_state_dqo *gve_dequeue_buf_state(struct gve_rx_ring *rx,
+						   struct gve_index_list *list);
+void gve_enqueue_buf_state(struct gve_rx_ring *rx, struct gve_index_list *list,
+			   struct gve_rx_buf_state_dqo *buf_state);
+struct gve_rx_buf_state_dqo *gve_get_recycled_buf_state(struct gve_rx_ring *rx);
+int gve_alloc_page_dqo(struct gve_rx_ring *rx,
+		       struct gve_rx_buf_state_dqo *buf_state);
+void gve_try_recycle_buf(struct gve_priv *priv, struct gve_rx_ring *rx,
+			 struct gve_rx_buf_state_dqo *buf_state);
 /* Reset */
 void gve_schedule_reset(struct gve_priv *priv);
 int gve_reset(struct gve_priv *priv, bool attempt_teardown);
