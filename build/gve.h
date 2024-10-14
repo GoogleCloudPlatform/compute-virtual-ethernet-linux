@@ -18,6 +18,9 @@
 #include <linux/netdevice.h>
 #include <linux/pci.h>
 #include <linux/u64_stats_sync.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+#include <net/page_pool/helpers.h>
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 #include <net/xdp.h>
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
@@ -71,6 +74,8 @@
 
 #define GVE_DEFAULT_RX_BUFFER_OFFSET 2048
 
+#define GVE_PAGE_POOL_SIZE_MULTIPLIER 4
+
 #define GVE_FLOW_RULES_CACHE_SIZE \
 	(GVE_ADMINQ_BUFFER_SIZE / sizeof(struct gve_adminq_queried_flow_rule))
 #define GVE_FLOW_RULE_IDS_CACHE_SIZE \
@@ -113,6 +118,9 @@ struct gve_rx_slot_page_info {
 	struct page *page;
 	void *page_address;
 	u32 page_offset; /* offset to write to in page */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+	unsigned int buf_size;
+#endif
 	int pagecnt_bias; /* expected pagecnt if only the driver has a ref */
 	u16 pad; /* adjustment for rx padding */
 	u8 can_flip; /* tracks if the networking stack is using the page */
@@ -284,6 +292,10 @@ struct gve_rx_ring {
 
 			/* Address info of the buffers for header-split */
 			struct gve_header_buf hdr_bufs;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+
+			struct page_pool *page_pool;
+#endif
 		} dqo;
 	};
 
@@ -1221,10 +1233,40 @@ struct gve_rx_buf_state_dqo *gve_dequeue_buf_state(struct gve_rx_ring *rx,
 void gve_enqueue_buf_state(struct gve_rx_ring *rx, struct gve_index_list *list,
 			   struct gve_rx_buf_state_dqo *buf_state);
 struct gve_rx_buf_state_dqo *gve_get_recycled_buf_state(struct gve_rx_ring *rx);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 int gve_alloc_page_dqo(struct gve_rx_ring *rx,
 		       struct gve_rx_buf_state_dqo *buf_state);
+#endif
 void gve_try_recycle_buf(struct gve_priv *priv, struct gve_rx_ring *rx,
 			 struct gve_rx_buf_state_dqo *buf_state);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+void gve_free_to_page_pool(struct gve_rx_ring *rx,
+			   struct gve_rx_buf_state_dqo *buf_state,
+			   bool allow_direct);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+int gve_alloc_qpl_page_dqo(struct gve_rx_ring *rx,
+			   struct gve_rx_buf_state_dqo *buf_state);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+void gve_free_qpl_page_dqo(struct gve_rx_buf_state_dqo *buf_state);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+void gve_reuse_buffer(struct gve_rx_ring *rx,
+		      struct gve_rx_buf_state_dqo *buf_state);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+void gve_free_buffer(struct gve_rx_ring *rx,
+		     struct gve_rx_buf_state_dqo *buf_state);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+int gve_alloc_buffer(struct gve_rx_ring *rx, struct gve_rx_desc_dqo *desc);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+struct page_pool *gve_rx_create_page_pool(struct gve_priv *priv,
+					  struct gve_rx_ring *rx);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+
 /* Reset */
 void gve_schedule_reset(struct gve_priv *priv);
 int gve_reset(struct gve_priv *priv, bool attempt_teardown);
