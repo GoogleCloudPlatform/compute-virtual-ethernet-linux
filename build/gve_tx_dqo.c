@@ -1225,10 +1225,13 @@ static void gve_handle_miss_completion(struct gve_priv *priv,
 
 	pending_packet->state = GVE_PACKET_STATE_PENDING_REINJECT_COMPL;
 	/* jiffies can wraparound but time comparisons can handle overflows. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
 	pending_packet->timeout_jiffies =
 			jiffies +
-			msecs_to_jiffies(GVE_REINJECT_COMPL_TIMEOUT *
-					 MSEC_PER_SEC);
+			secs_to_jiffies(GVE_REINJECT_COMPL_TIMEOUT);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+	pending_packet->timeout_jiffies = jiffies + msecs_to_jiffies(GVE_REINJECT_COMPL_TIMEOUT * MSEC_PER_SEC);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	add_to_list(tx, &tx->dqo_compl.miss_completions, pending_packet);
 
 	*bytes += pending_packet->skb->len;
@@ -1270,10 +1273,13 @@ static void remove_miss_completions(struct gve_priv *priv,
 				    (int)(pending_packet - tx->dqo.pending_packets));
 
 		pending_packet->state = GVE_PACKET_STATE_TIMED_OUT_COMPL;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
 		pending_packet->timeout_jiffies =
 				jiffies +
-				msecs_to_jiffies(GVE_DEALLOCATE_COMPL_TIMEOUT *
-						 MSEC_PER_SEC);
+				secs_to_jiffies(GVE_DEALLOCATE_COMPL_TIMEOUT);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+		pending_packet->timeout_jiffies = jiffies + msecs_to_jiffies(GVE_DEALLOCATE_COMPL_TIMEOUT * MSEC_PER_SEC);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 		/* Maintain pending packet in another list so the packet can be
 		 * unallocated at a later time.
 		 */
