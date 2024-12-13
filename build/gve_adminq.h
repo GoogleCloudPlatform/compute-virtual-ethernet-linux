@@ -627,18 +627,18 @@ int gve_adminq_add_flow_rule(struct gve_priv *priv, struct gve_adminq_flow_rule 
 int gve_adminq_del_flow_rule(struct gve_priv *priv, u32 loc);
 int gve_adminq_reset_flow_rules(struct gve_priv *priv);
 int gve_adminq_query_flow_rules(struct gve_priv *priv, u16 query_opcode, u32 starting_loc);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5)
 int gve_adminq_configure_rss(struct gve_priv *priv, struct ethtool_rxfh_param *rxfh);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 int gve_adminq_configure_rss(struct gve_priv *priv, const u32 *indir,
 			     const u8 *hash_key, const u8 hfunc);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
 int gve_adminq_query_rss_config(struct gve_priv *priv, struct ethtool_rxfh_param *rxfh);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 int gve_adminq_query_rss_config(struct gve_priv *priv, u32 *indir, u8 *key,
 				u8 *hfunc);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 
 struct gve_ptype_lut;
 int gve_adminq_get_ptype_map_dqo(struct gve_priv *priv,

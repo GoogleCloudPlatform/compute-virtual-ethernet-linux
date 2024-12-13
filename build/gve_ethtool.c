@@ -994,7 +994,7 @@ static u32 gve_get_rxfh_indir_size(struct net_device *netdev)
 	return priv->rss_lut_size;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
 static int gve_get_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rxfh)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
@@ -1004,7 +1004,7 @@ static int gve_get_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rx
 
 	return gve_adminq_query_rss_config(priv, rxfh);
 }
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 static int gve_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key,
 			u8 *hfunc){
 	struct gve_priv *priv = netdev_priv(netdev);
@@ -1015,9 +1015,9 @@ static int gve_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key,
 	
 	return gve_adminq_query_rss_config(priv, indir, key, hfunc);
 }
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
 static int gve_set_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rxfh,
 			struct netlink_ext_ack *extack)
 {
@@ -1028,7 +1028,7 @@ static int gve_set_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rx
 
 	return gve_adminq_configure_rss(priv, rxfh);
 }
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 static int gve_set_rxfh(struct net_device *netdev, const u32 *indir,
 			const u8 *key, const u8 hfunc){
 	struct gve_priv *priv = netdev_priv(netdev);
@@ -1039,7 +1039,7 @@ static int gve_set_rxfh(struct net_device *netdev, const u32 *indir,
 	
 	return gve_adminq_configure_rss(priv, indir, key, hfunc);
 }
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 
 const struct ethtool_ops gve_ethtool_ops = {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,7,0)
