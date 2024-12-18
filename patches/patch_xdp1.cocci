@@ -124,31 +124,28 @@ struct net_device_ops gve_netdev_ops = {
 
 @@
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
-static int gve_xsk_tx(struct gve_priv *priv, struct gve_tx_ring *tx,
-		       int budget)
-{
-...
-}
-+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+int gve_xsk_tx(...) { ... }
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
 @@
-type bool;
-identifier gve_xdp_poll, block, budget;
-identifier tx, repoll;
 @@
-bool gve_xdp_poll(struct gve_notify_block *block, int budget)
-{
-...
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
-	if (tx->xsk_pool) {
-	...
-	}
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+int gve_xsk_tx_poll(...);
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
-+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
-	/* If we still have work we want to repoll */
-	return repoll;
-}
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+int gve_xsk_tx_poll(...) { ... }
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
+
+@@
+identifier work_done, block, budget;
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+work_done = max_t(int, work_done, gve_xsk_tx_poll(block, budget));
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
 
 @@
