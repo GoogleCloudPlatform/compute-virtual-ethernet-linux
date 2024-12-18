@@ -14,7 +14,7 @@ int gve_buf_ref_cnt(struct gve_rx_buf_state_dqo *bs)
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 void gve_free_page_dqo(struct gve_priv *priv, struct gve_rx_buf_state_dqo *bs,
-		       bool free_page){
+		       bool free_page) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
 	page_ref_sub(bs->page_info.page, bs->page_info.pagecnt_bias - 1);
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0) */
@@ -137,7 +137,7 @@ struct gve_rx_buf_state_dqo *gve_get_recycled_buf_state(struct gve_rx_ring *rx)
 
 	return NULL;
 #else /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0)) */
-	if (rx->dqo.qpl)return NULL;
+	if (rx->dqo.qpl) return NULL;
 	/* If there are no free buf states discard an entry from
 	 * `used_buf_states` so it can be used.
 	 */
@@ -147,7 +147,6 @@ struct gve_rx_buf_state_dqo *gve_get_recycled_buf_state(struct gve_rx_ring *rx)
 		if (gve_buf_ref_cnt(buf_state) == 0)
 			return buf_state;
 
-		
 		gve_free_page_dqo(rx->gve, buf_state, true);
 		gve_free_buf_state(rx, buf_state);
 	}
@@ -209,7 +208,7 @@ void gve_free_qpl_page_dqo(struct gve_rx_buf_state_dqo *buf_state)
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 int gve_alloc_page_dqo(struct gve_rx_ring *rx,
-		       struct gve_rx_buf_state_dqo *buf_state){
+		       struct gve_rx_buf_state_dqo *buf_state) {
 	struct gve_priv *priv = rx->gve;
 	u32 idx;
 

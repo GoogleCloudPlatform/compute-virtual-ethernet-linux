@@ -102,8 +102,8 @@ static void gve_rx_reset_ring_dqo(struct gve_priv *priv, int idx)
 			else
 				gve_free_qpl_page_dqo(bs);
 #else
-			if (bs->page_info.page)gve_free_page_dqo(priv, bs,
-								 !rx->dqo.qpl);
+			if (bs->page_info.page) gve_free_page_dqo(priv, bs,
+								  !rx->dqo.qpl);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
 		}
 	}
@@ -153,8 +153,8 @@ void gve_rx_free_ring_dqo(struct gve_priv *priv, struct gve_rx_ring *rx,
 		else
 			gve_free_qpl_page_dqo(bs);
 #else
-		if (bs->page_info.page)gve_free_page_dqo(priv, bs,
-							 !rx->dqo.qpl);
+		if (bs->page_info.page) gve_free_page_dqo(priv, bs,
+							  !rx->dqo.qpl);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
 	}
 
@@ -427,7 +427,6 @@ void gve_rx_post_buffers_dqo(struct gve_rx_ring *rx)
 			if (unlikely(!buf_state))
 				break;
 
-			
 			if (unlikely(gve_alloc_page_dqo(rx, buf_state))) {
 				u64_stats_update_begin(&rx->statss);
 				rx->rx_buf_alloc_fail++;

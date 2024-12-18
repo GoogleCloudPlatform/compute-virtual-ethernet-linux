@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5-0--b95625d-oot"
+#define GVE_VERSION		 "1.4.5-0--b9569a9-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -151,7 +151,7 @@ static void gve_get_stats(struct net_device *dev, struct rtnl_link_stats64 *s)
 }
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0)) && (RHEL_RELEASE_CODE <= RHEL_RELEASE_VERSION(7,6))
 static struct rtnl_link_stats64 *
-backport_gve_get_stats(struct net_device *dev, struct rtnl_link_stats64 *s){
+backport_gve_get_stats(struct net_device *dev, struct rtnl_link_stats64 *s) {
 	gve_get_stats(dev, s);
 	return s;
 }
@@ -270,7 +270,7 @@ static void gve_stats_report_schedule(struct gve_priv *priv)
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,15,0)
-static void gve_stats_report_timer(unsigned long data){
+static void gve_stats_report_timer(unsigned long data) {
 	struct gve_priv *priv = (struct gve_priv *)data;
 	mod_timer(&priv->stats_report_timer,
 		  round_jiffies(jiffies + msecs_to_jiffies(priv->stats_report_timer_period)));
@@ -1480,7 +1480,7 @@ static void gve_drain_page_cache(struct gve_priv *priv)
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(10,0) */
 	int i;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(10,0)
-	for (i = 0; i < priv->rx_cfg.num_queues; i++) {
+	for (i = 0;i < priv->rx_cfg.num_queues;i++) {
 		nc = &priv->rx[i].page_cache;
 		if (nc->va) {
 			__page_frag_cache_drain(virt_to_page(nc->va),
@@ -2279,7 +2279,7 @@ out:
 }
 #else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL)) */
 static void
-backport_gve_tx_timeout(struct net_device *dev){
+backport_gve_tx_timeout(struct net_device *dev) {
 	struct gve_priv *priv = netdev_priv(dev);
 	gve_schedule_reset(priv);
 	priv->tx_timeo_cnt++;
@@ -2288,13 +2288,9 @@ backport_gve_tx_timeout(struct net_device *dev){
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0))
 int gve_set_buffer_size_config(struct gve_priv *priv, bool enable_hdr_split,
-			       int new_pkt_buf_size){
-	struct gve_tx_alloc_rings_cfg tx_alloc_cfg = {
-		0
-	};
-	struct gve_rx_alloc_rings_cfg rx_alloc_cfg = {
-		0
-	};
+			       int new_pkt_buf_size) {
+	struct gve_tx_alloc_rings_cfg tx_alloc_cfg = { 0 };
+	struct gve_rx_alloc_rings_cfg rx_alloc_cfg = { 0 };
 	int err = 0;
 
 	gve_get_curr_alloc_cfgs(priv, &tx_alloc_cfg, &rx_alloc_cfg);
@@ -2391,7 +2387,7 @@ revert_features:
 }
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0))
-int gve_change_mtu(struct net_device *dev, int new_mtu){
+int gve_change_mtu(struct net_device *dev, int new_mtu) {
 	struct gve_priv *priv = netdev_priv(dev);
 
 	if (new_mtu < ETH_MIN_MTU || new_mtu > priv->max_mtu)
