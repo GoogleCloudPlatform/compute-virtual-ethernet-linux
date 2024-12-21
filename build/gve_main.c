@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5-0--7923d1e-oot"
+#define GVE_VERSION		 "1.4.5-0--1d84f59-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -1956,7 +1956,7 @@ done:
 static int gve_xsk_wakeup(struct net_device *dev, u32 queue_id, u32 flags)
 {
 	struct gve_priv *priv = netdev_priv(dev);
-	int tx_queue_id = gve_xdp_tx_queue_id(priv, queue_id);
+	struct napi_struct *napi;
 
 	if (!gve_get_napi_enabled(priv))
 		return -ENETDOWN;
@@ -1964,19 +1964,12 @@ static int gve_xsk_wakeup(struct net_device *dev, u32 queue_id, u32 flags)
 	if (queue_id >= priv->rx_cfg.num_queues || !priv->xdp_prog)
 		return -EINVAL;
 
-	if (flags & XDP_WAKEUP_TX) {
-		struct gve_tx_ring *tx = &priv->tx[tx_queue_id];
-		struct napi_struct *napi =
-			&priv->ntfy_blocks[tx->ntfy_id].napi;
-
-		if (!napi_if_scheduled_mark_missed(napi)) {
-			/* Call local_bh_enable to trigger SoftIRQ processing */
-			local_bh_disable();
-			napi_schedule(napi);
-			local_bh_enable();
-		}
-
-		tx->xdp_xsk_wakeup++;
+	napi = &priv->ntfy_blocks[gve_rx_idx_to_ntfy(priv, queue_id)].napi;
+	if (!napi_if_scheduled_mark_missed(napi)) {
+		/* Call local_bh_enable to trigger SoftIRQ processing */
+		local_bh_disable();
+		napi_schedule(napi);
+		local_bh_enable();
 	}
 
 	return 0;
