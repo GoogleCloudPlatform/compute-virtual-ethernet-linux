@@ -562,11 +562,11 @@ static int gve_set_channels(struct net_device *netdev,
 
 static void gve_get_ringparam(struct net_device *netdev,
 			      struct ethtool_ringparam *cmd
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 7)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7)
 			      ,
 			      struct kernel_ethtool_ringparam *kernel_cmd,
 			      struct netlink_ext_ack *extack
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 7) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7) */
 			      )
 {
 	struct gve_priv *priv = netdev_priv(netdev);
@@ -635,11 +635,11 @@ static int gve_validate_req_ring_size(struct gve_priv *priv, u16 new_tx_desc_cnt
 
 static int gve_set_ringparam(struct net_device *netdev,
 			     struct ethtool_ringparam *cmd
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 7)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7)
 			     ,
 			     struct kernel_ethtool_ringparam *kernel_cmd,
 			     struct netlink_ext_ack *extack
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 7) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7) */
 			     )
 {
 	struct gve_priv *priv = netdev_priv(netdev);
@@ -852,11 +852,11 @@ static int gve_get_link_ksettings(struct net_device *netdev,
 
 static int gve_get_coalesce(struct net_device *netdev,
 			    struct ethtool_coalesce *ec
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,6) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,2)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || (RHEL_VERSION_GTE(8,6) && RHEL_VERSION_LT(9,0)) || RHEL_VERSION_GTE(9,2)
 			    ,
 			    struct kernel_ethtool_coalesce *kernel_ec,
 			    struct netlink_ext_ack *extack
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,6) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,2) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || (RHEL_VERSION_GTE(8,6) && RHEL_VERSION_LT(9,0)) || RHEL_VERSION_GTE(9,2) */
 			    )
 {
 	struct gve_priv *priv = netdev_priv(netdev);
@@ -871,11 +871,11 @@ static int gve_get_coalesce(struct net_device *netdev,
 
 static int gve_set_coalesce(struct net_device *netdev,
 			    struct ethtool_coalesce *ec
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,6) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,2)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || (RHEL_VERSION_GTE(8,6) && RHEL_VERSION_LT(9,0)) || RHEL_VERSION_GTE(9,2)
 			    ,
 			    struct kernel_ethtool_coalesce *kernel_ec,
 			    struct netlink_ext_ack *extack
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,6) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,2) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || (RHEL_VERSION_GTE(8,6) && RHEL_VERSION_LT(9,0)) || RHEL_VERSION_GTE(9,2) */
 			    )
 {
 	struct gve_priv *priv = netdev_priv(netdev);
@@ -992,7 +992,7 @@ static u32 gve_get_rxfh_indir_size(struct net_device *netdev)
 	return priv->rss_lut_size;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 static void gve_get_rss_config_cache(struct gve_priv *priv,
 				     struct ethtool_rxfh_param *rxfh)
 {
@@ -1011,7 +1011,7 @@ static void gve_get_rss_config_cache(struct gve_priv *priv,
 		       priv->rss_lut_size * sizeof(*rxfh->indir));
 	}
 }
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 static void gve_get_rss_config_cache(struct gve_priv *priv, u32 *indir,
 				     u8 *key, u8 *hfunc) {
 	struct gve_rss_config *rss_config = &priv->rss_config;
@@ -1027,9 +1027,9 @@ static void gve_get_rss_config_cache(struct gve_priv *priv, u32 *indir,
 		memcpy(indir, rss_config->hash_lut,
 		       priv->rss_lut_size * sizeof(*indir));
 }
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 static int gve_get_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rxfh)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
@@ -1044,7 +1044,7 @@ static int gve_get_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rx
 
 	return gve_adminq_query_rss_config(priv, rxfh);
 }
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 static int gve_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key,
 			u8 *hfunc) {
 	struct gve_priv *priv = netdev_priv(netdev);
@@ -1059,9 +1059,9 @@ static int gve_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key,
 
 	return gve_adminq_query_rss_config(priv, indir, key, hfunc);
 }
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 static void gve_set_rss_config_cache(struct gve_priv *priv,
 				     struct ethtool_rxfh_param *rxfh)
 {
@@ -1074,7 +1074,7 @@ static void gve_set_rss_config_cache(struct gve_priv *priv,
 		memcpy(rss_config->hash_lut, rxfh->indir,
 		       priv->rss_lut_size * sizeof(*rxfh->indir));
 }
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 static void gve_set_rss_config_cache(struct gve_priv *priv, const u32 *indir,
 				     const u8 *key, const u8 hfunc) {
 	struct gve_rss_config *rss_config = &priv->rss_config;
@@ -1086,9 +1086,9 @@ static void gve_set_rss_config_cache(struct gve_priv *priv, const u32 *indir,
 		memcpy(rss_config->hash_lut, indir,
 		       priv->rss_lut_size * sizeof(*indir));
 }
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 static int gve_set_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rxfh,
 			struct netlink_ext_ack *extack)
 {
@@ -1109,7 +1109,7 @@ static int gve_set_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rx
 
 	return 0;
 }
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 static int gve_set_rxfh(struct net_device *netdev, const u32 *indir,
 			const u8 *key, const u8 hfunc) {
 	struct gve_priv *priv = netdev_priv(netdev);
@@ -1129,7 +1129,7 @@ static int gve_set_rxfh(struct net_device *netdev, const u32 *indir,
 
 	return 0;
 }
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
 const struct ethtool_ops gve_ethtool_ops = {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,7,0)

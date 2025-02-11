@@ -16,11 +16,11 @@ identifier gve_netdev_ops;
 +
 struct net_device_ops gve_netdev_ops = {
 +#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0))
-+#if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 5) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(8, 0)
++#if RHEL_VERSION_GTE(7, 5) && RHEL_VERSION_LT(8, 0)
 +	.ndo_change_mtu_rh74	=	gve_change_mtu,
-+#else /* RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(7, 5) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 0) */
++#else /* RHEL_VERSION_LT(7, 5) || RHEL_VERSION_GTE(8, 0) */
 +	.ndo_change_mtu		=	gve_change_mtu,
-+#endif /* RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 5) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(8, 0) */
++#endif /* RHEL_VERSION_GTE(7, 5) && RHEL_VERSION_LT(8, 0) */
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)) */
 	...
 };

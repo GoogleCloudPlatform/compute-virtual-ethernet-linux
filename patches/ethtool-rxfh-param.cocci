@@ -1,11 +1,11 @@
 @ gve_get_rxfh @
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 static int gve_get_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rxfh)
 {
 	...
 }
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 +static int gve_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key, u8 *hfunc)
 +{
 +	struct gve_priv *priv = netdev_priv(netdev);
@@ -20,17 +20,17 @@ static int gve_get_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rx
 +
 +	return gve_adminq_query_rss_config(priv, indir, key, hfunc);
 +}
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
 @ gve_set_rxfh @
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 static int gve_set_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rxfh,
 			struct netlink_ext_ack *extack)
 {
 	...
 }
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 +static int gve_set_rxfh(struct net_device *netdev, const u32 *indir,
 +			 const u8 *key, const u8 hfunc)
 +{
@@ -51,16 +51,16 @@ static int gve_set_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rx
 +
 +	return 0;
 +}
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
 @@
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 int gve_init_rss_config(struct gve_priv *priv, u16 num_queues)
 {
 	...
 }
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 +int gve_init_rss_config(struct gve_priv *priv, u16 num_queues)
 +{
 +	struct gve_rss_config *rss_config = &priv->rss_config;
@@ -76,17 +76,17 @@ int gve_init_rss_config(struct gve_priv *priv, u16 num_queues)
 +
 +	return gve_adminq_configure_rss(priv, NULL, NULL, ETH_RSS_HASH_TOP);
 +}
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
 @@
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 static void gve_set_rss_config_cache(struct gve_priv *priv,
 				     struct ethtool_rxfh_param *rxfh)
 {
 	...
 }
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 +static void gve_set_rss_config_cache(struct gve_priv *priv,
 +				      const u32 *indir, const u8 *key,
 +				      const u8 hfunc)
@@ -100,17 +100,17 @@ static void gve_set_rss_config_cache(struct gve_priv *priv,
 +		memcpy(rss_config->hash_lut, indir,
 +		       priv->rss_lut_size * sizeof(*indir));
 +}
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
 @@
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 static void gve_get_rss_config_cache(struct gve_priv *priv,
 				     struct ethtool_rxfh_param *rxfh)
 {
 	...
 }
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 +static void gve_get_rss_config_cache(struct gve_priv *priv,
 +				     u32 *indir, u8 *key, u8 *hfunc)
 +{
@@ -126,32 +126,32 @@ static void gve_get_rss_config_cache(struct gve_priv *priv,
 +		memcpy(indir, rss_config->hash_lut,
 +		       priv->rss_lut_size * sizeof(*indir));
 +}
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
 @@
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 int gve_adminq_configure_rss(struct gve_priv *priv, struct ethtool_rxfh_param *rxfh);
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 +int gve_adminq_configure_rss(struct gve_priv *priv, const u32 *indir, const u8 *hash_key, const u8 hfunc);
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
 @@
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 int gve_adminq_query_rss_config(struct gve_priv *priv, struct ethtool_rxfh_param *rxfh);
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 +int gve_adminq_query_rss_config(struct gve_priv *priv, u32 *indir, u8 *key, u8 *hfunc);
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
 @@
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 int gve_adminq_configure_rss(struct gve_priv *priv, struct ethtool_rxfh_param *rxfh)
 {
 	...
 }
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 +int gve_adminq_configure_rss(struct gve_priv *priv, const u32 *indir, const u8 *hash_key, const u8 hfunc)
 +{
 +	const u32 *hash_lut_to_config = NULL;
@@ -235,18 +235,18 @@ int gve_adminq_configure_rss(struct gve_priv *priv, struct ethtool_rxfh_param *r
 +				  priv->rss_key_size, key, key_bus);
 +	return err;
 +}
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
 @@
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 static int gve_adminq_process_rss_query(struct gve_priv *priv,
 					struct gve_query_rss_descriptor *descriptor,
 					struct ethtool_rxfh_param *rxfh)
 {
 	...
 }
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 +static int gve_adminq_process_rss_query(struct gve_priv *priv,
 +					struct gve_query_rss_descriptor *descriptor,
 +					u32 *indir, u8 *key, u8 *hfunc)
@@ -282,16 +282,16 @@ static int gve_adminq_process_rss_query(struct gve_priv *priv,
 +
 +	return 0;
 +}
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
 @@
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 int gve_adminq_query_rss_config(struct gve_priv *priv, struct ethtool_rxfh_param *rxfh)
 {
 	...
 }
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 +int gve_adminq_query_rss_config(struct gve_priv *priv, u32 *indir, u8 *key, u8 *hfunc)
 +{
 +	struct gve_query_rss_descriptor *descriptor;
@@ -319,4 +319,4 @@ int gve_adminq_query_rss_config(struct gve_priv *priv, struct ethtool_rxfh_param
 +	dma_pool_free(priv->adminq_pool, descriptor, descriptor_bus);
 +	return err;
 +}
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
