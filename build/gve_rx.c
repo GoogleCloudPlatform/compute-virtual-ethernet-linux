@@ -512,7 +512,7 @@ void gve_rx_write_doorbell(struct gve_priv *priv, struct gve_rx_ring *rx)
 	iowrite32be(rx->fill_cnt, &priv->db_bar2[db_idx]);
 }
 
-#if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 0) || LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0)
+#if RHEL_VERSION_GTE(7, 0) || LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0)
 static enum pkt_hash_types gve_rss_type(__be16 pkt_flags)
 {
 	if (likely(pkt_flags & (GVE_RXF_TCP | GVE_RXF_UDP)))
@@ -521,7 +521,7 @@ static enum pkt_hash_types gve_rss_type(__be16 pkt_flags)
 		return PKT_HASH_TYPE_L3;
 	return PKT_HASH_TYPE_L2;
 }
-#endif /* RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 0) || LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
+#endif /* RHEL_VERSION_GTE(7, 0) || LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
 
 static struct sk_buff *gve_rx_add_frags(struct napi_struct *napi,
 					struct gve_rx_slot_page_info *page_info,
@@ -996,13 +996,13 @@ static void gve_rx(struct gve_rx_ring *rx, netdev_features_t feat,
 		/* parse flags & pass relevant info up */
 		if (likely(feat & NETIF_F_RXHASH) &&
 		    gve_needs_rss(desc->flags_seq)) {
-#if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 0) || LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0)
+#if RHEL_VERSION_GTE(7, 0) || LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0)
 			skb_set_hash(skb, be32_to_cpu(desc->rss_hash),
 				     gve_rss_type(desc->flags_seq));
-#else /* RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(7, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(3,14,0) */
+#else /* RHEL_VERSION_LT(7, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(3,14,0) */
 			skb->rxhash = be32_to_cpu(desc->rss_hash);
 			skb->l4_rxhash = !!(desc->flags_seq & (GVE_RXF_TCP | GVE_RXF_UDP));
-#endif /* RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 0) || LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
+#endif /* RHEL_VERSION_GTE(7, 0) || LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
 		}
 	}
 

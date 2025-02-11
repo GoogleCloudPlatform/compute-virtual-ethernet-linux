@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5.1-17-8578b2d-45572a0-oot"
+#define GVE_VERSION		 "1.4.5.1-18-8578b2d-5aa07a1-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -149,7 +149,7 @@ static void gve_get_stats(struct net_device *dev, struct rtnl_link_stats64 *s)
 		}
 	}
 }
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0)) && (RHEL_RELEASE_CODE <= RHEL_RELEASE_VERSION(7,6))
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0)) || (RHEL_VERSION_LTE(7,6))
 static struct rtnl_link_stats64 *
 backport_gve_get_stats(struct net_device *dev, struct rtnl_link_stats64 *s) {
 	gve_get_stats(dev, s);
@@ -380,11 +380,11 @@ static irqreturn_t gve_intr(int irq, void *arg)
 	struct gve_priv *priv = block->priv;
 
 	iowrite32be(GVE_IRQ_MASK, gve_irq_doorbell(priv, block));
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 3)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) || RHEL_VERSION_GTE(7, 3)
 	napi_schedule_irqoff(&block->napi);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 3) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) || RHEL_VERSION_GTE(7, 3) */
 	napi_schedule(&block->napi);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 3) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) || RHEL_VERSION_GTE(7, 3) */
 	return IRQ_HANDLED;
 }
 
@@ -393,11 +393,11 @@ static irqreturn_t gve_intr_dqo(int irq, void *arg)
 	struct gve_notify_block *block = arg;
 
 	/* Interrupts are automatically masked */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 3)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) || RHEL_VERSION_GTE(7, 3)
 	napi_schedule_irqoff(&block->napi);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 3) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) || RHEL_VERSION_GTE(7, 3) */
 	napi_schedule(&block->napi);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 3) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) || RHEL_VERSION_GTE(7, 3) */
 	return IRQ_HANDLED;
 }
 
@@ -456,13 +456,13 @@ int gve_napi_poll(struct napi_struct *napi, int budget)
 		return budget;
 
        /* Complete processing - don't unmask irq if busy polling is enabled */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 5)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0) || RHEL_VERSION_GTE(7, 5)
 	if (likely(napi_complete_done(napi, work_done))) 
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 3)
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) || RHEL_VERSION_GTE(7, 3)
 		napi_complete_done(napi, work_done);
-#else /* LINUX_VERSION_CODE < KERNEL_VERSION(3,19,0) || RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(7, 3) */
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(3,19,0) || RHEL_VERSION_LT(7, 3) */
 	napi_complete(napi);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 5) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0) || RHEL_VERSION_GTE(7, 5) */
 	{
 		irq_doorbell = gve_irq_doorbell(priv, block);
 		iowrite32be(GVE_IRQ_ACK | GVE_IRQ_EVENT, irq_doorbell);
@@ -477,11 +477,11 @@ int gve_napi_poll(struct napi_struct *napi, int budget)
 		if (block->rx)
 			reschedule |= gve_rx_work_pending(block->rx);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,10) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0) || RHEL_VERSION_GTE(9,4) || (RHEL_VERSION_GTE(8,10) && RHEL_VERSION_LT(9,0))
 		if (reschedule && napi_schedule(napi))
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,10) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0)) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0) || RHEL_VERSION_GTE(9,4) || (RHEL_VERSION_GTE(8,10) && RHEL_VERSION_LT(9,0)) */
 			if (reschedule && napi_reschedule(napi))
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4) || (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,10) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(9,0)) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0) || RHEL_VERSION_GTE(9,4) || (RHEL_VERSION_GTE(8,10) && RHEL_VERSION_LT(9,0)) */
 				iowrite32be(GVE_IRQ_MASK, irq_doorbell);
 	}
 	return work_done;
@@ -528,13 +528,13 @@ int gve_napi_poll_dqo(struct napi_struct *napi, int budget)
 	}
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,11,0)) */
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 5)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0) || RHEL_VERSION_GTE(7, 5)
 	if (likely(napi_complete_done(napi, work_done))) 
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 3)
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) || RHEL_VERSION_GTE(7, 3)
 		napi_complete_done(napi, work_done);
-#else /* LINUX_VERSION_CODE < KERNEL_VERSION(3,19,0) || RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(7, 3) */
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(3,19,0) || RHEL_VERSION_LT(7, 3) */
 	napi_complete(napi);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 5) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0) || RHEL_VERSION_GTE(7, 5) */
 	{
 		/* Enable interrupts again.
 		 *
@@ -1537,11 +1537,11 @@ static void gve_unreg_xdp_info(struct gve_priv *priv)
 static void gve_drain_page_cache(struct gve_priv *priv)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(10,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_VERSION_LT(10,0)
 	struct page_frag_cache *nc;
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(10,0) */
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_VERSION_LT(10,0) */
 	int i;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(10,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_VERSION_LT(10,0)
 	for (i = 0;i < priv->rx_cfg.num_queues;i++) {
 		nc = &priv->rx[i].page_cache;
 		if (nc->va) {
@@ -1550,11 +1550,11 @@ static void gve_drain_page_cache(struct gve_priv *priv)
 			nc->va = NULL;
 		}
 	}
-#else /* LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(10,0) */
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_VERSION_LT(10,0) */
 
 	for (i = 0; i < priv->rx_cfg.num_queues; i++)
 		page_frag_cache_drain(&priv->rx[i].page_cache);
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(10,0) */
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_VERSION_LT(10,0) */
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0) */
 }
 
@@ -2088,7 +2088,7 @@ static int gve_xdp(struct net_device *dev, struct netdev_bpf *xdp)
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 int gve_init_rss_config(struct gve_priv *priv, u16 num_queues)
 {
 	struct gve_rss_config *rss_config = &priv->rss_config;
@@ -2108,7 +2108,7 @@ int gve_init_rss_config(struct gve_priv *priv, u16 num_queues)
 
 	return gve_adminq_configure_rss(priv, &rxfh);
 }
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 int gve_init_rss_config(struct gve_priv *priv, u16 num_queues) {
 	struct gve_rss_config *rss_config = &priv->rss_config;
 	u16 i;
@@ -2123,7 +2123,7 @@ int gve_init_rss_config(struct gve_priv *priv, u16 num_queues) {
 
 	return gve_adminq_configure_rss(priv, NULL, NULL, ETH_RSS_HASH_TOP);
 }
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
 int gve_flow_rules_reset(struct gve_priv *priv)
 {
@@ -2368,7 +2368,7 @@ static void gve_turnup_and_check_status(struct gve_priv *priv)
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_VERSION_GTE(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL))
 static void gve_tx_timeout(struct net_device *dev, unsigned int txqueue)
 {
 	struct gve_notify_block *block;
@@ -2414,14 +2414,14 @@ out:
 		tx->queue_timeout++;
 	priv->tx_timeo_cnt++;
 }
-#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL)) */
+#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_VERSION_GTE(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL)) */
 static void
 backport_gve_tx_timeout(struct net_device *dev) {
 	struct gve_priv *priv = netdev_priv(dev);
 	gve_schedule_reset(priv);
 	priv->tx_timeo_cnt++;
 }
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_VERSION_GTE(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL)) */
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0))
 int gve_set_buffer_size_config(struct gve_priv *priv, bool enable_hdr_split,
@@ -2536,29 +2536,29 @@ int gve_change_mtu(struct net_device *dev, int new_mtu) {
 
 static const struct net_device_ops gve_netdev_ops = {
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0))
-#if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 5) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(8, 0)
+#if RHEL_VERSION_GTE(7, 5) && RHEL_VERSION_LT(8, 0)
 	.ndo_change_mtu_rh74 = gve_change_mtu,
-#else /* RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(7, 5) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 0) */
+#else /* RHEL_VERSION_LT(7, 5) || RHEL_VERSION_GTE(8, 0) */
 	
 	.ndo_change_mtu = gve_change_mtu,
-#endif /* RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 5) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(8, 0) */
+#endif /* RHEL_VERSION_GTE(7, 5) && RHEL_VERSION_LT(8, 0) */
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)) */
 	
 	.ndo_start_xmit		=	gve_start_xmit,
 	.ndo_features_check	=	gve_features_check,
 	.ndo_open		=	gve_open,
 	.ndo_stop		=	gve_close,
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0)) && (RHEL_RELEASE_CODE <= RHEL_RELEASE_VERSION(7,6))
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0)) || (RHEL_VERSION_LTE(7,6))
 	.ndo_get_stats64 = backport_gve_get_stats,
 #else /* LINUX_VERSION_CODE < KERNEL_VERSION(4,11.0) */
 	
 	.ndo_get_stats64	=	gve_get_stats,
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,11.0) */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_VERSION_GTE(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL))
 	.ndo_tx_timeout         =       gve_tx_timeout,
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_VERSION_GTE(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL) */
 	.ndo_tx_timeout = backport_gve_tx_timeout,
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_VERSION_GTE(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL)) */
 	
 	.ndo_set_features	=	gve_set_features,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
@@ -2687,7 +2687,7 @@ static void gve_service_task(struct work_struct *work)
 
 static void gve_set_netdev_xdp_features(struct gve_priv *priv)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL) || RHEL_VERSION_GTE(9,4)
 	xdp_features_t xdp_features;
 
 	if (priv->queue_format == GVE_GQI_QPL_FORMAT) {
@@ -2699,7 +2699,7 @@ static void gve_set_netdev_xdp_features(struct gve_priv *priv)
 	}
 
 	xdp_set_features_flag(priv->dev, xdp_features);
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL) || RHEL_VERSION_GTE(9,4) */
 }
 
 static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)

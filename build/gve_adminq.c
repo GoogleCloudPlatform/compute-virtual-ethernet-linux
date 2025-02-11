@@ -1312,7 +1312,7 @@ int gve_adminq_reset_flow_rules(struct gve_priv *priv)
 	return gve_adminq_configure_flow_rule(priv, &flow_rule_cmd);
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 int gve_adminq_configure_rss(struct gve_priv *priv, struct ethtool_rxfh_param *rxfh)
 {
 	const u32 *hash_lut_to_config = NULL;
@@ -1413,7 +1413,7 @@ out:
 				  priv->rss_key_size, key, key_bus);
 	return err;
 }
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 int gve_adminq_configure_rss(struct gve_priv *priv, const u32 *indir,
 			     const u8 *hash_key, const u8 hfunc) {
 	const u32 *hash_lut_to_config = NULL;
@@ -1499,7 +1499,7 @@ out:
 				  key_bus);
 	return err;
 }
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
 /* In the dma memory that the driver allocated for the device to query the flow rules, the device
  * will first write it with a struct of gve_query_flow_rules_descriptor. Next to it, the device
@@ -1579,7 +1579,7 @@ out:
 	return err;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 static int gve_adminq_process_rss_query(struct gve_priv *priv,
 					struct gve_query_rss_descriptor *descriptor,
 					struct ethtool_rxfh_param *rxfh)
@@ -1617,7 +1617,7 @@ static int gve_adminq_process_rss_query(struct gve_priv *priv,
 
 	return 0;
 }
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 static int gve_adminq_process_rss_query(struct gve_priv *priv,
 					struct gve_query_rss_descriptor *descriptor,
 					u32 *indir, u8 *key, u8 *hfunc) {
@@ -1652,9 +1652,9 @@ static int gve_adminq_process_rss_query(struct gve_priv *priv,
 
 	return 0;
 }
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5))
 int gve_adminq_query_rss_config(struct gve_priv *priv, struct ethtool_rxfh_param *rxfh)
 {
 	struct gve_query_rss_descriptor *descriptor;
@@ -1682,7 +1682,7 @@ out:
 	dma_pool_free(priv->adminq_pool, descriptor, descriptor_bus);
 	return err;
 }
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 int gve_adminq_query_rss_config(struct gve_priv *priv, u32 *indir, u8 *key,
 				u8 *hfunc) {
 	struct gve_query_rss_descriptor *descriptor;
@@ -1712,4 +1712,4 @@ out:
 	dma_pool_free(priv->adminq_pool, descriptor, descriptor_bus);
 	return err;
 }
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
