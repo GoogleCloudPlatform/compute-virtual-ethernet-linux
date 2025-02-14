@@ -302,3 +302,10 @@ static void gve_set_netdev_xdp_features(struct gve_priv *priv)
 ...
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4) */
 }
+
+@@
+identifier xdp_set_clear_redirect =~ "xdp_features_.*_redirect_target";
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4)
+xdp_set_clear_redirect(...);
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4) */
