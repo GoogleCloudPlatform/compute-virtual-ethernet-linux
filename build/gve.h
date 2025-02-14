@@ -1165,6 +1165,16 @@ int gve_set_buffer_size_config(struct gve_priv *priv, bool enable_hdr_split,
 			       int new_pkt_buf_size);
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0) */
 
+static inline bool gve_supports_xdp_xmit(struct gve_priv *priv)
+{
+	switch (priv->queue_format) {
+	case GVE_GQI_QPL_FORMAT:
+		return true;
+	default:
+		return false;
+	}
+}
+
 /* gqi napi handler defined in gve_main.c */
 int gve_napi_poll(struct napi_struct *napi, int budget);
 
