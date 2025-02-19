@@ -525,6 +525,7 @@ static int gve_set_channels(struct net_device *netdev,
 	struct ethtool_channels old_settings;
 	int new_tx = cmd->tx_count;
 	int new_rx = cmd->rx_count;
+	bool reset_rss = false;
 
 	gve_get_channels(netdev, &old_settings);
 
@@ -541,6 +542,10 @@ static int gve_set_channels(struct net_device *netdev,
 		return -EINVAL;
 	}
 
+	if (new_rx != priv->rx_cfg.num_queues &&
+	    priv->cache_rss_config && !netif_is_rxfh_configured(netdev))
+		reset_rss = true;
+
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,2,0))
 	if (old_settings.rx_count != new_rx && priv->num_flow_rules) {
 		dev_err(&priv->pdev->dev,
@@ -549,16 +554,10 @@ static int gve_set_channels(struct net_device *netdev,
 	}
 #endif /* (LINUX_VERSION_CODE< KERNEL_VERSION(6,2,0)) */
 
-	if (!netif_running(netdev)) {
-		priv->tx_cfg.num_queues = new_tx;
-		priv->rx_cfg.num_queues = new_rx;
-		return 0;
-	}
-
 	new_tx_cfg.num_queues = new_tx;
 	new_rx_cfg.num_queues = new_rx;
 
-	return gve_adjust_queues(priv, new_rx_cfg, new_tx_cfg);
+	return gve_adjust_queues(priv, new_rx_cfg, new_tx_cfg, reset_rss);
 }
 
 static void gve_get_ringparam(struct net_device *netdev,
@@ -994,12 +993,54 @@ static u32 gve_get_rxfh_indir_size(struct net_device *netdev)
 }
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
+static void gve_get_rss_config_cache(struct gve_priv *priv,
+				     struct ethtool_rxfh_param *rxfh)
+{
+	struct gve_rss_config *rss_config = &priv->rss_config;
+
+	rxfh->hfunc = ETH_RSS_HASH_TOP;
+
+	if (rxfh->key) {
+		rxfh->key_size = priv->rss_key_size;
+		memcpy(rxfh->key, rss_config->hash_key, priv->rss_key_size);
+	}
+
+	if (rxfh->indir) {
+		rxfh->indir_size = priv->rss_lut_size;
+		memcpy(rxfh->indir, rss_config->hash_lut,
+		       priv->rss_lut_size * sizeof(*rxfh->indir));
+	}
+}
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+static void gve_get_rss_config_cache(struct gve_priv *priv, u32 *indir,
+				     u8 *key, u8 *hfunc) {
+	struct gve_rss_config *rss_config = &priv->rss_config;
+
+	if (hfunc)
+		*hfunc = ETH_RSS_HASH_TOP;
+	;
+
+	if (key)
+		memcpy(key, rss_config->hash_key, priv->rss_key_size);
+
+	if (indir)
+		memcpy(indir, rss_config->hash_lut,
+		       priv->rss_lut_size * sizeof(*indir));
+}
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
 static int gve_get_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rxfh)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 
 	if (!priv->rss_key_size || !priv->rss_lut_size)
 		return -EOPNOTSUPP;
+
+	if (priv->cache_rss_config) {
+		gve_get_rss_config_cache(priv, rxfh);
+		return 0;
+	}
 
 	return gve_adminq_query_rss_config(priv, rxfh);
 }
@@ -1011,7 +1052,39 @@ static int gve_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key,
 	if (!priv->rss_key_size || !priv->rss_lut_size)
 		return -EOPNOTSUPP;
 
+	if (priv->cache_rss_config) {
+		gve_get_rss_config_cache(priv, indir, key, hfunc);
+		return 0;
+	}
+
 	return gve_adminq_query_rss_config(priv, indir, key, hfunc);
+}
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
+static void gve_set_rss_config_cache(struct gve_priv *priv,
+				     struct ethtool_rxfh_param *rxfh)
+{
+	struct gve_rss_config *rss_config = &priv->rss_config;
+
+	if (rxfh->key)
+		memcpy(rss_config->hash_key, rxfh->key, priv->rss_key_size);
+
+	if (rxfh->indir)
+		memcpy(rss_config->hash_lut, rxfh->indir,
+		       priv->rss_lut_size * sizeof(*rxfh->indir));
+}
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+static void gve_set_rss_config_cache(struct gve_priv *priv, const u32 *indir,
+				     const u8 *key, const u8 hfunc) {
+	struct gve_rss_config *rss_config = &priv->rss_config;
+
+	if (key)
+		memcpy(rss_config->hash_key, key, priv->rss_key_size);
+
+	if (indir)
+		memcpy(rss_config->hash_lut, indir,
+		       priv->rss_lut_size * sizeof(*indir));
 }
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 
@@ -1020,21 +1093,41 @@ static int gve_set_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rx
 			struct netlink_ext_ack *extack)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
+	int err;
 
 	if (!priv->rss_key_size || !priv->rss_lut_size)
 		return -EOPNOTSUPP;
 
-	return gve_adminq_configure_rss(priv, rxfh);
+	err = gve_adminq_configure_rss(priv, rxfh);
+	if (err) {
+		NL_SET_ERR_MSG_MOD(extack, "Fail to configure RSS config");
+		return err;
+	}
+
+	if (priv->cache_rss_config)
+		gve_set_rss_config_cache(priv, rxfh);
+
+	return 0;
 }
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 static int gve_set_rxfh(struct net_device *netdev, const u32 *indir,
 			const u8 *key, const u8 hfunc) {
 	struct gve_priv *priv = netdev_priv(netdev);
+	int err;
 
 	if (!priv->rss_key_size || !priv->rss_lut_size)
 		return -EOPNOTSUPP;
 
-	return gve_adminq_configure_rss(priv, indir, key, hfunc);
+	err = gve_adminq_configure_rss(priv, indir, key, hfunc);
+	if (err) {
+		dev_err(&priv->pdev->dev, "Fail to configure RSS config\n");
+		return err;
+	}
+
+	if (priv->cache_rss_config)
+		gve_set_rss_config_cache(priv, indir, key, hfunc);
+
+	return 0;
 }
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 

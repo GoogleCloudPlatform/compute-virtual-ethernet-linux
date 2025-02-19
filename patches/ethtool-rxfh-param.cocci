@@ -13,6 +13,11 @@ static int gve_get_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rx
 +	if (!priv->rss_key_size || !priv->rss_lut_size)
 +		return -EOPNOTSUPP;
 +
++	if (priv->cache_rss_config) {
++		gve_get_rss_config_cache(priv, indir, key, hfunc);
++		return 0;
++	}
++
 +	return gve_adminq_query_rss_config(priv, indir, key, hfunc);
 +}
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
@@ -30,17 +35,102 @@ static int gve_set_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rx
 +			 const u8 *key, const u8 hfunc)
 +{
 +	struct gve_priv *priv = netdev_priv(netdev);
++	int err;
 +
 +	if (!priv->rss_key_size || !priv->rss_lut_size)
 +		return -EOPNOTSUPP;
 +
-+	return gve_adminq_configure_rss(priv, indir, key, hfunc);
++	err = gve_adminq_configure_rss(priv, indir, key, hfunc);
++	if (err) {
++		dev_err(&priv->pdev->dev, "Fail to configure RSS config\n");
++		return err;
++	}
++
++	if (priv->cache_rss_config)
++		gve_set_rss_config_cache(priv, indir, key, hfunc);
++
++	return 0;
 +}
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 
 @@
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5)
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
+int gve_init_rss_config(struct gve_priv *priv, u16 num_queues)
+{
+	...
+}
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++int gve_init_rss_config(struct gve_priv *priv, u16 num_queues)
++{
++	struct gve_rss_config *rss_config = &priv->rss_config;
++	u16 i;
++
++	if (!priv->cache_rss_config)
++		return 0;
++
++	for (i = 0; i < priv->rss_lut_size; i++)
++		rss_config->hash_lut[i] = i % num_queues;
++
++	netdev_rss_key_fill(rss_config->hash_key, priv->rss_key_size);
++
++	return gve_adminq_configure_rss(priv, NULL, NULL, ETH_RSS_HASH_TOP);
++}
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
+static void gve_set_rss_config_cache(struct gve_priv *priv,
+				     struct ethtool_rxfh_param *rxfh)
+{
+	...
+}
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++static void gve_set_rss_config_cache(struct gve_priv *priv,
++				      const u32 *indir, const u8 *key,
++				      const u8 hfunc)
++{
++	struct gve_rss_config *rss_config = &priv->rss_config;
++
++	if (key)
++		memcpy(rss_config->hash_key, key, priv->rss_key_size);
++
++	if (indir)
++		memcpy(rss_config->hash_lut, indir,
++		       priv->rss_lut_size * sizeof(*indir));
++}
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
+static void gve_get_rss_config_cache(struct gve_priv *priv,
+				     struct ethtool_rxfh_param *rxfh)
+{
+	...
+}
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
++static void gve_get_rss_config_cache(struct gve_priv *priv,
++				     u32 *indir, u8 *key, u8 *hfunc)
++{
++	struct gve_rss_config *rss_config = &priv->rss_config;
++
++	if (hfunc)
++		*hfunc = ETH_RSS_HASH_TOP;;
++
++	if (key)
++		memcpy(key, rss_config->hash_key, priv->rss_key_size);
++
++	if (indir)
++		memcpy(indir, rss_config->hash_lut,
++		       priv->rss_lut_size * sizeof(*indir));
++}
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
 int gve_adminq_configure_rss(struct gve_priv *priv, struct ethtool_rxfh_param *rxfh);
 +#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 +int gve_adminq_configure_rss(struct gve_priv *priv, const u32 *indir, const u8 *hash_key, const u8 hfunc);
@@ -64,8 +154,9 @@ int gve_adminq_configure_rss(struct gve_priv *priv, struct ethtool_rxfh_param *r
 +#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 +int gve_adminq_configure_rss(struct gve_priv *priv, const u32 *indir, const u8 *hash_key, const u8 hfunc)
 +{
++	const u32 *hash_lut_to_config = NULL;
++	const u8 *hash_key_to_config = NULL;
 +	dma_addr_t lut_bus = 0, key_bus = 0;
-+	u16 key_size = 0, lut_size = 0;
 +	union gve_adminq_command cmd;
 +	__be32 *lut = NULL;
 +	u8 hash_alg = 0;
@@ -75,7 +166,7 @@ int gve_adminq_configure_rss(struct gve_priv *priv, struct ethtool_rxfh_param *r
 +
 +	switch (hfunc) {
 +	case ETH_RSS_HASH_NO_CHANGE:
-+		break;
++		fallthrough;
 +	case ETH_RSS_HASH_TOP:
 +		hash_alg = ETH_RSS_HASH_TOP;
 +		break;
@@ -84,27 +175,38 @@ int gve_adminq_configure_rss(struct gve_priv *priv, struct ethtool_rxfh_param *r
 +	}
 +
 +	if (indir) {
-+		lut_size = priv->rss_lut_size;
++		hash_lut_to_config = indir;
++	} else if (priv->cache_rss_config) {
++		hash_lut_to_config = priv->rss_config.hash_lut;
++	}
++
++	if (hash_lut_to_config) {
 +		lut = dma_alloc_coherent(&priv->pdev->dev,
-+					 lut_size * sizeof(*lut),
++					 priv->rss_lut_size * sizeof(*lut),
 +					 &lut_bus, GFP_KERNEL);
 +		if (!lut)
 +			return -ENOMEM;
 +
 +		for (i = 0; i < priv->rss_lut_size; i++)
-+			lut[i] = cpu_to_be32(indir[i]);
++			lut[i] = cpu_to_be32(hash_lut_to_config[i]);
 +	}
 +
 +	if (hash_key) {
-+		key_size = priv->rss_key_size;
++		hash_key_to_config = hash_key;
++	} else if (priv->cache_rss_config) {
++		hash_key_to_config = priv->rss_config.hash_key;
++	}
++
++	if (hash_key_to_config) {
 +		key = dma_alloc_coherent(&priv->pdev->dev,
-+					 key_size, &key_bus, GFP_KERNEL);
++					 priv->rss_key_size,
++					 &key_bus, GFP_KERNEL);
 +		if (!key) {
 +			err = -ENOMEM;
 +			goto out;
 +		}
 +
-+		memcpy(key, hash_key, key_size);
++		memcpy(key, hash_key_to_config, priv->rss_key_size);
 +	}
 +
 +	memset(&cmd, 0, sizeof(cmd));
@@ -115,8 +217,8 @@ int gve_adminq_configure_rss(struct gve_priv *priv, struct ethtool_rxfh_param *r
 +					  BIT(GVE_RSS_HASH_TCPV6) |
 +					  BIT(GVE_RSS_HASH_UDPV6)),
 +		.hash_alg = hash_alg,
-+		.hash_key_size = cpu_to_be16(key_size),
-+		.hash_lut_size = cpu_to_be16(lut_size),
++		.hash_key_size = cpu_to_be16((key_bus) ? priv->rss_key_size : 0),
++		.hash_lut_size = cpu_to_be16((lut_bus) ? priv->rss_lut_size : 0),
 +		.hash_key_addr = cpu_to_be64(key_bus),
 +		.hash_lut_addr = cpu_to_be64(lut_bus),
 +	};
@@ -126,11 +228,11 @@ int gve_adminq_configure_rss(struct gve_priv *priv, struct ethtool_rxfh_param *r
 +out:
 +	if (lut)
 +		dma_free_coherent(&priv->pdev->dev,
-+				  lut_size * sizeof(*lut),
++				  priv->rss_lut_size * sizeof(*lut),
 +				  lut, lut_bus);
 +	if (key)
 +		dma_free_coherent(&priv->pdev->dev,
-+				  key_size, key, key_bus);
++				  priv->rss_key_size, key, key_bus);
 +	return err;
 +}
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
