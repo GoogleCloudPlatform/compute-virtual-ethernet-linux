@@ -52,14 +52,8 @@ static int gve_set_channels(struct net_device *netdev,
 +	}
 +#endif /* (LINUX_VERSION_CODE< KERNEL_VERSION(6,2,0)) */
 +
-	if (!netif_running(netdev)) {
-		priv->tx_cfg.num_queues = new_tx;
-		priv->rx_cfg.num_queues = new_rx;
-		return 0;
-	}
-
 	new_tx_cfg.num_queues = new_tx;
 	new_rx_cfg.num_queues = new_rx;
 
-	return gve_adjust_queues(priv, new_rx_cfg, new_tx_cfg);
+	return gve_adjust_queues(priv, new_rx_cfg, new_tx_cfg, reset_rss);
 }

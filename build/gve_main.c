@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5.1-13-8578b2d-292c5ba-oot"
+#define GVE_VERSION		 "1.4.5.1-14-8578b2d-1e4828f-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -222,6 +222,43 @@ static void gve_free_flow_rule_caches(struct gve_priv *priv)
 	kfree(flow_rules_cache->rules_cache);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
 	flow_rules_cache->rules_cache = NULL;
+}
+
+static int gve_alloc_rss_config_cache(struct gve_priv *priv)
+{
+	struct gve_rss_config *rss_config = &priv->rss_config;
+
+	if (!priv->cache_rss_config)
+		return 0;
+
+	rss_config->hash_key = kcalloc(priv->rss_key_size,
+				       sizeof(rss_config->hash_key[0]),
+				       GFP_KERNEL);
+	if (!rss_config->hash_key)
+		return -ENOMEM;
+
+	rss_config->hash_lut = kcalloc(priv->rss_lut_size,
+				       sizeof(rss_config->hash_lut[0]),
+				       GFP_KERNEL);
+	if (!rss_config->hash_lut)
+		goto free_rss_key_cache;
+
+	return 0;
+
+free_rss_key_cache:
+	kfree(rss_config->hash_key);
+	rss_config->hash_key = NULL;
+	return -ENOMEM;
+}
+
+static void gve_free_rss_config_cache(struct gve_priv *priv)
+{
+	struct gve_rss_config *rss_config = &priv->rss_config;
+
+	kfree(rss_config->hash_key);
+	kfree(rss_config->hash_lut);
+
+	memset(rss_config, 0, sizeof(*rss_config));
 }
 
 static int gve_alloc_counter_array(struct gve_priv *priv)
@@ -731,9 +768,12 @@ static int gve_setup_device_resources(struct gve_priv *priv)
 	err = gve_alloc_flow_rule_caches(priv);
 	if (err)
 		return err;
-	err = gve_alloc_counter_array(priv);
+	err = gve_alloc_rss_config_cache(priv);
 	if (err)
 		goto abort_with_flow_rule_caches;
+	err = gve_alloc_counter_array(priv);
+	if (err)
+		goto abort_with_rss_config_cache;
 	err = gve_alloc_notify_blocks(priv);
 	if (err)
 		goto abort_with_counter;
@@ -772,6 +812,12 @@ static int gve_setup_device_resources(struct gve_priv *priv)
 		}
 	}
 
+	err = gve_init_rss_config(priv, priv->rx_cfg.num_queues);
+	if (err) {
+		dev_err(&priv->pdev->dev, "Failed to init RSS config");
+		goto abort_with_ptype_lut;
+	}
+
 	err = gve_adminq_report_stats(priv, priv->stats_report_len,
 				      priv->stats_report_bus,
 				      GVE_STATS_REPORT_TIMER_PERIOD);
@@ -794,6 +840,8 @@ abort_with_ntfy_blocks:
 	gve_free_notify_blocks(priv);
 abort_with_counter:
 	gve_free_counter_array(priv);
+abort_with_rss_config_cache:
+	gve_free_rss_config_cache(priv);
 abort_with_flow_rule_caches:
 	gve_free_flow_rule_caches(priv);
 
@@ -838,6 +886,7 @@ static void gve_teardown_device_resources(struct gve_priv *priv)
 	priv->ptype_lut_dqo = NULL;
 
 	gve_free_flow_rule_caches(priv);
+	gve_free_rss_config_cache(priv);
 	gve_free_counter_array(priv);
 	gve_free_notify_blocks(priv);
 	gve_free_stats_report(priv);
@@ -1617,6 +1666,12 @@ static int gve_queues_start(struct gve_priv *priv,
 	if (err)
 		goto stop_and_free_rings;
 
+	if (rx_alloc_cfg->reset_rss) {
+		err = gve_init_rss_config(priv, priv->rx_cfg.num_queues);
+		if (err)
+			goto reset;
+	}
+
 	err = gve_register_qpls(priv);
 	if (err)
 		goto reset;
@@ -2033,6 +2088,43 @@ static int gve_xdp(struct net_device *dev, struct netdev_bpf *xdp)
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5))
+int gve_init_rss_config(struct gve_priv *priv, u16 num_queues)
+{
+	struct gve_rss_config *rss_config = &priv->rss_config;
+	struct ethtool_rxfh_param rxfh = {0};
+	u16 i;
+
+	if (!priv->cache_rss_config)
+		return 0;
+
+	for (i = 0; i < priv->rss_lut_size; i++)
+		rss_config->hash_lut[i] =
+			ethtool_rxfh_indir_default(i, num_queues);
+
+	netdev_rss_key_fill(rss_config->hash_key, priv->rss_key_size);
+
+	rxfh.hfunc = ETH_RSS_HASH_TOP;
+
+	return gve_adminq_configure_rss(priv, &rxfh);
+}
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+int gve_init_rss_config(struct gve_priv *priv, u16 num_queues) {
+	struct gve_rss_config *rss_config = &priv->rss_config;
+	u16 i;
+
+	if (!priv->cache_rss_config)
+		return 0;
+
+	for(i = 0;i < priv->rss_lut_size;i++)
+		rss_config->hash_lut[i] = i % num_queues;
+
+	netdev_rss_key_fill(rss_config->hash_key, priv->rss_key_size);
+
+	return gve_adminq_configure_rss(priv, NULL, NULL, ETH_RSS_HASH_TOP);
+}
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
+
 int gve_flow_rules_reset(struct gve_priv *priv)
 {
 	if (!priv->max_flow_rules)
@@ -2081,7 +2173,8 @@ int gve_adjust_config(struct gve_priv *priv,
 
 int gve_adjust_queues(struct gve_priv *priv,
 		      struct gve_queue_config new_rx_config,
-		      struct gve_queue_config new_tx_config)
+		      struct gve_queue_config new_tx_config,
+		      bool reset_rss)
 {
 	struct gve_tx_alloc_rings_cfg tx_alloc_cfg = {0};
 	struct gve_rx_alloc_rings_cfg rx_alloc_cfg = {0};
@@ -2094,6 +2187,7 @@ int gve_adjust_queues(struct gve_priv *priv,
 	tx_alloc_cfg.qcfg = &new_tx_config;
 	rx_alloc_cfg.qcfg_tx = &new_tx_config;
 	rx_alloc_cfg.qcfg = &new_rx_config;
+	rx_alloc_cfg.reset_rss = reset_rss;
 	tx_alloc_cfg.num_rings = new_tx_config.num_queues;
 
 	/* Add dedicated XDP TX queues if enabled. */
@@ -2105,6 +2199,11 @@ int gve_adjust_queues(struct gve_priv *priv,
 		return err;
 	}
 	/* Set the config for the next up. */
+	if (reset_rss) {
+		err = gve_init_rss_config(priv, new_rx_config.num_queues);
+		if (err)
+			return err;
+	}
 	priv->tx_cfg = new_tx_config;
 	priv->rx_cfg = new_rx_config;
 
