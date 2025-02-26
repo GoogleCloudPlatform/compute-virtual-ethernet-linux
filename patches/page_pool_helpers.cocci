@@ -6,6 +6,12 @@
 
 @@
 @@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
+#include <net/page_pool/types.h>
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)) */
+
+@@
+@@
 struct gve_rx_ring {
 	struct gve_priv *gve;
 	union {
@@ -304,6 +310,22 @@ void gve_rx_free_ring_dqo(struct gve_priv *priv, struct gve_rx_ring *rx,
 	}
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
 ...
+}
+
+@@
+identifier rx;
+@@
+void gve_rx_stop_ring_dqo(...)
+{
+	...
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
+	struct gve_rx_ring *rx = &priv->rx[idx];
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)) */
+	...
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
+	page_pool_disable_direct_recycling(rx->dqo.page_pool);
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)) */
+	...
 }
 
 @@
