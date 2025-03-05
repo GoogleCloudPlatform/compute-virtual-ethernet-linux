@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5-0--bb64725-oot"
+#define GVE_VERSION		 "1.4.5-0--2d1b58e-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -2235,7 +2235,11 @@ static void gve_turndown(struct gve_priv *priv)
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
 		}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
+		napi_disable_locked(&block->napi);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 		napi_disable(&block->napi);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	}
 	for (idx = 0; idx < priv->rx_cfg.num_queues; idx++) {
 		int ntfy_idx = gve_rx_idx_to_ntfy(priv, idx);
@@ -2248,7 +2252,11 @@ static void gve_turndown(struct gve_priv *priv)
 		netif_queue_set_napi(priv->dev, idx, NETDEV_QUEUE_TYPE_RX,
 				     NULL);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
+		napi_disable_locked(&block->napi);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 		napi_disable(&block->napi);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	}
 
 	/* Stop tx queues */
@@ -2280,7 +2288,11 @@ static void gve_turnup(struct gve_priv *priv)
 		if (!gve_tx_was_added_to_block(priv, idx))
 			continue;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
+		napi_enable_locked(&block->napi);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 		napi_enable(&block->napi);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 
 		if (idx < priv->tx_cfg.num_queues) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0)
@@ -2311,7 +2323,11 @@ static void gve_turnup(struct gve_priv *priv)
 		if (!gve_rx_was_added_to_block(priv, idx))
 			continue;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
+		napi_enable_locked(&block->napi);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 		napi_enable(&block->napi);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0)
 		netif_queue_set_napi(priv->dev, idx, NETDEV_QUEUE_TYPE_RX,
 				     &block->napi);
@@ -3266,6 +3282,9 @@ static int gve_suspend(struct pci_dev *pdev, pm_message_t state)
 
 	priv->suspend_cnt++;
 	rtnl_lock();
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
+	netdev_lock(netdev);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	if (was_up && gve_close(priv->dev)) {
 		/* If the dev was up, attempt to close, if close fails, reset */
 		gve_reset_and_teardown(priv, was_up);
@@ -3274,6 +3293,9 @@ static int gve_suspend(struct pci_dev *pdev, pm_message_t state)
 		gve_teardown_priv_resources(priv);
 	}
 	priv->up_before_suspend = was_up;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
+	netdev_unlock(netdev);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	rtnl_unlock();
 	return 0;
 }
@@ -3286,7 +3308,13 @@ static int gve_resume(struct pci_dev *pdev)
 
 	priv->resume_cnt++;
 	rtnl_lock();
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
+	netdev_lock(netdev);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	err = gve_reset_recovery(priv, priv->up_before_suspend);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
+	netdev_unlock(netdev);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	rtnl_unlock();
 	return err;
 }
