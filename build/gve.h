@@ -118,12 +118,20 @@ struct gve_rx_desc_queue {
 
 /* The page info for a single slot in the RX data queue */
 struct gve_rx_slot_page_info {
+	/* netmem is used for DQO RDA mode
+	 * page is used in all other modes
+	 */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
+	union {
+		struct page *page;
+		netmem_ref netmem;
+	};
+#else
 	struct page *page;
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)) */
 	void *page_address;
 	u32 page_offset; /* offset to write to in page */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
 	unsigned int buf_size;
-#endif
 	int pagecnt_bias; /* expected pagecnt if only the driver has a ref */
 	u16 pad; /* adjustment for rx padding */
 	u8 can_flip; /* tracks if the networking stack is using the page */
