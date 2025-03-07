@@ -560,6 +560,26 @@ static int gve_rx_copy_ondemand(struct gve_rx_ring *rx,
 	return 0;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
+static void gve_skb_add_rx_frag(struct gve_rx_ring *rx,
+				struct gve_rx_buf_state_dqo *buf_state,
+				int num_frags, u16 buf_len)
+{
+	if (rx->dqo.page_pool) {
+		skb_add_rx_frag_netmem(rx->ctx.skb_tail, num_frags,
+				       buf_state->page_info.netmem,
+				       buf_state->page_info.page_offset,
+				       buf_len,
+				       buf_state->page_info.buf_size);
+	} else {
+		skb_add_rx_frag(rx->ctx.skb_tail, num_frags,
+				buf_state->page_info.page,
+				buf_state->page_info.page_offset,
+				buf_len, buf_state->page_info.buf_size);
+	}
+}
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)) */
+
 /* Chains multi skbs for single rx packet.
  * Returns 0 if buffer is appended, -1 otherwise.
  */
@@ -592,28 +612,21 @@ static int gve_rx_append_frags(struct napi_struct *napi,
 	if (rx->ctx.skb_tail != rx->ctx.skb_head) {
 		rx->ctx.skb_head->len += buf_len;
 		rx->ctx.skb_head->data_len += buf_len;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
 		rx->ctx.skb_head->truesize += buf_state->page_info.buf_size;
-#else
-		rx->ctx.skb_head->truesize += priv->data_buffer_size_dqo;
-#endif
 	}
 
 	/* Trigger ondemand page allocation if we are running low on buffers */
 	if (gve_rx_should_trigger_copy_ondemand(rx))
 		return gve_rx_copy_ondemand(rx, buf_state, buf_len);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
-	skb_add_rx_frag(rx->ctx.skb_tail, num_frags,
-			buf_state->page_info.page,
-			buf_state->page_info.page_offset,
-			buf_len, buf_state->page_info.buf_size);
+	gve_skb_add_rx_frag(rx, buf_state, num_frags, buf_len);
 #else
 	skb_add_rx_frag(rx->ctx.skb_tail, num_frags,
 			buf_state->page_info.page,
 			buf_state->page_info.page_offset, buf_len,
-			priv->data_buffer_size_dqo);
-#endif
+			buf_state->page_info.buf_size);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)) */
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 	gve_dec_pagecnt_bias(&buf_state->page_info);
 	gve_try_recycle_buf(priv, rx, buf_state);
@@ -668,7 +681,16 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 	/* Page might have not been used for awhile and was likely last written
 	 * by a different thread.
 	 */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
+	if (rx->dqo.page_pool) {
+		if (!netmem_is_net_iov(buf_state->page_info.netmem))
+			prefetch(netmem_to_page(buf_state->page_info.netmem));
+	} else {
+		prefetch(buf_state->page_info.page);
+	}
+#else
 	prefetch(buf_state->page_info.page);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
 
 	/* Copy the header into the skb in the case of header split */
 	if (hsplit) {
@@ -748,15 +770,13 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 		skb_mark_for_recycle(rx->ctx.skb_head);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
-	skb_add_rx_frag(rx->ctx.skb_head, 0, buf_state->page_info.page,
-			buf_state->page_info.page_offset, buf_len,
-			buf_state->page_info.buf_size);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
+	gve_skb_add_rx_frag(rx, buf_state, 0, buf_len);
 #else
 	skb_add_rx_frag(rx->ctx.skb_head, 0, buf_state->page_info.page,
 			buf_state->page_info.page_offset, buf_len,
-			priv->data_buffer_size_dqo);
-#endif
+			buf_state->page_info.buf_size);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 	gve_dec_pagecnt_bias(&buf_state->page_info);
 	gve_try_recycle_buf(priv, rx, buf_state);
