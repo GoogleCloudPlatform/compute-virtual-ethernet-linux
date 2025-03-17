@@ -115,16 +115,19 @@ static void gve_rx_reset_ring_dqo(struct gve_priv *priv, int idx)
 void gve_rx_stop_ring_dqo(struct gve_priv *priv, int idx)
 {
 	int ntfy_idx = gve_rx_idx_to_ntfy(priv, idx);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
 	struct gve_rx_ring *rx = &priv->rx[idx];
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
 
 	if (!gve_rx_was_added_to_block(priv, idx))
 		return;
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
-	page_pool_disable_direct_recycling(rx->dqo.page_pool);
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)) */
+	if (rx->dqo.page_pool)
+		page_pool_disable_direct_recycling(rx->dqo.page_pool);
+#elif (LINUX_VERSION_CODE < KERNEL_VERSION(6,11,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+	if (rx->dqo.page_pool) rx->dqo.page_pool->p.napi = NULL;
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
 	gve_remove_napi(priv, ntfy_idx);
 	gve_rx_remove_from_block(priv, idx);
 	gve_rx_reset_ring_dqo(priv, idx);
