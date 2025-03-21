@@ -246,6 +246,7 @@ int gve_rx_alloc_ring_dqo(struct gve_priv *priv,
 	memset(rx, 0, sizeof(*rx));
 	rx->gve = priv;
 	rx->q_num = idx;
+	rx->packet_buffer_size = cfg->packet_buffer_size;
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 	rx->dqo.num_buf_states = cfg->raw_addressing ? min_t(s16, S16_MAX,
