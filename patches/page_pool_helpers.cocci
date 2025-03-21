@@ -566,6 +566,7 @@ identifier gve_try_recycle_buf;
 +	buf_state->page_info.page_offset = 0;
 +	buf_state->page_info.page_address =
 +		page_address(buf_state->page_info.page);
++	buf_state->page_info.buf_size = priv->data_buffer_size_dqo;
 +	buf_state->last_single_ref_offset = 0;
 +
 +	/* The page already has 1 ref. */
