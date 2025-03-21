@@ -174,7 +174,7 @@ int gve_alloc_qpl_page_dqo(struct gve_rx_ring *rx,
 	buf_state->page_info.page_offset = 0;
 	buf_state->page_info.page_address =
 		page_address(buf_state->page_info.page);
-	buf_state->page_info.buf_size = priv->data_buffer_size_dqo;
+	buf_state->page_info.buf_size = rx->packet_buffer_size;
 	buf_state->last_single_ref_offset = 0;
 
 	/* The page already has 1 ref. */
@@ -235,7 +235,7 @@ int gve_alloc_page_dqo(struct gve_rx_ring *rx,
 	}
 	buf_state->page_info.page_offset = 0;
 	buf_state->page_info.page_address = page_address(buf_state->page_info.page);
-	buf_state->page_info.buf_size = priv->data_buffer_size_dqo;
+	buf_state->page_info.buf_size = rx->packet_buffer_size;
 	buf_state->last_single_ref_offset = 0;
 
 	/* The page already has 1 ref. */
@@ -253,7 +253,7 @@ int gve_alloc_page_dqo(struct gve_rx_ring *rx,
 void gve_try_recycle_buf(struct gve_priv *priv, struct gve_rx_ring *rx,
 			 struct gve_rx_buf_state_dqo *buf_state)
 {
-	const u16 data_buffer_size = priv->data_buffer_size_dqo;
+	const u16 data_buffer_size = rx->packet_buffer_size;
 	int pagecount;
 
 	/* Can't reuse if we only fit one buffer per page */
@@ -302,16 +302,21 @@ void gve_free_to_page_pool(struct gve_rx_ring *rx,
 
 	if (!netmem)
 		return;
-
-	page_pool_put_full_netmem(netmem_get_pp(netmem), netmem, allow_direct);
-	buf_state->page_info.netmem = 0;
-#else
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
 	struct page *page = buf_state->page_info.page;
-
-	if (!page)
+if (!page) {
 		return;
+}
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
+	page_pool_put_full_netmem(netmem_get_pp(netmem), netmem, allow_direct);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
 	page_pool_put_full_page(page->pp, page, allow_direct);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
+	buf_state->page_info.netmem = 0;
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
 	buf_state->page_info.page = NULL;
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
 }
@@ -321,14 +326,13 @@ void gve_free_to_page_pool(struct gve_rx_ring *rx,
 static int gve_alloc_from_page_pool(struct gve_rx_ring *rx,
 				    struct gve_rx_buf_state_dqo *buf_state)
 {
-	struct gve_priv *priv = rx->gve;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
 	netmem_ref netmem;
 #else
 	struct page *page;
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
 
-	buf_state->page_info.buf_size = priv->data_buffer_size_dqo;
+	buf_state->page_info.buf_size = rx->packet_buffer_size;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
 	netmem = page_pool_alloc_netmem(rx->dqo.page_pool,
 					&buf_state->page_info.page_offset,
@@ -399,7 +403,7 @@ void gve_reuse_buffer(struct gve_rx_ring *rx,
 	if (rx->dqo.page_pool) {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
 		buf_state->page_info.netmem = 0;
-#else
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
 		buf_state->page_info.page = NULL;
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
 		gve_free_buf_state(rx, buf_state);
