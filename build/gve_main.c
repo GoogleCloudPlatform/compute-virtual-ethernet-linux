@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5-0--816f73a-oot"
+#define GVE_VERSION		 "1.4.5-0--074512c-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -1700,7 +1700,9 @@ static int gve_configure_rings_xdp(struct gve_priv *priv,
 static int gve_set_xdp(struct gve_priv *priv, struct bpf_prog *prog,
 		       struct netlink_ext_ack *extack)
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 	struct bpf_prog *old_prog;
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 	int err = 0;
 	u32 status;
 
