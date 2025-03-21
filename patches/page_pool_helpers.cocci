@@ -15,66 +15,11 @@
 struct gve_rx_ring {
 	struct gve_priv *gve;
 	union {
-		/* GQI fields */
-		struct {
-			struct gve_rx_desc_queue desc;
-			struct gve_rx_data_queue data;
-
-			/* threshold for posting new buffs and descs */
-			u32 db_threshold;
-			u16 packet_buffer_size;
-
-			u32 qpl_copy_pool_mask;
-			u32 qpl_copy_pool_head;
-			struct gve_rx_slot_page_info *qpl_copy_pool;
-		};
-
+		...
 		/* DQO fields. */
 		struct {
-			struct gve_rx_buf_queue_dqo bufq;
-			struct gve_rx_compl_queue_dqo complq;
-
-			struct gve_rx_buf_state_dqo *buf_states;
-			u16 num_buf_states;
-
-			/* Linked list of gve_rx_buf_state_dqo. Index into
-			 * buf_states, or -1 if empty.
-			 */
-			s16 free_buf_states;
-
-			/* Linked list of gve_rx_buf_state_dqo. Indexes into
-			 * buf_states, or -1 if empty.
-			 *
-			 * This list contains buf_states which are pointing to
-			 * valid buffers.
-			 *
-			 * We use a FIFO here in order to increase the
-			 * probability that buffers can be reused by increasing
-			 * the time between usages.
-			 */
-			struct gve_index_list recycled_buf_states;
-
-			/* Linked list of gve_rx_buf_state_dqo. Indexes into
-			 * buf_states, or -1 if empty.
-			 *
-			 * This list contains buf_states which have buffers
-			 * which cannot be reused yet.
-			 */
-			struct gve_index_list used_buf_states;
-
-			/* qpl assigned to this queue */
-			struct gve_queue_page_list *qpl;
-
-			/* index into queue page list */
-			u32 next_qpl_page_idx;
-
-			/* track number of used buffers */
-			u16 used_buf_states_cnt;
-
-			/* Address info of the buffers for header-split */
-			struct gve_header_buf hdr_bufs;
+			...
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
-
 			struct page_pool *page_pool;
 +#endif
 		} dqo;
