@@ -55,6 +55,22 @@ static void gve_drain_page_cache(struct gve_priv *priv)
 @@
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+static int gve_configure_rings_xdp(...)
+{
+	...
+}
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+@@
++#ifndef XDP_PACKET_HEADROOM
++#define XDP_PACKET_HEADROOM 0
++#endif
+int gve_adjust_config(...) {...}
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 static int gve_set_xdp(struct gve_priv *priv, struct bpf_prog *prog,
 		       struct netlink_ext_ack *extack)
 {

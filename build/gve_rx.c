@@ -452,16 +452,16 @@ int gve_rx_alloc_rings_gqi(struct gve_priv *priv,
 	int i, j;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
-	rx = kvcalloc(cfg->qcfg->max_queues, sizeof(struct gve_rx_ring),
+	rx = kvcalloc(cfg->qcfg_rx->max_queues, sizeof(struct gve_rx_ring),
 		      GFP_KERNEL);
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-	rx = kcalloc(cfg->qcfg->max_queues, sizeof(struct gve_rx_ring),
+	rx = kcalloc(cfg->qcfg_rx->max_queues, sizeof(struct gve_rx_ring),
 		     GFP_KERNEL);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
 	if (!rx)
 		return -ENOMEM;
 
-	for (i = 0; i < cfg->qcfg->num_queues; i++) {
+	for (i = 0; i < cfg->qcfg_rx->num_queues; i++) {
 		err = gve_rx_alloc_ring_gqi(priv, cfg, &rx[i], i);
 		if (err) {
 			netif_err(priv, drv, priv->dev,
@@ -494,7 +494,7 @@ void gve_rx_free_rings_gqi(struct gve_priv *priv,
 	if (!rx)
 		return;
 
-	for (i = 0; i < cfg->qcfg->num_queues;  i++)
+	for (i = 0; i < cfg->qcfg_rx->num_queues;  i++)
 		gve_rx_free_ring_gqi(priv, &rx[i], cfg);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)

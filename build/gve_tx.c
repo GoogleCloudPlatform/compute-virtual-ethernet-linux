@@ -345,32 +345,28 @@ int gve_tx_alloc_rings_gqi(struct gve_priv *priv,
 			   struct gve_tx_alloc_rings_cfg *cfg)
 {
 	struct gve_tx_ring *tx = cfg->tx;
+	int total_queues;
 	int err = 0;
 	int i, j;
 
-	if (cfg->start_idx + cfg->num_rings > cfg->qcfg->max_queues) {
+	total_queues = cfg->qcfg->num_queues + cfg->num_xdp_rings;
+	if (total_queues > cfg->qcfg->max_queues) {
 		netif_err(priv, drv, priv->dev,
 			  "Cannot alloc more than the max num of Tx rings\n");
 		return -EINVAL;
 	}
 
-	if (cfg->start_idx == 0) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
-		tx = kvcalloc(cfg->qcfg->max_queues, sizeof(struct gve_tx_ring),
-			      GFP_KERNEL);
+	tx = kvcalloc(cfg->qcfg->max_queues, sizeof(struct gve_tx_ring),
+		      GFP_KERNEL);
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-		tx = kcalloc(cfg->qcfg->max_queues,
-			     sizeof(struct gve_tx_ring), GFP_KERNEL);
+	tx = kcalloc(cfg->qcfg->max_queues, sizeof(struct gve_tx_ring),
+		     GFP_KERNEL);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-		if (!tx)
-			return -ENOMEM;
-	} else if (!tx) {
-		netif_err(priv, drv, priv->dev,
-			  "Cannot alloc tx rings from a nonzero start idx without tx array\n");
-		return -EINVAL;
-	}
+	if (!tx)
+		return -ENOMEM;
 
-	for (i = cfg->start_idx; i < cfg->start_idx + cfg->num_rings; i++) {
+	for (i = 0; i < total_queues; i++) {
 		err = gve_tx_alloc_ring_gqi(priv, cfg, &tx[i], i);
 		if (err) {
 			netif_err(priv, drv, priv->dev,
@@ -386,13 +382,11 @@ int gve_tx_alloc_rings_gqi(struct gve_priv *priv,
 cleanup:
 	for (j = 0; j < i; j++)
 		gve_tx_free_ring_gqi(priv, &tx[j], cfg);
-	if (cfg->start_idx == 0) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
-		kvfree(tx);
+	kvfree(tx);
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-		kfree(tx);
+	kfree(tx);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-	}
 	return err;
 }
 
@@ -405,17 +399,15 @@ void gve_tx_free_rings_gqi(struct gve_priv *priv,
 	if (!tx)
 		return;
 
-	for (i = cfg->start_idx; i < cfg->start_idx + cfg->num_rings; i++)
+	for (i = 0; i < cfg->qcfg->num_queues + cfg->qcfg->num_xdp_queues; i++)
 		gve_tx_free_ring_gqi(priv, &tx[i], cfg);
 
-	if (cfg->start_idx == 0) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
-		kvfree(tx);
+	kvfree(tx);
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-		kfree(tx);
+	kfree(tx);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-		cfg->tx = NULL;
-	}
+	cfg->tx = NULL;
 }
 
 /* gve_tx_avail - Calculates the number of slots available in the ring
@@ -888,7 +880,7 @@ int gve_xdp_xmit(struct net_device *dev, int n, struct xdp_frame **frames,
 		return -ENETDOWN;
 
 	qid = gve_xdp_tx_queue_id(priv,
-				  smp_processor_id() % priv->num_xdp_queues);
+				  smp_processor_id() % priv->tx_cfg.num_xdp_queues);
 
 	tx = &priv->tx[qid];
 
