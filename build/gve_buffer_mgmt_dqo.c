@@ -174,7 +174,8 @@ int gve_alloc_qpl_page_dqo(struct gve_rx_ring *rx,
 	buf_state->page_info.page_offset = 0;
 	buf_state->page_info.page_address =
 		page_address(buf_state->page_info.page);
-	buf_state->page_info.buf_size = rx->packet_buffer_size;
+	buf_state->page_info.buf_size = rx->packet_buffer_truesize;
+	buf_state->page_info.pad = rx->rx_headroom;
 	buf_state->last_single_ref_offset = 0;
 
 	/* The page already has 1 ref. */
@@ -253,7 +254,7 @@ int gve_alloc_page_dqo(struct gve_rx_ring *rx,
 void gve_try_recycle_buf(struct gve_priv *priv, struct gve_rx_ring *rx,
 			 struct gve_rx_buf_state_dqo *buf_state)
 {
-	const u16 data_buffer_size = rx->packet_buffer_size;
+	const u16 data_buffer_size = rx->packet_buffer_truesize;
 	int pagecount;
 
 	/* Can't reuse if we only fit one buffer per page */
@@ -332,7 +333,7 @@ static int gve_alloc_from_page_pool(struct gve_rx_ring *rx,
 	struct page *page;
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
 
-	buf_state->page_info.buf_size = rx->packet_buffer_size;
+	buf_state->page_info.buf_size = rx->packet_buffer_truesize;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
 	netmem = page_pool_alloc_netmem(rx->dqo.page_pool,
 					&buf_state->page_info.page_offset,
@@ -357,6 +358,7 @@ static int gve_alloc_from_page_pool(struct gve_rx_ring *rx,
 	buf_state->page_info.page_address = page_address(page);
 	buf_state->addr = page_pool_get_dma_addr(page);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
+	buf_state->page_info.pad = rx->dqo.page_pool->p.offset;
 
 	return 0;
 }
@@ -364,7 +366,8 @@ static int gve_alloc_from_page_pool(struct gve_rx_ring *rx,
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
 struct page_pool *gve_rx_create_page_pool(struct gve_priv *priv,
-					  struct gve_rx_ring *rx)
+					  struct gve_rx_ring *rx,
+					  bool xdp)
 {
 	u32 ntfy_id = gve_rx_idx_to_ntfy(priv, rx->q_num);
 	struct page_pool_params pp = {
@@ -375,7 +378,8 @@ struct page_pool *gve_rx_create_page_pool(struct gve_priv *priv,
 		.netdev = priv->dev,
 		.napi = &priv->ntfy_blocks[ntfy_id].napi,
 		.max_len = PAGE_SIZE,
-		.dma_dir = DMA_FROM_DEVICE,
+		.dma_dir = xdp ? DMA_BIDIRECTIONAL : DMA_FROM_DEVICE,
+		.offset = xdp ? XDP_PACKET_HEADROOM : 0,
 	};
 
 	return page_pool_create(&pp);
@@ -439,7 +443,8 @@ int gve_alloc_buffer(struct gve_rx_ring *rx, struct gve_rx_desc_dqo *desc)
 	}
 	desc->buf_id = cpu_to_le16(buf_state - rx->dqo.buf_states);
 	desc->buf_addr = cpu_to_le64(buf_state->addr +
-				     buf_state->page_info.page_offset);
+				     buf_state->page_info.page_offset +
+				     buf_state->page_info.pad);
 
 	return 0;
 
