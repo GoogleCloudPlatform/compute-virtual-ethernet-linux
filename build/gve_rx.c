@@ -896,7 +896,9 @@ static void gve_rx(struct gve_rx_ring *rx, netdev_features_t feat,
 	struct gve_priv *priv = rx->gve;
 	struct sk_buff *skb = NULL;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 	struct bpf_prog *xprog;
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 	struct xdp_buff xdp;
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 	dma_addr_t page_bus;
