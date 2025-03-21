@@ -118,7 +118,7 @@ identifier gve_try_recycle_buf;
 @@
 +#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 +int gve_alloc_page_dqo(struct gve_rx_ring *rx, struct gve_rx_buf_state_dqo *buf_state);
-+#endif
++#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0)) */
 void gve_try_recycle_buf(struct gve_priv *priv, struct gve_rx_ring *rx,
 			 struct gve_rx_buf_state_dqo *buf_state);
 
@@ -172,8 +172,7 @@ int gve_alloc_qpl_page_dqo(...);
 @@
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
-void gve_free_to_page_pool(struct gve_rx_ring *rx, struct gve_rx_buf_state_dqo *buf_state,
-			   bool allow_direct);
+void gve_free_to_page_pool(...);
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
 
 @@
@@ -208,14 +207,6 @@ struct page_pool *gve_rx_create_page_pool(...);
 
 @@
 @@
-static void gve_rx_reset_ring_dqo(struct gve_priv *priv, int idx)
-{
-	...
-	/* Reset buf states */
-	if (rx->dqo.buf_states) {
-		for (i = 0; i < rx->dqo.num_buf_states; i++) {
-			struct gve_rx_buf_state_dqo *bs = &rx->dqo.buf_states[i];
-
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
 			if (rx->dqo.page_pool)
 				gve_free_to_page_pool(rx, bs, false);
@@ -225,10 +216,6 @@ static void gve_rx_reset_ring_dqo(struct gve_priv *priv, int idx)
 +			if (bs->page_info.page)
 +				gve_free_page_dqo(priv, bs, !rx->dqo.qpl);
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
-		}
-	}
-	...
-}
 
 @@
 identifier rx;
@@ -341,6 +328,7 @@ void gve_rx_post_buffers_dqo(struct gve_rx_ring *rx)
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
 
 @@
+identifier rx, buf_state;
 @@
 +#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 +	gve_dec_pagecnt_bias(&buf_state->page_info);
@@ -372,6 +360,7 @@ void gve_rx_free_ring_dqo(...)
 }
 
 @@
+identifier rx, buf_state;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
 	gve_free_buffer(rx, buf_state);
@@ -388,14 +377,12 @@ void gve_rx_free_ring_dqo(...)
 
 @@
 identifier gve_rx_append_frags;
+expression list args;
 @@
 static int gve_rx_append_frags(...)
 {
 ...
-	skb_add_rx_frag(rx->ctx.skb_tail, num_frags,
-			buf_state->page_info.page,
-			buf_state->page_info.page_offset,
-			buf_len, buf_state->page_info.buf_size);
+	skb_add_rx_frag(...);
 +#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 +       gve_dec_pagecnt_bias(&buf_state->page_info);
 +
@@ -492,7 +479,7 @@ int gve_rx_alloc_ring_dqo(...)
 +
 +#else
 	if (cfg->raw_addressing) {
-		pool = gve_rx_create_page_pool(priv, rx);
+		pool = gve_rx_create_page_pool(...);
 		if (IS_ERR(pool))
 			goto err;
 

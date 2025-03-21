@@ -45,6 +45,18 @@ static void gve_unreg_xdp_info(struct gve_priv *priv)
 
 @@
 @@
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)
+err = xdp_rxq_info_reg_mem_model(
+				&rx->xdp_rxq, MEM_TYPE_PAGE_POOL,
+				rx->dqo.page_pool);
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0) */
++err = xdp_rxq_info_reg_mem_model(
++				&rx->xdp_rxq, MEM_TYPE_PAGE_ORDER0,
++				NULL);
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0) */
+
+@@
+@@
 static void gve_drain_page_cache(struct gve_priv *priv)
 {
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
@@ -63,10 +75,12 @@ static int gve_configure_rings_xdp(...)
 
 @@
 @@
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(5,14,0))
 +#ifndef XDP_PACKET_HEADROOM
 +#define XDP_PACKET_HEADROOM 0
 +#endif
-int gve_adjust_config(...) {...}
++#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(5,14,0)) */
+#define GVE_XDP_RX_BUFFER_SIZE_DQO 4096
 
 @@
 @@
