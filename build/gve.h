@@ -636,8 +636,6 @@ struct gve_tx_ring {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 	struct xsk_buff_pool *xsk_pool;
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
-	u32 xdp_xsk_wakeup;
-	u32 xdp_xsk_done;
 	u64 xdp_xsk_sent;
 	u64 xdp_xmit;
 	u64 xdp_xmit_errors;
