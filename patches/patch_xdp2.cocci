@@ -56,6 +56,18 @@ static bool gve_xdp_done(struct gve_priv *priv, struct gve_rx_ring *rx,
 }
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
+@@
+type bool;
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+static void gve_xdp_done_dqo(struct gve_priv *priv, struct gve_rx_ring *rx,
+			     struct xdp_buff *xdp, struct bpf_prog *xprog,
+			     int xdp_act, struct gve_rx_buf_state_dqo *buf_state)
+{
+...
+}
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
 @ assign @
 identifier xprog, xdp;
 @@
@@ -75,8 +87,25 @@ if (xprog && is_only_frag) {
 }
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
-
 @ assign2 @
+identifier xprog;
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+	struct bpf_prog *xprog;
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@ gve_rx_dqo @
+identifier assign2.xprog;
+identifier READ_ONCE;
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+xprog = READ_ONCE(priv->xdp_prog);
+if (xprog) {
+...
+}
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@ assign3 @
 identifier xdp_redirects, rx;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
@@ -84,14 +113,14 @@ identifier xdp_redirects, rx;
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 @@
-identifier assign2.xdp_redirects, assign2.rx;
+identifier assign3.xdp_redirects, assign3.rx;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 	if (xdp_redirects != rx->xdp_actions[XDP_REDIRECT])
 		xdp_do_flush();
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
-@ assign3 @
+@ assign4 @
 identifier xdp_txs, rx;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
@@ -99,7 +128,7 @@ identifier xdp_txs, rx;
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 @@
-identifier assign3.xdp_txs, assign3.rx;
+identifier assign4.xdp_txs, assign4.rx;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 	if (xdp_txs != rx->xdp_actions[XDP_TX])
