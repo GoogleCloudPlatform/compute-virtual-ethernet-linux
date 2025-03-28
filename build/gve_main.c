@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5.1-25-8578b2d-0c7c432-oot"
+#define GVE_VERSION		 "1.4.5.1-26-8578b2d-7306628-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -2431,7 +2431,13 @@ static void gve_handle_reset(struct gve_priv *priv)
 
 	if (gve_get_do_reset(priv)) {
 		rtnl_lock();
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
+		netdev_lock(priv->dev);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 		gve_reset(priv, false);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
+		netdev_unlock(priv->dev);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 		rtnl_unlock();
 	}
 }
@@ -3104,6 +3110,9 @@ static void gve_shutdown(struct pci_dev *pdev)
 	bool was_up = netif_running(priv->dev);
 
 	rtnl_lock();
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
+	netdev_lock(netdev);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	if (was_up && gve_close(priv->dev)) {
 		/* If the dev was up, attempt to close, if close fails, reset */
 		gve_reset_and_teardown(priv, was_up);
@@ -3111,6 +3120,9 @@ static void gve_shutdown(struct pci_dev *pdev)
 		/* If the dev wasn't up or close worked, finish tearing down */
 		gve_teardown_priv_resources(priv);
 	}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
+	netdev_unlock(netdev);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	rtnl_unlock();
 }
 
