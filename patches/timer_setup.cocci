@@ -43,3 +43,13 @@ expression result, p, size1, size2;
 +#else
 result = struct_size(p, member, size_add(size1, size2));
 +#endif
+
+@@
+expression t;
+@@
+
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)
+timer_delete_sync(t);
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0) */
++del_timer_sync(t);
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0) */

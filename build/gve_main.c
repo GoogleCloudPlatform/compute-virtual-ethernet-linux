@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5.1-27-8578b2d-7ad31f9-oot"
+#define GVE_VERSION		 "1.4.5.1-28-8578b2d-2a5f681-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -360,7 +360,11 @@ static void gve_free_stats_report(struct gve_priv *priv)
 	if (!priv->stats_report)
 		return;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)
+	timer_delete_sync(&priv->stats_report_timer);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0) */
 	del_timer_sync(&priv->stats_report_timer);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0) */
 	dma_free_coherent(&priv->pdev->dev, priv->stats_report_len,
 			  priv->stats_report, priv->stats_report_bus);
 	priv->stats_report = NULL;
@@ -1630,7 +1634,11 @@ static int gve_queues_stop(struct gve_priv *priv)
 			goto err;
 		gve_clear_device_rings_ok(priv);
 	}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)
+	timer_delete_sync(&priv->stats_report_timer);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0) */
 	del_timer_sync(&priv->stats_report_timer);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0) */
 
 	gve_unreg_xdp_info(priv);
 

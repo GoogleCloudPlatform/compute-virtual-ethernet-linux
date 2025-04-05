@@ -830,7 +830,11 @@ static int gve_set_priv_flags(struct net_device *netdev, u32 flags)
 
 		memset(priv->stats_report->stats, 0, (tx_stats_num + rx_stats_num) *
 				   sizeof(struct stats));
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)
+		timer_delete_sync(&priv->stats_report_timer);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0) */
 		del_timer_sync(&priv->stats_report_timer);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0) */
 	}
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0))
 	priv->header_split_strict = (priv->ethtool_flags & BIT(GVE_PRIV_FLAGS_ENABLE_STRICT_HEADER_SPLIT)) ? true : false;
