@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5.1-28-8578b2d-2a5f681-oot"
+#define GVE_VERSION		 "1.4.5.1-29-8578b2d-d968ce3-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -2552,7 +2552,11 @@ static void gve_set_netdev_xdp_features(struct gve_priv *priv)
 		xdp_features = 0;
 	}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0))
+	xdp_set_features_flag_locked(priv->dev, xdp_features);
+#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)) */
 	xdp_set_features_flag(priv->dev, xdp_features);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)) */
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL) || RHEL_VERSION_GTE(9,4) */
 }
 
