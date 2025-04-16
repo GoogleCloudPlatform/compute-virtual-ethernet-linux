@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5.1-29-8578b2d-d968ce3-oot"
+#define GVE_VERSION		 "1.4.5.1-30-8578b2d-0b6743a-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
