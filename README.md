@@ -157,8 +157,8 @@ modprobe gve
 
 This loads the driver until you remove it with rmmod or you reboot. If a driver
 was already installed or came with the kernel and `modprobe` does not update the
-driver version, you need to manually remove the module and  point to the `gve.ko`
-filed installed from the debian package (you can find the path in the output of
+driver version, you need to manually remove the module and point to the `gve.ko`
+file installed from the debian package (you can find the path in the output of
 the command in step 1). You can use this command to do so:
 
 > [!WARNING]
