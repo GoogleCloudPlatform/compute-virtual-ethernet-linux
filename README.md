@@ -154,7 +154,20 @@ Where gve-dkms_1.1.0_all.deb is the driver deb package that you have been suppli
 ```shell
 modprobe gve
 ```
-This loads the driver until you remove it with rmmod or you reboot.
+
+This loads the driver until you remove it with rmmod or you reboot. If a driver
+was already installed or came with the kernel and `modprobe` does not update the
+driver version, you need to manually remove the module and  point to the `gve.ko`
+filed installed from the debian package (you can find the path in the output of
+the command in step 1). You can use this command to do so:
+
+> [!WARNING]
+> Run this as a single line, as running `rmmod` alone will remove the existing
+> driver and disconnect you if connected over SSH.
+
+```bash
+sudo rmmod gve; sudo insmod /path/to/gve.ko
+```
 
 3. To have the driver automatically load on boot if you are using systemd run:
 ```shell
