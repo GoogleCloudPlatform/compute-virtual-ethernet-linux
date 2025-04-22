@@ -343,8 +343,20 @@ xdp_set_features_flag_locked(args);
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)) */
 
 @@
-identifier xdp_set_clear_redirect =~ "xdp_features_.*_redirect_target";
+expression list args;
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4)
-xdp_set_clear_redirect(...);
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)
+xdp_features_set_redirect_target_locked(args);
++#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4)
++xdp_features_set_redirect_target(args);
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4) */
+
+
+@@
+expression list args;
+@@
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)
+xdp_features_clear_redirect_target_locked(args);
++#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4)
++xdp_features_clear_redirect_target(args);
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4) */
