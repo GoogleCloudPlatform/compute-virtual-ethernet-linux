@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5.1-30-8578b2d-0b6743a-oot"
+#define GVE_VERSION		 "1.4.5.1-31-8578b2d-26f3248-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -2110,7 +2110,9 @@ static void gve_turndown(struct gve_priv *priv)
 	/* Stop tx queues */
 	netif_tx_disable(priv->dev);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)
+	xdp_features_clear_redirect_target_locked(priv->dev);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4)
 	xdp_features_clear_redirect_target(priv->dev);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4) */
 
@@ -2197,7 +2199,9 @@ static void gve_turnup(struct gve_priv *priv)
 	}
 
 	if (priv->tx_cfg.num_xdp_queues && gve_supports_xdp_xmit(priv)) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)
+		xdp_features_set_redirect_target_locked(priv->dev, false);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4)
 		xdp_features_set_redirect_target(priv->dev, false);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4) */
 	}
