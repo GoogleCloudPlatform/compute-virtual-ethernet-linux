@@ -1,26 +1,26 @@
 @@
 @@
 struct gve_rx_slot_page_info {
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	union {
 		struct page *page;
 		netmem_ref netmem;
 	};
 +#else
 +	struct page *page;
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) */
 	void *page_address;
 	...
 };
 
 @@
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 static void gve_skb_add_rx_frag(...)
 {
 	...
 }
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) */
 
 @@
 @@
@@ -30,14 +30,14 @@ static int gve_rx_append_frags(...)
 	if (gve_rx_should_trigger_copy_ondemand(rx))
 		return gve_rx_copy_ondemand(rx, buf_state, buf_len);
 
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	gve_skb_add_rx_frag(rx, buf_state, num_frags, buf_len);
 +#else
 +	skb_add_rx_frag(rx->ctx.skb_tail, num_frags,
 +			buf_state->page_info.page,
 +			buf_state->page_info.page_offset,
 +			buf_len, buf_state->page_info.buf_size);
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) */
 	...
 }
 
@@ -46,7 +46,7 @@ static int gve_rx_append_frags(...)
 static int gve_rx_dqo(...)
 {
 	...
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	if (rx->dqo.page_pool) {
 		if (!netmem_is_net_iov(buf_state->page_info.netmem))
 			prefetch(netmem_to_page(buf_state->page_info.netmem));
@@ -55,15 +55,15 @@ static int gve_rx_dqo(...)
 	}
 +#else
 +	prefetch(buf_state->page_info.page);
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	...
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	gve_skb_add_rx_frag(rx, buf_state, 0, buf_len);
 +#else
 +	skb_add_rx_frag(rx->ctx.skb_head, 0, buf_state->page_info.page,
 +			buf_state->page_info.page_offset, buf_len,
 +			buf_state->page_info.buf_size);
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	gve_reuse_buffer(rx, buf_state);
 	...
 }
@@ -71,11 +71,11 @@ static int gve_rx_dqo(...)
 @@
 identifier buf_state;
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 buf_state->page_info.netmem = 0;
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 +buf_state->page_info.page = NULL;
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 
 @@
 expression list args;
@@ -83,13 +83,13 @@ expression list args;
 static int gve_alloc_from_page_pool(...)
 {
 ...
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	netmem_ref netmem;
 +#else
 +	struct page *page;
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 ...
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	netmem = page_pool_alloc_netmem(args);
 
 	if (!netmem)
@@ -107,7 +107,7 @@ static int gve_alloc_from_page_pool(...)
 +	buf_state->page_info.page = page;
 +	buf_state->page_info.page_address = page_address(page);
 +	buf_state->addr = page_pool_get_dma_addr(page);
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 ...
 }
 
@@ -115,22 +115,22 @@ static int gve_alloc_from_page_pool(...)
 @@
 void gve_free_to_page_pool(...)
 {
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 netmem_ref netmem = buf_state->page_info.netmem;
 if (!netmem) {
 	return;
 }
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 +struct page *page = buf_state->page_info.page;
 +if (!page) {
 +	return;
 +}
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 ...
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	page_pool_put_full_netmem(...);
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 +	page_pool_put_full_page(page->pp, page, allow_direct);
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 ...
 }

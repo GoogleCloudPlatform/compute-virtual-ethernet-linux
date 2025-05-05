@@ -298,28 +298,28 @@ void gve_free_to_page_pool(struct gve_rx_ring *rx,
 			   struct gve_rx_buf_state_dqo *buf_state,
 			   bool allow_direct)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	netmem_ref netmem = buf_state->page_info.netmem;
 
 	if (!netmem)
 		return;
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	struct page *page = buf_state->page_info.page;
 if (!page) {
 		return;
 }
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	page_pool_put_full_netmem(netmem_get_pp(netmem), netmem, allow_direct);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	page_pool_put_full_page(page->pp, page, allow_direct);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	buf_state->page_info.netmem = 0;
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	buf_state->page_info.page = NULL;
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
 
@@ -327,14 +327,14 @@ if (!page) {
 static int gve_alloc_from_page_pool(struct gve_rx_ring *rx,
 				    struct gve_rx_buf_state_dqo *buf_state)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	netmem_ref netmem;
 #else
 	struct page *page;
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 
 	buf_state->page_info.buf_size = rx->packet_buffer_truesize;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	netmem = page_pool_alloc_netmem(rx->dqo.page_pool,
 					&buf_state->page_info.page_offset,
 					&buf_state->page_info.buf_size,
@@ -357,7 +357,7 @@ static int gve_alloc_from_page_pool(struct gve_rx_ring *rx,
 	buf_state->page_info.page = page;
 	buf_state->page_info.page_address = page_address(page);
 	buf_state->addr = page_pool_get_dma_addr(page);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	buf_state->page_info.pad = rx->dqo.page_pool->p.offset;
 
 	return 0;
@@ -405,11 +405,11 @@ void gve_reuse_buffer(struct gve_rx_ring *rx,
 		      struct gve_rx_buf_state_dqo *buf_state)
 {
 	if (rx->dqo.page_pool) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 		buf_state->page_info.netmem = 0;
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 		buf_state->page_info.page = NULL;
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 		gve_free_buf_state(rx, buf_state);
 	} else {
 		gve_dec_pagecnt_bias(&buf_state->page_info);
