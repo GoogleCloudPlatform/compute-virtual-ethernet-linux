@@ -128,14 +128,14 @@ struct gve_rx_slot_page_info {
 	/* netmem is used for DQO RDA mode
 	 * page is used in all other modes
 	 */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	union {
 		struct page *page;
 		netmem_ref netmem;
 	};
 #else
 	struct page *page;
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) */
 	void *page_address;
 	u32 page_offset; /* offset to write to in page */
 	unsigned int buf_size;
