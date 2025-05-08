@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5.1-32-8578b2d-56d0f69-oot"
+#define GVE_VERSION		 "1.4.5.1-33-8578b2d-60ac4af-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -3068,6 +3068,11 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	err = gve_init_priv(priv, false);
 	if (err)
 		goto abort_with_wq;
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0))
+	if (!gve_is_gqi(priv) && !gve_is_qpl(priv))
+		dev->netmem_tx = true;
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
 
 	err = register_netdev(dev);
 	if (err)
