@@ -134,3 +134,48 @@ if (!netmem) {
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 ...
 }
+
+@@
+expression p;
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0))
+if (!gve_is_gqi(p) && !gve_is_qpl(p))
+	dev->netmem_tx = true;
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
+
+@@
+expression init, cond, inc;
+@@
+static void gve_unmap_packet(...)
+{
+...
+for (init; cond; inc) {
+...
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0))
+	netmem_dma_unmap_page_attrs(...);
++#else /* LINUX_VERSION_CODE < KERNEL_VERSION(6,16,0) */
++dma_unmap_page(dev, dma_unmap_addr(pkt, dma[i]),
++		dma_unmap_len(pkt, len[i]), DMA_TO_DEVICE);
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
+...
+}
+...
+}
+
+@@
+expression init, cond, inc;
+@@
+static int gve_tx_add_skb_no_copy_dqo(...)
+{
+...
+for (init; cond; inc) {
+...
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0))
+	netmem_dma_unmap_addr_set(...);
++#else /* LINUX_VERSION_CODE < KERNEL_VERSION(6,16,0) */
++dma_unmap_addr_set(pkt, dma[pkt->num_bufs], addr);
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
+...
+}
+...
+}
