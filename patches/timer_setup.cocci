@@ -28,7 +28,8 @@ identifier gve_stats_report_timer, t, priv, service_timer;
 +#else /* LINUX_VERSION_CODE < KERNEL_VERSION(4,15,0) */
 static void gve_stats_report_timer(timer_list *t)
 {
-	struct gve_priv *priv = from_timer(priv, t, stats_report_timer);
+	struct gve_priv *priv = timer_container_of(priv, t,
+						   stats_report_timer);
 	...
 }
 +#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,15,0) */
@@ -53,3 +54,14 @@ timer_delete_sync(t);
 +#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0) */
 +del_timer_sync(t);
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0) */
+
+@@
+expression list l;
+@@
+
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)
+struct gve_priv *priv = timer_container_of(l);
++#else /* LINUX_VERSION_CODE < KERNEL_VERSION(6,16,0) */
++struct gve_priv *priv = from_timer(l);
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
+
