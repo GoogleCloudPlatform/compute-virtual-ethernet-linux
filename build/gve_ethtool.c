@@ -969,9 +969,6 @@ static int gve_set_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd)
 	case ETHTOOL_SRXCLSRLDEL:
 		err = gve_del_flow_rule(priv, cmd);
 		break;
-	case ETHTOOL_SRXFH:
-		err = -EOPNOTSUPP;
-		break;
 	default:
 		err = -EOPNOTSUPP;
 		break;
@@ -1005,9 +1002,6 @@ static int gve_get_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd, u
 		break;
 	case ETHTOOL_GRXCLSRLALL:
 		err = gve_get_flow_rule_ids(priv, cmd, (u32 *)rule_locs);
-		break;
-	case ETHTOOL_GRXFH:
-		err = -EOPNOTSUPP;
 		break;
 	default:
 		err = -EOPNOTSUPP;
