@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5.1-43-8578b2d-7d12c9e-oot"
+#define GVE_VERSION		 "1.4.5.1-44-8578b2d-3cc6331-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -904,6 +904,7 @@ static void gve_teardown_device_resources(struct gve_priv *priv)
 	gve_free_counter_array(priv);
 	gve_free_notify_blocks(priv);
 	gve_free_stats_report(priv);
+	gve_teardown_clock(priv);
 	gve_clear_device_resources_ok(priv);
 }
 
@@ -2385,6 +2386,46 @@ revert_features:
 	return err;
 }
 
+static int gve_get_ts_config(struct net_device *dev,
+			     struct kernel_hwtstamp_config *kernel_config)
+{
+	struct gve_priv *priv = netdev_priv(dev);
+
+	*kernel_config = priv->ts_config;
+	return 0;
+}
+
+static int gve_set_ts_config(struct net_device *dev,
+			     struct kernel_hwtstamp_config *kernel_config,
+			     struct netlink_ext_ack *extack)
+{
+	struct gve_priv *priv = netdev_priv(dev);
+
+	if (kernel_config->tx_type != HWTSTAMP_TX_OFF) {
+		NL_SET_ERR_MSG_MOD(extack, "TX timestamping is not supported");
+		return -ERANGE;
+	}
+
+	if (kernel_config->rx_filter != HWTSTAMP_FILTER_NONE) {
+		if (!priv->nic_ts_report) {
+			NL_SET_ERR_MSG_MOD(extack,
+					   "RX timestamping is not supported");
+			kernel_config->rx_filter = HWTSTAMP_FILTER_NONE;
+			return -EOPNOTSUPP;
+		}
+
+		kernel_config->rx_filter = HWTSTAMP_FILTER_ALL;
+		gve_clock_nic_ts_read(priv);
+		ptp_schedule_worker(priv->ptp->clock, 0);
+	} else {
+		ptp_cancel_worker_sync(priv->ptp->clock);
+	}
+
+	priv->ts_config.rx_filter = kernel_config->rx_filter;
+
+	return 0;
+}
+
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0))
 int gve_change_mtu(struct net_device *dev, int new_mtu) {
 	struct gve_priv *priv = netdev_priv(dev);
@@ -2428,6 +2469,8 @@ static const struct net_device_ops gve_netdev_ops = {
 	.ndo_xdp_xmit		=	gve_xdp_xmit,
 	.ndo_xsk_wakeup		=	gve_xsk_wakeup,
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+	.ndo_hwtstamp_get	=	gve_get_ts_config,
+	.ndo_hwtstamp_set	=	gve_set_ts_config,
 };
 
 static void gve_handle_status(struct gve_priv *priv, u32 status)
@@ -2666,6 +2709,9 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 		priv->tx_coalesce_usecs = GVE_TX_IRQ_RATELIMIT_US_DQO;
 		priv->rx_coalesce_usecs = GVE_RX_IRQ_RATELIMIT_US_DQO;
 	}
+
+	priv->ts_config.tx_type = HWTSTAMP_TX_OFF;
+	priv->ts_config.rx_filter = HWTSTAMP_FILTER_NONE;
 
 setup_device:
 	gve_set_netdev_xdp_features(priv);
