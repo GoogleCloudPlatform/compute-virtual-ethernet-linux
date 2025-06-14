@@ -896,6 +896,9 @@ struct gve_priv {
 	u16 rss_lut_size;
 	bool cache_rss_config;
 	struct gve_rss_config rss_config;
+
+	/* True if the device supports reading the nic clock */
+	bool nic_timestamp_supported;
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0))
 	u8 header_split_strict;
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0) */
