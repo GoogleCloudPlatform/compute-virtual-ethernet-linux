@@ -17,6 +17,7 @@
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
 #include <linux/netdevice.h>
 #include <linux/pci.h>
+#include <linux/ptp_clock_kernel.h>
 #include <linux/u64_stats_sync.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
 #include <net/page_pool/helpers.h>
@@ -776,6 +777,12 @@ struct gve_rss_config {
 	u32 *hash_lut;
 };
 
+struct gve_ptp {
+	struct ptp_clock_info info;
+	struct ptp_clock *clock;
+	struct gve_priv *priv;
+};
+
 struct gve_priv {
 	struct net_device *dev;
 	struct gve_tx_ring *tx; /* array of tx_cfg.num_queues */
@@ -900,6 +907,7 @@ struct gve_priv {
 
 	/* True if the device supports reading the nic clock */
 	bool nic_timestamp_supported;
+	struct gve_ptp *ptp;
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0))
 	u8 header_split_strict;
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0) */
