@@ -1166,6 +1166,27 @@ static int gve_set_rxfh(struct net_device *netdev, const u32 *indir,
 }
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
+static int gve_get_ts_info(struct net_device *netdev,
+			   struct kernel_ethtool_ts_info *info)
+{
+	struct gve_priv *priv = netdev_priv(netdev);
+
+	ethtool_op_get_ts_info(netdev, info);
+
+	if (priv->nic_timestamp_supported) {
+		info->so_timestamping |= SOF_TIMESTAMPING_RX_HARDWARE |
+					 SOF_TIMESTAMPING_RAW_HARDWARE;
+
+		info->rx_filters |= BIT(HWTSTAMP_FILTER_NONE) |
+				    BIT(HWTSTAMP_FILTER_ALL);
+
+		if (priv->ptp)
+			info->phc_index = ptp_clock_index(priv->ptp->clock);
+	}
+
+	return 0;
+}
+
 const struct ethtool_ops gve_ethtool_ops = {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,7,0)
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS,
@@ -1200,5 +1221,5 @@ const struct ethtool_ops gve_ethtool_ops = {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
 	.get_link_ksettings = gve_get_link_ksettings,
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0) */
-	.get_ts_info = ethtool_op_get_ts_info,
+	.get_ts_info = gve_get_ts_info,
 };
