@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5.1-46-8578b2d-6f18230-oot"
+#define GVE_VERSION		 "1.4.5.1-47-8578b2d-8a88b4a-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -2004,7 +2004,7 @@ int gve_adjust_config(struct gve_priv *priv,
 {
 	int err;
 
-	/* Allocate resources for the new confiugration */
+	/* Allocate resources for the new configuration */
 	err = gve_queues_mem_alloc(priv, tx_alloc_cfg, rx_alloc_cfg);
 	if (err) {
 		netif_err(priv, drv, priv->dev,
@@ -2731,7 +2731,7 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 		goto err;
 	}
 
-	/* Big TCP is only supported on DQ*/
+	/* Big TCP is only supported on DQO */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,2,1))
 	if (!gve_is_gqi(priv))
 		netif_set_tso_max_size(priv->dev, GVE_DQO_TX_MAX);
