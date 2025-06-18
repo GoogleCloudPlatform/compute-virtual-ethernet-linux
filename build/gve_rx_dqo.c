@@ -9,6 +9,9 @@
 #include "gve_adminq.h"
 #include "gve_utils.h"
 #include "gve_linux_version.h"
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+#include <linux/bpf.h>
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 #include <linux/ip.h>
 #include <linux/ipv6.h>
 #include <linux/skbuff.h>
@@ -675,31 +678,87 @@ static int gve_rx_append_frags(struct napi_struct *napi,
 }
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+static int gve_xdp_tx_dqo(struct gve_priv *priv, struct gve_rx_ring *rx,
+			  struct xdp_buff *xdp)
+{
+	struct gve_tx_ring *tx;
+	struct xdp_frame *xdpf;
+	u32 tx_qid;
+	int err;
+
+	xdpf = xdp_convert_buff_to_frame(xdp);
+	if (unlikely(!xdpf))
+		return -ENOSPC;
+
+	tx_qid = gve_xdp_tx_queue_id(priv, rx->q_num);
+	tx = &priv->tx[tx_qid];
+	spin_lock(&tx->dqo_tx.xdp_lock);
+	err = gve_xdp_xmit_one_dqo(priv, tx, xdpf);
+	spin_unlock(&tx->dqo_tx.xdp_lock);
+
+	return err;
+}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 static void gve_xdp_done_dqo(struct gve_priv *priv, struct gve_rx_ring *rx,
 			     struct xdp_buff *xdp, struct bpf_prog *xprog,
 			     int xdp_act,
 			     struct gve_rx_buf_state_dqo *buf_state)
 {
-	u64_stats_update_begin(&rx->statss);
+	int err;
 	switch (xdp_act) {
 	case XDP_ABORTED:
 	case XDP_DROP:
 	default:
-		rx->xdp_actions[xdp_act]++;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+		gve_free_buffer(rx, buf_state);
+#else
+		gve_enqueue_buf_state(rx, &rx->dqo.recycled_buf_states,
+				      buf_state);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
 		break;
 	case XDP_TX:
-		rx->xdp_tx_errors++;
+		err = gve_xdp_tx_dqo(priv, rx, xdp);
+		if (unlikely(err))
+			goto err;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
+		gve_dec_pagecnt_bias(&buf_state->page_info);
+		gve_try_recycle_buf(priv, rx, buf_state);
+#else
+		gve_reuse_buffer(rx, buf_state);
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0)) */
 		break;
 	case XDP_REDIRECT:
-		rx->xdp_redirect_errors++;
+		err = xdp_do_redirect(priv->dev, xdp, xprog);
+		if (unlikely(err))
+			goto err;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
+		gve_dec_pagecnt_bias(&buf_state->page_info);
+		gve_try_recycle_buf(priv, rx, buf_state);
+#else
+		gve_reuse_buffer(rx, buf_state);
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0)) */
 		break;
 	}
+	u64_stats_update_begin(&rx->statss);
+	if ((u32)xdp_act < GVE_XDP_ACTIONS)
+		rx->xdp_actions[xdp_act]++;
+	u64_stats_update_end(&rx->statss);
+	return;
+err:
+	u64_stats_update_begin(&rx->statss);
+	if (xdp_act == XDP_TX)
+		rx->xdp_tx_errors++;
+	else if (xdp_act == XDP_REDIRECT)
+		rx->xdp_redirect_errors++;
 	u64_stats_update_end(&rx->statss);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
 	gve_free_buffer(rx, buf_state);
 #else
 	gve_enqueue_buf_state(rx, &rx->dqo.recycled_buf_states, buf_state);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+	return;
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
@@ -963,15 +1022,34 @@ static int gve_rx_complete_skb(struct gve_rx_ring *rx, struct napi_struct *napi,
 
 int gve_rx_poll_dqo(struct gve_notify_block *block, int budget)
 {
-	struct napi_struct *napi = &block->napi;
-	netdev_features_t feat = napi->dev->features;
-
-	struct gve_rx_ring *rx = block->rx;
-	struct gve_rx_compl_queue_dqo *complq = &rx->dqo.complq;
-
+	struct gve_rx_compl_queue_dqo *complq;
+	struct napi_struct *napi;
+	netdev_features_t feat;
+	struct gve_rx_ring *rx;
+	struct gve_priv *priv;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+	u64 xdp_redirects;
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 	u32 work_done = 0;
 	u64 bytes = 0;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+	u64 xdp_txs;
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 	int err;
+
+	napi = &block->napi;
+	feat = napi->dev->features;
+
+	rx = block->rx;
+	priv = rx->gve;
+	complq = &rx->dqo.complq;
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+	xdp_redirects = rx->xdp_actions[XDP_REDIRECT];
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+	xdp_txs = rx->xdp_actions[XDP_TX];
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 	while (work_done < budget) {
 		struct gve_rx_compl_desc_dqo *compl_desc =
@@ -1049,6 +1127,16 @@ int gve_rx_poll_dqo(struct gve_notify_block *block, int budget)
 		rx->ctx.skb_head = NULL;
 		rx->ctx.skb_tail = NULL;
 	}
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+	if (xdp_txs != rx->xdp_actions[XDP_TX])
+		gve_xdp_tx_flush_dqo(priv, rx->q_num);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+	if (xdp_redirects != rx->xdp_actions[XDP_REDIRECT])
+		xdp_do_flush();
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 	gve_rx_post_buffers_dqo(rx);
 

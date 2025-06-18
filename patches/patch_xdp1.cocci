@@ -201,6 +201,16 @@ int gve_xdp_xmit_gqi(...) { ... }
 @@
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+int gve_xdp_xmit_dqo(struct net_device *dev, int n, struct xdp_frame **frames,
+		 u32 flags)
+{
+...
+}
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 int gve_xdp_xmit_one(struct gve_priv *priv, struct gve_tx_ring *tx,
 		     void *data, int len, void *frame_p)
 {
@@ -323,6 +333,27 @@ static void add_napi_init_xdp_sync_stats(struct gve_priv *priv,
 @@
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+int gve_xdp_xmit_one_dqo(struct gve_priv *priv, struct gve_tx_ring *tx,
+			 struct xdp_frame *xdpf)
+{
+...
+}
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+		gve_unmap_packet(tx->dev, pending_packet);
+		(*pkts)++;
+		*bytes += pending_packet->xdpf->len;
+		...
+		pending_packet->xdpf = NULL;
+		gve_free_pending_packet(tx, pending_packet);
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 					xdp_return_frame(info->xdp_frame);
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
@@ -362,3 +393,50 @@ xdp_features_clear_redirect_target_locked(args);
 +#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4)
 +xdp_features_clear_redirect_target(args);
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4) */
+
+@add_xdp_qfmt_vefify@
+parameter list args;
+identifier dev;
+@@
+int verify_xdp_configuration(args
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL)
++, struct netdev_bpf *xdp
++#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL) */
+ )
+{
+...
+if (dev->features & NETIF_F_LRO) { ... }
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL)
++	/* Check XDP support for various queue formats. */
++	switch (priv->queue_format) {
++	case GVE_GQI_QPL_FORMAT: /* GQI_QPL supports everything, so ignore. */
++		break;
++	case GVE_DQO_RDA_FORMAT:
++		if (xdp->command == XDP_SETUP_XSK_POOL) {
++			netdev_warn(dev, "AF_XDP zero-copy is not supported in mode %d\n",
++				    priv->queue_format);
++			return -EOPNOTSUPP;
++		}
++		break;
++	default:
++		netdev_warn(dev, "XDP is not supported in mode %d.\n",
++			    priv->queue_format);
++		return -EOPNOTSUPP;
++	}
++#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL) */
+...
+}
+
+@@
+expression err;
+@@
+static int gve_xdp(struct net_device *dev, struct netdev_bpf *xdp) {
+...
+err = verify_xdp_configuration(dev
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL)
++, xdp
++#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL) */
+ );
+...
+}
+

@@ -68,6 +68,15 @@ static void gve_xdp_done_dqo(struct gve_priv *priv, struct gve_rx_ring *rx,
 }
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+static int gve_xdp_tx_dqo(...)
+{
+...
+}
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
 @ assign @
 identifier xprog, xdp;
 @@
@@ -106,31 +115,27 @@ if (xprog) {
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 @ assign3 @
-identifier xdp_redirects, rx;
+identifier xdp_act, rx, XDP_ACT;
 @@
+(
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
-	u64 xdp_redirects = rx->xdp_actions[XDP_REDIRECT];
+u64 xdp_act;
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+...
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+xdp_act = rx->xdp_actions[XDP_ACT];
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+|
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+u64 xdp_act = rx->xdp_actions[XDP_ACT];
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+)
+
 
 @@
-identifier assign3.xdp_redirects, assign3.rx;
+identifier assign3.xdp_act, assign3.rx, assign3.XDP_ACT;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
-	if (xdp_redirects != rx->xdp_actions[XDP_REDIRECT])
-		xdp_do_flush();
+	if (xdp_act != rx->xdp_actions[XDP_ACT]) { ... }
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
-@ assign4 @
-identifier xdp_txs, rx;
-@@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
-	u64 xdp_txs = rx->xdp_actions[XDP_TX];
-+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
-
-@@
-identifier assign4.xdp_txs, assign4.rx;
-@@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
-	if (xdp_txs != rx->xdp_actions[XDP_TX])
-		gve_xdp_tx_flush(priv, rx->q_num);
-+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
