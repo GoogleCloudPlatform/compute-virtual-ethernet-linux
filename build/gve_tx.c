@@ -866,8 +866,8 @@ static int gve_tx_fill_xdp(struct gve_priv *priv, struct gve_tx_ring *tx,
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
-int gve_xdp_xmit(struct net_device *dev, int n, struct xdp_frame **frames,
-		 u32 flags)
+int gve_xdp_xmit_gqi(struct net_device *dev, int n, struct xdp_frame **frames,
+		     u32 flags)
 {
 	struct gve_priv *priv = netdev_priv(dev);
 	struct gve_tx_ring *tx;

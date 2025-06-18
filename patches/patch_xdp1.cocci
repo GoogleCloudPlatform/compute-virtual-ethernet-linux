@@ -189,11 +189,13 @@ work_done = max_t(int, work_done, gve_xsk_tx_poll(block, budget));
 @@
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
-int gve_xdp_xmit(struct net_device *dev, int n, struct xdp_frame **frames,
-		 u32 flags)
-{
-...
-}
+static int gve_xdp_xmit(...) { ... }
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+int gve_xdp_xmit_gqi(...) { ... }
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 @@
