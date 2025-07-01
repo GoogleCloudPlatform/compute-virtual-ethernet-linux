@@ -39,7 +39,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.6-1-388d2c9-56949b3-oot"
+#define GVE_VERSION		 "1.4.6-0--8c1eda6-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -2911,11 +2911,11 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 setup_device:
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 	priv->xsk_pools = bitmap_zalloc(priv->rx_cfg.max_queues, GFP_KERNEL);
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 	if (!priv->xsk_pools) {
 		err = -ENOMEM;
 		goto err;
 	}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 	gve_set_netdev_xdp_features(priv);
 	err = gve_setup_device_resources(priv);

@@ -48,6 +48,7 @@ identifier priv;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 priv->xsk_pools = bitmap_zalloc(...);
+if (!priv->xsk_pools) { ... }
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 @@
