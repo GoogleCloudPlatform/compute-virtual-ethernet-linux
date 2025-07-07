@@ -269,15 +269,17 @@ int gve_rx_alloc_ring_dqo(struct gve_priv *priv,
 	rx->dqo.num_buf_states = cfg->raw_addressing ? buffer_queue_slots :
 		gve_get_rx_pages_per_qpl_dqo(cfg->ring_size);
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0)) */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
-	rx->dqo.buf_states = kvcalloc(rx->dqo.num_buf_states,
-				      sizeof(rx->dqo.buf_states[0]),
-				      GFP_KERNEL);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-	rx->dqo.buf_states = kcalloc(rx->dqo.num_buf_states,
-				     sizeof(rx->dqo.buf_states[0]),
-				     GFP_KERNEL);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)
+	rx->dqo.buf_states = kvcalloc_node(rx->dqo.num_buf_states,
+					   sizeof(rx->dqo.buf_states[0]),
+					   GFP_KERNEL, priv->numa_node);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
+	rx->dqo.buf_states = kvzalloc_node((rx->dqo.num_buf_states) * (sizeof(rx->dqo.buf_states[0])),
+					   GFP_KERNEL, priv->numa_node);
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(4,12,0) */
+	rx->dqo.buf_states = kzalloc_node((rx->dqo.num_buf_states) * (sizeof(rx->dqo.buf_states[0])),
+					  GFP_KERNEL, priv->numa_node);
+#endif
 	if (!rx->dqo.buf_states)
 		return -ENOMEM;
 
@@ -578,7 +580,7 @@ static int gve_rx_copy_ondemand(struct gve_rx_ring *rx,
 				struct gve_rx_buf_state_dqo *buf_state,
 				u16 buf_len)
 {
-	struct page *page = alloc_page(GFP_ATOMIC);
+	struct page *page = alloc_pages_node(rx->gve->numa_node, GFP_ATOMIC, 0);
 	int num_frags;
 
 	if (!page)
