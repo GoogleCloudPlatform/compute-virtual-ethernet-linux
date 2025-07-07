@@ -226,13 +226,16 @@ static int gve_rx_prefill_pages(struct gve_rx_ring *rx,
 	 */
 	slots = rx->mask + 1;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
-	rx->data.page_info = kvzalloc(slots *
-				      sizeof(*rx->data.page_info), GFP_KERNEL);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-	rx->data.page_info = kcalloc(1, slots * sizeof(*rx->data.page_info),
-				     GFP_KERNEL);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)
+	rx->data.page_info = kvcalloc_node(slots, sizeof(*rx->data.page_info),
+					   GFP_KERNEL, priv->numa_node);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
+	rx->data.page_info = kvzalloc_node((slots) * (sizeof(*rx->data.page_info)),
+					   GFP_KERNEL, priv->numa_node);
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(4,12,0) */
+	rx->data.page_info = kzalloc_node((slots) * (sizeof(*rx->data.page_info)),
+					  GFP_KERNEL, priv->numa_node);
+#endif
 	if (!rx->data.page_info)
 		return -ENOMEM;
 
@@ -255,7 +258,8 @@ static int gve_rx_prefill_pages(struct gve_rx_ring *rx,
 
 	if (!rx->data.raw_addressing) {
 		for (j = 0; j < rx->qpl_copy_pool_mask + 1; j++) {
-			struct page *page = alloc_page(GFP_KERNEL);
+			struct page *page = alloc_pages_node(priv->numa_node,
+							     GFP_KERNEL, 0);
 
 			if (!page) {
 				err = -ENOMEM;
@@ -356,15 +360,17 @@ int gve_rx_alloc_ring_gqi(struct gve_priv *priv,
 
 	rx->qpl_copy_pool_mask = min_t(u32, U32_MAX, slots * 2) - 1;
 	rx->qpl_copy_pool_head = 0;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
-	rx->qpl_copy_pool = kvcalloc(rx->qpl_copy_pool_mask + 1,
-				     sizeof(rx->qpl_copy_pool[0]),
-				     GFP_KERNEL);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-	rx->qpl_copy_pool = kcalloc(rx->qpl_copy_pool_mask + 1,
-				    sizeof(rx->qpl_copy_pool[0]), GFP_KERNEL);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)
+	rx->qpl_copy_pool = kvcalloc_node(rx->qpl_copy_pool_mask + 1,
+					  sizeof(rx->qpl_copy_pool[0]),
+					  GFP_KERNEL, priv->numa_node);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
+	rx->qpl_copy_pool = kvzalloc_node((rx->qpl_copy_pool_mask + 1) * (sizeof(rx->qpl_copy_pool[0])),
+					  GFP_KERNEL, priv->numa_node);
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(4,12,0) */
+	rx->qpl_copy_pool = kzalloc_node((rx->qpl_copy_pool_mask + 1) * (sizeof(rx->qpl_copy_pool[0])),
+					 GFP_KERNEL, priv->numa_node);
+#endif
 	if (!rx->qpl_copy_pool) {
 		err = -ENOMEM;
 		goto abort_with_slots;

@@ -37,3 +37,15 @@ kvfree(var);
 +#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
 +kfree(var);
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+
+
+@@
+expression var, num, size, flags, node;
+@@
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)
+var = kvcalloc_node(num, size, flags, node);
++#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
++var = kvzalloc_node((num) * (size), flags, node);
++#else /* LINUX_VERSION_CODE < KERNEL_VERSION(4,12,0) */
++var = kzalloc_node((num) * (size), flags, node);
++#endif
