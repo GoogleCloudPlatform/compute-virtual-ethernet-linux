@@ -47,7 +47,9 @@ out:
 static const struct ptp_clock_info gve_ptp_caps = {
 	.owner          = THIS_MODULE,
 	.name		= "gve clock",
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0))
 	.do_aux_work	= gve_ptp_do_aux_work,
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0) */
 };
 
 static int gve_ptp_init(struct gve_priv *priv)

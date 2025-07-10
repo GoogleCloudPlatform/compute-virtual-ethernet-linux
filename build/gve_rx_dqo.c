@@ -543,7 +543,9 @@ static void gve_rx_skb_hwtstamp(struct gve_rx_ring *rx, u32 hwts)
 	u32 low = (u32)last_read;
 	s32 diff = hwts - low;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0)
 	skb_hwtstamps(skb)->hwtstamp = ns_to_ktime(last_read + diff);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0) */
 }
 
 static void gve_rx_free_skb(struct napi_struct *napi, struct gve_rx_ring *rx)
