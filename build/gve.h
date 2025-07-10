@@ -909,7 +909,11 @@ struct gve_priv {
 	/* True if the device supports reading the nic clock */
 	bool nic_timestamp_supported;
 	struct gve_ptp *ptp;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,6,0)
+	struct hwtstamp_config ts_config;
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0) */
 	struct kernel_hwtstamp_config ts_config;
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0) */
 	struct gve_nic_ts_report *nic_ts_report;
 	dma_addr_t nic_ts_report_bus;
 	u64 last_sync_nic_counter; /* Clock counter from last NIC TS report */

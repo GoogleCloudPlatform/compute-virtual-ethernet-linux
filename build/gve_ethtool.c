@@ -1135,7 +1135,9 @@ static int gve_set_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rx
 
 	err = gve_adminq_configure_rss(priv, rxfh);
 	if (err) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
 		NL_SET_ERR_MSG_MOD(extack, "Fail to configure RSS config");
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,12,0) */
 		return err;
 	}
 
@@ -1166,12 +1168,19 @@ static int gve_set_rxfh(struct net_device *netdev, const u32 *indir,
 }
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */
 
-static int gve_get_ts_info(struct net_device *netdev,
-			   struct kernel_ethtool_ts_info *info)
+static int gve_get_ts_info(struct net_device *netdev
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)
+			   ,
+			   struct kernel_ethtool_ts_info *info
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
+			   , struct ethtool_ts_info *info
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
+			   )
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 
 	ethtool_op_get_ts_info(netdev, info);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0)
 
 	if (priv->nic_timestamp_supported) {
 		info->so_timestamping |= SOF_TIMESTAMPING_RX_HARDWARE |
@@ -1183,6 +1192,7 @@ static int gve_get_ts_info(struct net_device *netdev,
 		if (priv->ptp)
 			info->phc_index = ptp_clock_index(priv->ptp->clock);
 	}
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0) */
 
 	return 0;
 }

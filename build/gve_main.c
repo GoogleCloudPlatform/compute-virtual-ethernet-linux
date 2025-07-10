@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5.1-45-8578b2d-4113ab9-oot"
+#define GVE_VERSION		 "1.4.5.1-46-8578b2d-6f18230-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -2386,6 +2386,7 @@ revert_features:
 	return err;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0)
 static int gve_get_ts_config(struct net_device *dev,
 			     struct kernel_hwtstamp_config *kernel_config)
 {
@@ -2394,37 +2395,87 @@ static int gve_get_ts_config(struct net_device *dev,
 	*kernel_config = priv->ts_config;
 	return 0;
 }
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0) */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,6,0)
+static int backport_gve_get_ts_config(struct net_device *dev,
+				      struct ifreq *ifr) {
+	struct gve_priv *priv = netdev_priv(dev);
+	struct hwtstamp_config cfg;
+	memcpy(&cfg, &priv->ts_config, sizeof(cfg));
+	if (copy_to_user(ifr->ifr_data, &cfg, sizeof(cfg)))
+		return -EFAULT;
+
+	return 0;
+}
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,6,0) */
 
 static int gve_set_ts_config(struct net_device *dev,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0)
 			     struct kernel_hwtstamp_config *kernel_config,
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(6,6,0) */
+			     struct hwtstamp_config *kernel_config,
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,6,0) */
 			     struct netlink_ext_ack *extack)
 {
 	struct gve_priv *priv = netdev_priv(dev);
 
 	if (kernel_config->tx_type != HWTSTAMP_TX_OFF) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
 		NL_SET_ERR_MSG_MOD(extack, "TX timestamping is not supported");
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,12,0) */
 		return -ERANGE;
 	}
 
 	if (kernel_config->rx_filter != HWTSTAMP_FILTER_NONE) {
 		if (!priv->nic_ts_report) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
 			NL_SET_ERR_MSG_MOD(extack,
 					   "RX timestamping is not supported");
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,12,0) */
 			kernel_config->rx_filter = HWTSTAMP_FILTER_NONE;
 			return -EOPNOTSUPP;
 		}
 
 		kernel_config->rx_filter = HWTSTAMP_FILTER_ALL;
 		gve_clock_nic_ts_read(priv);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0))
 		ptp_schedule_worker(priv->ptp->clock, 0);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0) */
 	} else {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0))
 		ptp_cancel_worker_sync(priv->ptp->clock);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) */
 	}
 
 	priv->ts_config.rx_filter = kernel_config->rx_filter;
 
 	return 0;
 }
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,6,0)
+static int backport_gve_set_ts_config(struct net_device *dev,
+				      struct ifreq *ifr) {
+	struct hwtstamp_config cfg;
+	int ret;
+	if (copy_from_user(&cfg, ifr->ifr_data, sizeof(cfg)))
+		return -EFAULT;
+
+	ret = gve_set_ts_config(dev, &cfg, NULL);
+	if (ret)
+		return ret;
+
+	if (copy_to_user(ifr->ifr_data, &cfg, sizeof(cfg)))
+		return -EFAULT;
+
+	return ret;
+}
+static int gve_eth_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd) {
+	switch (cmd) {
+	case SIOCSHWTSTAMP:  return backport_gve_set_ts_config(dev, ifr);
+	case SIOCGHWTSTAMP:  return backport_gve_get_ts_config(dev, ifr);
+default:  return -EINVAL;
+	}
+}
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,6,0) */
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0))
 int gve_change_mtu(struct net_device *dev, int new_mtu) {
@@ -2469,8 +2520,16 @@ static const struct net_device_ops gve_netdev_ops = {
 	.ndo_xdp_xmit		=	gve_xdp_xmit,
 	.ndo_xsk_wakeup		=	gve_xsk_wakeup,
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0)
+	.ndo_do_ioctl = gve_eth_ioctl,
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) && LINUX_VERSION_CODE < KERNEL_VERSION(6,6,0)
+	
+	.ndo_eth_ioctl = gve_eth_ioctl,
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0)
+	
 	.ndo_hwtstamp_get	=	gve_get_ts_config,
 	.ndo_hwtstamp_set	=	gve_set_ts_config,
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0) */
 };
 
 static void gve_handle_status(struct gve_priv *priv, u32 status)
