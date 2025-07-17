@@ -802,7 +802,6 @@ static int gve_set_priv_flags(struct net_device *netdev, u32 flags)
 		else
 			new_packet_buffer_size = GVE_DEFAULT_RX_BUFFER_SIZE;
 
-		
 		err = gve_set_buffer_size_config(priv, enable_hdr_split,
 						 new_packet_buffer_size);
 		if (err)
@@ -1006,13 +1005,12 @@ static int gve_get_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rx
 }
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 static int gve_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key,
-			u8 *hfunc){
+			u8 *hfunc) {
 	struct gve_priv *priv = netdev_priv(netdev);
 
 	if (!priv->rss_key_size || !priv->rss_lut_size)
 		return -EOPNOTSUPP;
 
-	
 	return gve_adminq_query_rss_config(priv, indir, key, hfunc);
 }
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
@@ -1030,13 +1028,12 @@ static int gve_set_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rx
 }
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 static int gve_set_rxfh(struct net_device *netdev, const u32 *indir,
-			const u8 *key, const u8 hfunc){
+			const u8 *key, const u8 hfunc) {
 	struct gve_priv *priv = netdev_priv(netdev);
 
 	if (!priv->rss_key_size || !priv->rss_lut_size)
 		return -EOPNOTSUPP;
 
-	
 	return gve_adminq_configure_rss(priv, indir, key, hfunc);
 }
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */

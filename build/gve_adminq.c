@@ -1388,7 +1388,7 @@ out:
 }
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 int gve_adminq_configure_rss(struct gve_priv *priv, const u32 *indir,
-			     const u8 *hash_key, const u8 hfunc){
+			     const u8 *hash_key, const u8 hfunc) {
 	dma_addr_t lut_bus = 0, key_bus = 0;
 	u16 key_size = 0, lut_size = 0;
 	union gve_adminq_command cmd;
@@ -1413,7 +1413,6 @@ default:  return -EOPNOTSUPP;
 		if (!lut)
 			return -ENOMEM;
 
-		
 		for(i = 0;i < priv->rss_lut_size;i++)
 			lut[i] = cpu_to_be32(indir[i]);
 	}
@@ -1569,7 +1568,7 @@ static int gve_adminq_process_rss_query(struct gve_priv *priv,
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 static int gve_adminq_process_rss_query(struct gve_priv *priv,
 					struct gve_query_rss_descriptor *descriptor,
-					u32 *indir, u8 *key, u8 *hfunc){
+					u32 *indir, u8 *key, u8 *hfunc) {
 	u32 total_memory_length;
 	u16 hash_lut_length;
 	void *rss_info_addr;
@@ -1588,12 +1587,10 @@ static int gve_adminq_process_rss_query(struct gve_priv *priv,
 	if (hfunc)
 		*hfunc = descriptor->hash_alg;
 
-	
 	rss_info_addr = (void *)(descriptor + 1);
 	if (key)
 		memcpy(key, rss_info_addr, priv->rss_key_size);
 
-	
 	rss_info_addr += priv->rss_key_size;
 	lut = (__be32 *)rss_info_addr;
 	if (indir) {
@@ -1635,7 +1632,7 @@ out:
 }
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,5) */
 int gve_adminq_query_rss_config(struct gve_priv *priv, u32 *indir, u8 *key,
-				u8 *hfunc){
+				u8 *hfunc) {
 	struct gve_query_rss_descriptor *descriptor;
 	union gve_adminq_command cmd;
 	dma_addr_t descriptor_bus;
@@ -1646,7 +1643,6 @@ int gve_adminq_query_rss_config(struct gve_priv *priv, u32 *indir, u8 *key,
 	if (!descriptor)
 		return -ENOMEM;
 
-	
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.opcode = cpu_to_be32(GVE_ADMINQ_QUERY_RSS);
 	cmd.query_rss = (struct gve_adminq_query_rss){
@@ -1657,7 +1653,6 @@ int gve_adminq_query_rss_config(struct gve_priv *priv, u32 *indir, u8 *key,
 	if (err)
 		goto out;
 
-	
 	err = gve_adminq_process_rss_query(priv, descriptor, indir, key,
 					   hfunc);
 
