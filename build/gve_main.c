@@ -39,7 +39,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5.1-56-8578b2d-51a7d75-oot"
+#define GVE_VERSION		 "1.4.5.1-57-8578b2d-ec14d50-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -517,6 +517,14 @@ int gve_napi_poll_dqo(struct napi_struct *napi, int budget)
 
 	if (block->rx) {
 		work_done = gve_rx_poll_dqo(block, budget);
+
+		/* Poll XSK TX as part of RX NAPI. Setup re-poll based on if
+		 * either datapath has more work to do.
+		 */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+		if (priv->xdp_prog)
+			reschedule |= gve_xsk_tx_poll_dqo(block, budget);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 		reschedule |= work_done == budget;
 	}
 

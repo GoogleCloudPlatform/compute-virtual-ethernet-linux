@@ -38,6 +38,9 @@ netdev_features_t gve_features_check_dqo(struct sk_buff *skb,
 					 netdev_features_t features);
 bool gve_tx_poll_dqo(struct gve_notify_block *block, bool do_clean);
 bool gve_xdp_poll_dqo(struct gve_notify_block *block);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+bool gve_xsk_tx_poll_dqo(struct gve_notify_block *block, int budget);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 int gve_rx_poll_dqo(struct gve_notify_block *block, int budget);
 int gve_tx_alloc_rings_dqo(struct gve_priv *priv,
 			   struct gve_tx_alloc_rings_cfg *cfg);

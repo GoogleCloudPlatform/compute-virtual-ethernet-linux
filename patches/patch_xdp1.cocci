@@ -215,21 +215,27 @@ struct net_device_ops gve_netdev_ops = {
 };
 
 @@
+type T;
+identifier xsk_tx_fn =~ "gve_xsk_tx.*";
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
-int gve_xsk_tx(...) { ... }
+T xsk_tx_fn(...) { ... }
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
+
+@poll_fn_declare@
+type T;
+identifier xsk_poll_fn =~ "gve_xsk_tx_poll.*";
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+T xsk_poll_fn(...);
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
 @@
+type poll_fn_declare.T;
+identifier poll_fn_declare.xsk_poll_fn;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
-int gve_xsk_tx_poll(...);
-+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
-
-@@
-@@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
-int gve_xsk_tx_poll(...) { ... }
+T xsk_poll_fn(...) { ... }
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
 @@
@@ -239,6 +245,15 @@ identifier work_done, block, budget;
 work_done = max_t(int, work_done, gve_xsk_tx_poll(block, budget));
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
+@@
+identifier reschedule;
+identifier priv;
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+if (priv->xdp_prog) {
+reschedule |= gve_xsk_tx_poll_dqo(...);
+}
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
 @@
 @@
@@ -418,6 +433,39 @@ int gve_xdp_xmit_one_dqo(struct gve_priv *priv, struct gve_tx_ring *tx,
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 					xdp_return_frame(info->xdp_frame);
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+identifier queue;
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+if (queue->xsk_pool) { ... }
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+static void gve_tx_process_xsk_completions(...) {...}
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+static void gve_xsk_reorder_queue_pop_dqo(...) { ... }
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+static void gve_xsk_reorder_queue_push_dqo(...) { ... }
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+type  pending_packet;
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+pending_packet gve_xsk_reorder_queue_head(...) { ... }
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
 
 @@
 @@
