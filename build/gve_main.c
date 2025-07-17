@@ -39,7 +39,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5.1-58-8578b2d-96322ea-oot"
+#define GVE_VERSION		 "1.4.5.1-59-8578b2d-49e420f-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -2346,50 +2346,57 @@ static void gve_turnup_and_check_status(struct gve_priv *priv)
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
+static struct gve_notify_block *gve_get_tx_notify_block(struct gve_priv *priv,
+							unsigned int txqueue)
+{
+	u32 ntfy_idx;
+
+	if (txqueue > priv->tx_cfg.num_queues)
+		return NULL;
+
+	ntfy_idx = gve_tx_idx_to_ntfy(priv, txqueue);
+	if (ntfy_idx >= priv->num_ntfy_blks)
+		return NULL;
+
+	return &priv->ntfy_blocks[ntfy_idx];
+}
+
+static bool gve_tx_timeout_try_q_kick(struct gve_priv *priv,
+				      unsigned int txqueue)
+{
+	struct gve_notify_block *block;
+	u32 current_time;
+
+	block = gve_get_tx_notify_block(priv, txqueue);
+
+	if (!block)
+		return false;
+
+	current_time = jiffies_to_msecs(jiffies);
+	if (block->tx->last_kick_msec + MIN_TX_TIMEOUT_GAP > current_time)
+		return false;
+
+	netdev_info(priv->dev, "Kicking queue %d", txqueue);
+	napi_schedule(&block->napi);
+	block->tx->last_kick_msec = current_time;
+	return true;
+}
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_VERSION_GTE(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL))
 static void gve_tx_timeout(struct net_device *dev, unsigned int txqueue)
 {
 	struct gve_notify_block *block;
-	struct gve_tx_ring *tx = NULL;
 	struct gve_priv *priv;
-	u32 last_nic_done;
-	u32 current_time;
-	u32 ntfy_idx;
 
 	netdev_info(dev, "Timeout on tx queue, %d", txqueue);
 	priv = netdev_priv(dev);
-	if (txqueue > priv->tx_cfg.num_queues)
-		goto reset;
 
-	ntfy_idx = gve_tx_idx_to_ntfy(priv, txqueue);
-	if (ntfy_idx >= priv->num_ntfy_blks)
-		goto reset;
+	if (!gve_tx_timeout_try_q_kick(priv, txqueue))
+		gve_schedule_reset(priv);
 
-	block = &priv->ntfy_blocks[ntfy_idx];
-	tx = block->tx;
-
-	current_time = jiffies_to_msecs(jiffies);
-	if (tx->last_kick_msec + MIN_TX_TIMEOUT_GAP > current_time)
-		goto reset;
-
-	/* Check to see if there are missed completions, which will allow us to
-	 * kick the queue.
-	 */
-	last_nic_done = gve_tx_load_event_counter(priv, tx);
-	if (last_nic_done - tx->done) {
-		netdev_info(dev, "Kicking queue %d", txqueue);
-		iowrite32be(GVE_IRQ_MASK, gve_irq_doorbell(priv, block));
-		napi_schedule(&block->napi);
-		tx->last_kick_msec = current_time;
-		goto out;
-	} // Else reset.
-
-reset:
-	gve_schedule_reset(priv);
-
-out:
-	if (tx)
-		tx->queue_timeout++;
+	block = gve_get_tx_notify_block(priv, txqueue);
+	if (block)
+		block->tx->queue_timeout++;
 	priv->tx_timeo_cnt++;
 }
 #else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || RHEL_VERSION_GTE(8, 3) || UBUNTU_VERSION_CODE >= UBUNTU_VERSION(5,4,0,1071) || defined(KUNIT_KERNEL)) */
