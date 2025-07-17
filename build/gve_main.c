@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5.1-54-8578b2d-ce57545-oot"
+#define GVE_VERSION		 "1.4.5.1-55-8578b2d-93369bd-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -1373,8 +1373,8 @@ static void gve_unreg_xsk_pool(struct gve_priv *priv, u16 qid)
 
 	rx = &priv->rx[qid];
 	rx->xsk_pool = NULL;
-	if (xdp_rxq_info_is_reg(&rx->xsk_rxq))
-		xdp_rxq_info_unreg(&rx->xsk_rxq);
+	if (xdp_rxq_info_is_reg(&rx->xdp_rxq))
+		xdp_rxq_info_unreg_mem_model(&rx->xdp_rxq);
 
 	if (!priv->tx)
 		return;
@@ -1386,24 +1386,24 @@ static void gve_unreg_xsk_pool(struct gve_priv *priv, u16 qid)
 static int gve_reg_xsk_pool(struct gve_priv *priv, struct net_device *dev,
 			    struct xsk_buff_pool *pool, u16 qid)
 {
-	struct napi_struct *napi;
 	struct gve_rx_ring *rx;
 	u16 tx_qid;
 	int err;
 
 	rx = &priv->rx[qid];
-	napi = &priv->ntfy_blocks[rx->ntfy_id].napi;
-	err = xdp_rxq_info_reg(&rx->xsk_rxq, dev, qid, napi->napi_id);
-	if (err)
-		return err;
-
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
-	err = xdp_rxq_info_reg_mem_model(&rx->xsk_rxq,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
+	err = xdp_rxq_info_reg_mem_model(&rx->xdp_rxq,
 					 MEM_TYPE_XSK_BUFF_POOL, pool);
 #else /* LINUX_VERSION_CODE >= KERNEL_VERISON(6,14,0) */
-	err = xdp_rxq_info_reg_mem_model(&rx->xsk_rxq, MEM_TYPE_XSK_BUFF_POOL,
+	err = xdp_rxq_info_reg_mem_model(&rx->xdp_rxq, MEM_TYPE_XSK_BUFF_POOL,
 					 NULL);
-	xsk_pool_set_rxq_info(pool, &rx->xsk_rxq);
+	xsk_pool_set_rxq_info(pool, &rx->xdp_rxq);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERISON(6,14,0) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERISON(6,14,0) */
+	err = xdp_rxq_info_reg_mem_model(&rx->xdp_rxq, MEM_TYPE_XSK_BUFF_POOL,
+					 NULL);
+	xsk_pool_set_rxq_info(pool, &rx->xdp_rxq);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERISON(6,14,0) */
 	if (err) {
 		gve_unreg_xsk_pool(priv, qid);
@@ -1450,6 +1450,8 @@ static int gve_reg_xdp_info(struct gve_priv *priv, struct net_device *dev)
 		return 0;
 
 	for (i = 0; i < priv->rx_cfg.num_queues; i++) {
+		struct xsk_buff_pool *xsk_pool;
+
 		rx = &priv->rx[i];
 		napi = &priv->ntfy_blocks[rx->ntfy_id].napi;
 
@@ -1457,7 +1459,11 @@ static int gve_reg_xdp_info(struct gve_priv *priv, struct net_device *dev)
 				       napi->napi_id);
 		if (err)
 			goto err;
-		if (gve_is_qpl(priv))
+
+		xsk_pool = xsk_get_pool_from_qid(dev, i);
+		if (xsk_pool)
+			err = gve_reg_xsk_pool(priv, dev, xsk_pool, i);
+		else if (gve_is_qpl(priv))
 			err = xdp_rxq_info_reg_mem_model(&rx->xdp_rxq,
 							 MEM_TYPE_PAGE_SHARED,
 							 NULL);
@@ -1472,13 +1478,6 @@ static int gve_reg_xdp_info(struct gve_priv *priv, struct net_device *dev)
 							 NULL);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0) */
 		}
-		if (err)
-			goto err;
-		rx->xsk_pool = xsk_get_pool_from_qid(dev, i);
-		if (!rx->xsk_pool)
-			continue;
-
-		err = gve_reg_xsk_pool(priv, dev, rx->xsk_pool, i);
 		if (err)
 			goto err;
 	}

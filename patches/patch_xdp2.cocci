@@ -5,7 +5,6 @@ struct gve_rx_ring {
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 	/* XDP stuff */
 	struct xdp_rxq_info xdp_rxq;
-	struct xdp_rxq_info xsk_rxq;
 	struct xsk_buff_pool *xsk_pool;
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 	...

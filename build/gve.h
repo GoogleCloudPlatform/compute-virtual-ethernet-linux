@@ -354,7 +354,6 @@ struct gve_rx_ring {
 	/* XDP stuff */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 	struct xdp_rxq_info xdp_rxq;
-	struct xdp_rxq_info xsk_rxq;
 	struct xsk_buff_pool *xsk_pool;
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 	struct page_frag_cache page_cache; /* Page cache to allocate XDP frames */
