@@ -76,6 +76,14 @@ static int gve_xdp_tx_dqo(...)
 }
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
+@@
+@@
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)
+xsk_buff_dma_sync_for_cpu(xdp);
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0) */
++ xsk_buff_dma_sync_for_cpu(xdp, rx->xsk_pool);
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0) */
+
 @ assign @
 identifier xprog, xdp;
 @@
@@ -108,6 +116,9 @@ identifier READ_ONCE;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 xprog = READ_ONCE(priv->xdp_prog);
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+...
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 if (xprog) {
 ...
 }

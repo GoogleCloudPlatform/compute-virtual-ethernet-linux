@@ -19,6 +19,9 @@
 #include <net/ip6_checksum.h>
 #include <net/ipv6.h>
 #include <net/tcp.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+#include <net/xdp_sock_drv.h>
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 static void gve_rx_free_hdr_bufs(struct gve_priv *priv, struct gve_rx_ring *rx)
 {
@@ -168,6 +171,12 @@ void gve_rx_free_ring_dqo(struct gve_priv *priv, struct gve_rx_ring *rx,
 		if (bs->page_info.page) gve_free_page_dqo(priv, bs,
 							  !rx->dqo.qpl);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+		if (gve_buf_state_is_allocated(rx, bs) && bs->xsk_buff) {
+			xsk_buff_free(bs->xsk_buff);
+			bs->xsk_buff = NULL;
+		}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 	}
 
 	if (rx->dqo.qpl) {
@@ -680,6 +689,7 @@ static int gve_rx_append_frags(struct napi_struct *napi,
 }
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 static int gve_xdp_tx_dqo(struct gve_priv *priv, struct gve_rx_ring *rx,
 			  struct xdp_buff *xdp)
 {
@@ -689,8 +699,18 @@ static int gve_xdp_tx_dqo(struct gve_priv *priv, struct gve_rx_ring *rx,
 	int err;
 
 	xdpf = xdp_convert_buff_to_frame(xdp);
-	if (unlikely(!xdpf))
+	if (unlikely(!xdpf)) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+		if (rx->xsk_pool)
+			xsk_buff_free(xdp)
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+				;
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 		return -ENOSPC;
+	}
 
 	tx_qid = gve_xdp_tx_queue_id(priv, rx->q_num);
 	tx = &priv->tx[tx_qid];
@@ -699,6 +719,44 @@ static int gve_xdp_tx_dqo(struct gve_priv *priv, struct gve_rx_ring *rx,
 	spin_unlock(&tx->dqo_tx.xdp_lock);
 
 	return err;
+}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+static void gve_xsk_done_dqo(struct gve_priv *priv, struct gve_rx_ring *rx,
+			     struct xdp_buff *xdp, struct bpf_prog *xprog,
+			     int xdp_act)
+{
+	switch (xdp_act) {
+	case XDP_ABORTED:
+	case XDP_DROP:
+	default:
+		xsk_buff_free(xdp);
+		break;
+	case XDP_TX:
+		if (unlikely(gve_xdp_tx_dqo(priv, rx, xdp)))
+			goto err;
+		break;
+	case XDP_REDIRECT:
+		if (unlikely(xdp_do_redirect(priv->dev, xdp, xprog)))
+			goto err;
+		break;
+	}
+
+	u64_stats_update_begin(&rx->statss);
+	if ((u32)xdp_act < GVE_XDP_ACTIONS)
+		rx->xdp_actions[xdp_act]++;
+	u64_stats_update_end(&rx->statss);
+	return;
+
+err:
+	u64_stats_update_begin(&rx->statss);
+	if (xdp_act == XDP_TX)
+		rx->xdp_tx_errors++;
+	if (xdp_act == XDP_REDIRECT)
+		rx->xdp_redirect_errors++;
+	u64_stats_update_end(&rx->statss);
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
@@ -764,6 +822,58 @@ err:
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+static int gve_rx_xsk_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
+			  struct gve_rx_buf_state_dqo *buf_state, int buf_len,
+			  struct bpf_prog *xprog)
+{
+	struct xdp_buff *xdp = buf_state->xsk_buff;
+	struct gve_priv *priv = rx->gve;
+	int xdp_act;
+
+	xdp->data_end = xdp->data + buf_len;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)
+	xsk_buff_dma_sync_for_cpu(xdp);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0) */
+	xsk_buff_dma_sync_for_cpu(xdp, rx->xsk_pool);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0) */
+
+	if (xprog) {
+		xdp_act = bpf_prog_run_xdp(xprog, xdp);
+		buf_len = xdp->data_end - xdp->data;
+		if (xdp_act != XDP_PASS) {
+			gve_xsk_done_dqo(priv, rx, xdp, xprog, xdp_act);
+			gve_free_buf_state(rx, buf_state);
+			return 0;
+		}
+	}
+
+	/* Copy the data to skb */
+	rx->ctx.skb_head = gve_rx_copy_data(priv->dev, napi,
+					    xdp->data, buf_len);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+	if (unlikely(!rx->ctx.skb_head)) {
+		xsk_buff_free(xdp);
+		gve_free_buf_state(rx, buf_state);
+		return -ENOMEM;
+	}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+	rx->ctx.skb_tail = rx->ctx.skb_head;
+
+	/* Free XSK buffer and Buffer state */
+	xsk_buff_free(xdp);
+	gve_free_buf_state(rx, buf_state);
+
+	/* Update Stats */
+	u64_stats_update_begin(&rx->statss);
+	rx->xdp_actions[XDP_PASS]++;
+	u64_stats_update_end(&rx->statss);
+	return 0;
+}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
 /* Returns 0 if descriptor is completed successfully.
  * Returns -EINVAL if descriptor is invalid.
  * Returns -ENOMEM if data cannot be copied to skb.
@@ -809,7 +919,19 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 	buf_len = compl_desc->packet_len;
 	hdr_len = compl_desc->header_len;
 
-	/* Page might have not been used for a while and was likely last written
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,20,0)
+	xprog = READ_ONCE(priv->xdp_prog);
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(3,20,0) */
+	xprog = ACCESS_ONCE(priv->xdp_prog);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,20,0) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+	if (buf_state->xsk_buff)
+		return gve_rx_xsk_dqo(napi, rx, buf_state, buf_len, xprog);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+	/* Page might have not been used for awhile and was likely last written
 	 * by a different thread.
 	 */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
@@ -866,11 +988,6 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 	}
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,20,0)
-	xprog = READ_ONCE(priv->xdp_prog);
-#else /* LINUX_VERSION_CODE < KERNEL_VERSION(3,20,0) */
-	xprog = ACCESS_ONCE(priv->xdp_prog);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,20,0) */
 	if (xprog) {
 		struct xdp_buff xdp;
 		void *old_data;
