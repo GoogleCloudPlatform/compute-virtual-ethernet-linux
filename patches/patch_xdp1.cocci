@@ -44,6 +44,48 @@ static void gve_unreg_xdp_info(struct gve_priv *priv)
 }
 
 @@
+identifier priv;
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+priv->xsk_pools = bitmap_zalloc(...);
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+identifier priv;
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+bitmap_free(priv->xsk_pools);
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+static int gve_reg_xsk_pool(...) {
+...
+}
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+static void gve_unreg_xsk_pool(...) {
+...
+}
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+expression xdp_rxq;
+expression BUFF_POOL =~ "MEM_TYPE_XSK_BUFF_POOL";
+expression pool !~ "NULL";
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
+err = xdp_rxq_info_reg_mem_model(xdp_rxq, BUFF_POOL, pool);
++#else /* LINUX_VERSION_CODE >= KERNEL_VERISON(6,14,0) */
++err = xdp_rxq_info_reg_mem_model(xdp_rxq, BUFF_POOL, NULL);
++xsk_pool_set_rxq_info(pool, xdp_rxq);
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERISON(6,14,0) */
+
+@@
 @@
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)
 err = xdp_rxq_info_reg_mem_model(
