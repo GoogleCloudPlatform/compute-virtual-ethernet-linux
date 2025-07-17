@@ -5,6 +5,7 @@
  */
 
 #include "gve_linux_version.h"
+#include <linux/bitmap.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 #include <linux/bpf.h>
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
@@ -38,7 +39,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5.1-55-8578b2d-93369bd-oot"
+#define GVE_VERSION		 "1.4.5.1-56-8578b2d-51a7d75-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -1438,6 +1439,16 @@ static void gve_unreg_xdp_info(struct gve_priv *priv)
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+static struct xsk_buff_pool *gve_get_xsk_pool(struct gve_priv *priv, int qid)
+{
+	if (!test_bit(qid, priv->xsk_pools))
+		return NULL;
+
+	return xsk_get_pool_from_qid(priv->dev, qid);
+}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
 static int gve_reg_xdp_info(struct gve_priv *priv, struct net_device *dev)
 {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
@@ -1460,7 +1471,7 @@ static int gve_reg_xdp_info(struct gve_priv *priv, struct net_device *dev)
 		if (err)
 			goto err;
 
-		xsk_pool = xsk_get_pool_from_qid(dev, i);
+		xsk_pool = gve_get_xsk_pool(priv, i);
 		if (xsk_pool)
 			err = gve_reg_xsk_pool(priv, dev, xsk_pool, i);
 		else if (gve_is_qpl(priv))
@@ -1855,15 +1866,19 @@ static int gve_xsk_pool_enable(struct net_device *dev,
 	if (err)
 		return err;
 
+	set_bit(qid, priv->xsk_pools);
+
 	/* If XDP prog is not installed or interface is down, return. */
 	if (!priv->xdp_prog || !netif_running(dev))
 		return 0;
 
 	err = gve_reg_xsk_pool(priv, dev, pool, qid);
-	if (err)
+	if (err) {
+		clear_bit(qid, priv->xsk_pools);
 		xsk_pool_dma_unmap(pool,
 				   DMA_ATTR_SKIP_CPU_SYNC |
 				   DMA_ATTR_WEAK_ORDERING);
+	}
 
 	return err;
 }
@@ -1881,6 +1896,8 @@ static int gve_xsk_pool_disable(struct net_device *dev,
 
 	if (qid >= priv->rx_cfg.num_queues)
 		return -EINVAL;
+
+	clear_bit(qid, priv->xsk_pools);
 
 	pool = xsk_get_pool_from_qid(dev, qid);
 	if (pool)
@@ -2855,10 +2872,26 @@ static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 	priv->ts_config.rx_filter = HWTSTAMP_FILTER_NONE;
 
 setup_device:
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+	priv->xsk_pools = bitmap_zalloc(priv->rx_cfg.max_queues, GFP_KERNEL);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+	if (!priv->xsk_pools) {
+		err = -ENOMEM;
+		goto err;
+	}
+
 	gve_set_netdev_xdp_features(priv);
 	err = gve_setup_device_resources(priv);
-	if (!err)
-		return 0;
+	if (err)
+		goto err_free_xsk_bitmap;
+
+	return 0;
+
+err_free_xsk_bitmap:
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+	bitmap_free(priv->xsk_pools);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+	priv->xsk_pools = NULL;
 err:
 	gve_adminq_free(&priv->pdev->dev, priv);
 	return err;
@@ -2868,6 +2901,10 @@ static void gve_teardown_priv_resources(struct gve_priv *priv)
 {
 	gve_teardown_device_resources(priv);
 	gve_adminq_free(&priv->pdev->dev, priv);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+	bitmap_free(priv->xsk_pools);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+	priv->xsk_pools = NULL;
 }
 
 static void gve_trigger_reset(struct gve_priv *priv)
