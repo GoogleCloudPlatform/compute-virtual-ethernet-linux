@@ -1593,8 +1593,10 @@ int gve_clean_tx_done_dqo(struct gve_priv *priv, struct gve_tx_ring *tx,
 	remove_timed_out_completions(priv, tx);
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 	if (tx->xsk_pool)
 		gve_tx_process_xsk_completions(tx);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 	u64_stats_update_begin(&tx->statss);
@@ -1638,8 +1640,10 @@ bool gve_xsk_tx_poll_dqo(struct gve_notify_block *rx_block, int budget)
 
 	tx = &priv->tx[gve_xdp_tx_queue_id(priv, rx->q_num)];
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 	if (tx->xsk_pool)
 		return gve_xsk_tx_dqo(priv, tx, budget);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 	return 0;

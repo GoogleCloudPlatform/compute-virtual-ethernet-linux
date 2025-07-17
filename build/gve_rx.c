@@ -803,8 +803,11 @@ static int gve_xsk_pool_redirect(struct net_device *dev,
 	xdp->data_end = xdp->data + len;
 	memcpy(xdp->data, data, len);
 	err = xdp_do_redirect(dev, xdp, xdp_prog);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 	if (err)
-		xsk_buff_free(xdp);
+		xsk_buff_free(xdp)
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+			;
 	return err;
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
@@ -820,9 +823,11 @@ static int gve_xdp_redirect(struct net_device *dev, struct gve_rx_ring *rx,
 	int err;
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 	if (rx->xsk_pool)
 		return gve_xsk_pool_redirect(dev, rx, orig->data,
 					     len, xdp_prog);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 	total_len = headroom + SKB_DATA_ALIGN(len) +

@@ -1036,6 +1036,7 @@ int gve_xsk_tx_poll(struct gve_notify_block *rx_block, int budget)
 
 	tx = &priv->tx[gve_xdp_tx_queue_id(priv, rx->q_num)];
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 	if (tx->xsk_pool) {
 		sent = gve_xsk_tx(priv, tx, budget);
 
@@ -1045,6 +1046,7 @@ int gve_xsk_tx_poll(struct gve_notify_block *rx_block, int budget)
 		if (xsk_uses_need_wakeup(tx->xsk_pool))
 			xsk_set_tx_need_wakeup(tx->xsk_pool);
 	}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 	return sent;

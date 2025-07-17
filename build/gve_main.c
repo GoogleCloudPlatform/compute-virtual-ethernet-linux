@@ -39,7 +39,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.5.1-57-8578b2d-ec14d50-oot"
+#define GVE_VERSION		 "1.4.5.1-58-8578b2d-96322ea-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -1801,15 +1801,19 @@ static int gve_set_xdp(struct gve_priv *priv, struct bpf_prog *prog,
 	int err = 0;
 	u32 status;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,20,0)
 	old_prog = READ_ONCE(priv->xdp_prog);
 #else /* LINUX_VERSION_CODE < KERNEL_VERSION(3,20,0) */
 	old_prog = ACCESS_ONCE(priv->xdp_prog);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,20,0) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 	if (!netif_running(priv->dev)) {
 		WRITE_ONCE(priv->xdp_prog, prog);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 		if (old_prog)
 			bpf_prog_put(old_prog);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 		/* Update priv XDP queue configuration */
 		priv->tx_cfg.num_xdp_queues = priv->xdp_prog ?
@@ -1826,8 +1830,10 @@ static int gve_set_xdp(struct gve_priv *priv, struct bpf_prog *prog,
 		goto out;
 
 	WRITE_ONCE(priv->xdp_prog, prog);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 	if (old_prog)
 		bpf_prog_put(old_prog);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 out:
 	status = ioread32be(&priv->reg_bar0->device_status);
@@ -1881,13 +1887,24 @@ static int gve_xsk_pool_enable(struct net_device *dev,
 		return 0;
 
 	err = gve_reg_xsk_pool(priv, dev, pool, qid);
-	if (err) {
-		clear_bit(qid, priv->xsk_pools);
-		xsk_pool_dma_unmap(pool,
-				   DMA_ATTR_SKIP_CPU_SYNC |
-				   DMA_ATTR_WEAK_ORDERING);
-	}
+	if (err)
+		goto err_xsk_pool_dma_mapped;
 
+	/* Stop and start RDA queues to repost buffers. */
+	if (!gve_is_qpl(priv)) {
+		err = gve_configure_rings_xdp(priv, priv->rx_cfg.num_queues);
+		if (err)
+			goto err_xsk_pool_registered;
+	}
+	return 0;
+
+err_xsk_pool_registered:
+	gve_unreg_xsk_pool(priv, qid);
+err_xsk_pool_dma_mapped:
+	clear_bit(qid, priv->xsk_pools);
+	xsk_pool_dma_unmap(pool,
+			   DMA_ATTR_SKIP_CPU_SYNC |
+			   DMA_ATTR_WEAK_ORDERING);
 	return err;
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
@@ -1901,6 +1918,7 @@ static int gve_xsk_pool_disable(struct net_device *dev,
 	struct napi_struct *napi_tx;
 	struct xsk_buff_pool *pool;
 	int tx_qid;
+	int err;
 
 	if (qid >= priv->rx_cfg.num_queues)
 		return -EINVAL;
@@ -1916,6 +1934,13 @@ static int gve_xsk_pool_disable(struct net_device *dev,
 	if (!netif_running(dev) || !priv->tx_cfg.num_xdp_queues)
 		return 0;
 
+	/* Stop and start RDA queues to repost buffers. */
+	if (!gve_is_qpl(priv) && priv->xdp_prog) {
+		err = gve_configure_rings_xdp(priv, priv->rx_cfg.num_queues);
+		if (err)
+			return err;
+	}
+
 	napi_rx = &priv->ntfy_blocks[priv->rx[qid].ntfy_id].napi;
 	napi_disable(napi_rx); /* make sure current rx poll is done */
 
@@ -1927,12 +1952,14 @@ static int gve_xsk_pool_disable(struct net_device *dev,
 	smp_mb(); /* Make sure it is visible to the workers on datapath */
 
 	napi_enable(napi_rx);
-	if (gve_rx_work_pending(&priv->rx[qid]))
-		napi_schedule(napi_rx);
-
 	napi_enable(napi_tx);
-	if (gve_tx_clean_pending(priv, &priv->tx[tx_qid]))
-		napi_schedule(napi_tx);
+	if (gve_is_gqi(priv)) {
+		if (gve_rx_work_pending(&priv->rx[qid]))
+			napi_schedule(napi_rx);
+
+		if (gve_tx_clean_pending(priv, &priv->tx[tx_qid]))
+			napi_schedule(napi_tx);
+	}
 
 	return 0;
 }
@@ -1979,14 +2006,8 @@ static int verify_xdp_configuration(struct net_device *dev
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL)
 	/* Check XDP support for various queue formats. */
 	switch (priv->queue_format) {
-	case GVE_GQI_QPL_FORMAT:/* GQI_QPL supports everything, so ignore. */  break;
-	case GVE_DQO_RDA_FORMAT:  if (xdp->command == XDP_SETUP_XSK_POOL) {
-			netdev_warn(dev,
-				    "AF_XDP zero-copy is not supported in mode %d\n",
-				    priv->queue_format);
-			return -EOPNOTSUPP;
-		}
-		break;
+	case GVE_GQI_QPL_FORMAT:/* GQI_QPL supports everything, so ignore. */ 
+	case GVE_DQO_RDA_FORMAT:  break;
 default:  netdev_warn(dev, "XDP is not supported in mode %d.\n",
 		      priv->queue_format);
 		return -EOPNOTSUPP;
@@ -2770,6 +2791,7 @@ static void gve_set_netdev_xdp_features(struct gve_priv *priv)
 	} else if (priv->queue_format == GVE_DQO_RDA_FORMAT) {
 		xdp_features = NETDEV_XDP_ACT_BASIC;
 		xdp_features |= NETDEV_XDP_ACT_REDIRECT;
+		xdp_features |= NETDEV_XDP_ACT_XSK_ZEROCOPY;
 	} else {
 		xdp_features = 0;
 	}

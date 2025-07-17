@@ -444,6 +444,50 @@ if (queue->xsk_pool) { ... }
 @@
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+if (...) {
+...
+xsk_buff_free(...)
+...
+}
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+identifier buf_state;
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+if (buf_state->xsk_buff) {
+  return gve_rx_xsk_dqo(...);
+}
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+static int gve_rx_xsk_dqo(...) { ... }
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+void gve_xsk_done_dqo(...) { ... }
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+int gve_xdp_tx_dqo(...) { ... }
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+identifier queue;
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+if (queue->xsk_pool) { ... }
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 static void gve_tx_process_xsk_completions(...) {...}
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
@@ -466,6 +510,11 @@ type  pending_packet;
 pending_packet gve_xsk_reorder_queue_head(...) { ... }
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+static int gve_rx_xsk_dqo(...) { ... }
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 @@
 @@
@@ -520,13 +569,7 @@ if (dev->features & NETIF_F_LRO) { ... }
 +	/* Check XDP support for various queue formats. */
 +	switch (priv->queue_format) {
 +	case GVE_GQI_QPL_FORMAT: /* GQI_QPL supports everything, so ignore. */
-+		break;
 +	case GVE_DQO_RDA_FORMAT:
-+		if (xdp->command == XDP_SETUP_XSK_POOL) {
-+			netdev_warn(dev, "AF_XDP zero-copy is not supported in mode %d\n",
-+				    priv->queue_format);
-+			return -EOPNOTSUPP;
-+		}
 +		break;
 +	default:
 +		netdev_warn(dev, "XDP is not supported in mode %d.\n",
