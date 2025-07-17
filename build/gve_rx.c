@@ -819,9 +819,11 @@ static int gve_xdp_redirect(struct net_device *dev, struct gve_rx_ring *rx,
 	void *frame;
 	int err;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 	if (rx->xsk_pool)
 		return gve_xsk_pool_redirect(dev, rx, orig->data,
 					     len, xdp_prog);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 	total_len = headroom + SKB_DATA_ALIGN(len) +
 		SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
