@@ -68,7 +68,7 @@ static const char gve_gstrings_tx_stats[][ETH_GSTRING_LEN] = {
 	"tx_xsk_sent[%u]", "tx_xdp_xmit[%u]", "tx_xdp_xmit_errors[%u]"
 };
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)
 static const char gve_gstrings_adminq_stats[][ETH_GSTRING_LEN] __nonstring_array = {
 	"adminq_prod_cnt", "adminq_cmd_fail", "adminq_timeouts",
 	"adminq_describe_device_cnt", "adminq_cfg_device_resources_cnt",
@@ -80,7 +80,7 @@ static const char gve_gstrings_adminq_stats[][ETH_GSTRING_LEN] __nonstring_array
 	"adminq_query_flow_rules", "adminq_cfg_flow_rule", "adminq_cfg_rss_cnt",
 	"adminq_query_rss_cnt", "adminq_report_nic_timestamp_cnt",
 };
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
 static const char gve_gstrings_adminq_stats[][ETH_GSTRING_LEN] = {
 	"adminq_prod_cnt",
 	"adminq_cmd_fail",
@@ -104,7 +104,7 @@ static const char gve_gstrings_adminq_stats[][ETH_GSTRING_LEN] = {
 	"adminq_query_rss_cnt",
 	"adminq_report_nic_timestamp_cnt",
 };
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
 
 static const char gve_gstrings_priv_flags[][ETH_GSTRING_LEN] = {
 	"report-stats",
@@ -165,9 +165,9 @@ static void gve_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 			}
 
 		for (i = 0; i < ARRAY_SIZE(gve_gstrings_adminq_stats); i++) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)
 			ethtool_cpy(&s, gve_gstrings_adminq_stats[i]);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0)
 			ethtool_puts(&s, gve_gstrings_adminq_stats[i]);
 #else /* LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0) */
@@ -175,7 +175,7 @@ static void gve_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 				ETH_GSTRING_LEN);
 			*&s += ETH_GSTRING_LEN;
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
 		}
 
 		break;
