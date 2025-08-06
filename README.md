@@ -54,11 +54,11 @@ sudo dpkg -i gve-dkms_<VERSION>_all.deb
 
 to install as a DEB. `VERSION` above is simply the GVE release version that was downloaded, say, `1.4.6`.
 
-Depending on the distro, installing the package might not load the driver. If the driver has not been loaded, refer to [Loading the Driver](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/tree/release?tab=readme-ov-file#loading-the-driver).
+Depending on the distro, installing the package might not load the driver. If the driver has not been loaded, refer to [Loading the Driver](#loading-the-driver).
 
 ## Building from Source
 If the source is part of a tarball from GitHub, this source code should
-already be multi-kernel compatible. Continue on to [Building the Driver](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/tree/release?tab=readme-ov-file#building-the-driver).
+already be multi-kernel compatible. Continue on to [Building the Driver](#building-the-driver).
 
 ### Generating the Multi-Kernel Compatible Driver Source
 
@@ -230,7 +230,7 @@ Driver-mode support for [XDP](https://docs.cilium.io/en/latest/reference-guides/
 ### Configuration
 
 To attach an XDP program to the driver, the number of RX and TX queues must be
-no more than half their maximum values to accommodate the creation of extra XDP TX queues. The maximum values are based on the number of CPUs available. See [Queue Counts](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/tree/release?tab=readme-ov-file#queue-counts) to see how to get/set the number of queues.
+no more than half their maximum values to accommodate the creation of extra XDP TX queues. The maximum values are based on the number of CPUs available. See [Queue Counts](#queue-counts) to see how to get/set the number of queues.
 
 XDP can be enabled via comand line through `iproute2` or `bpftool`, or in a C program using `libbpf`.
 
