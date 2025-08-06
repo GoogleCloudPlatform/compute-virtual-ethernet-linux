@@ -107,7 +107,7 @@ To load the new driver, run:
 
 ```bash
 depmod
-rmmod && modprobe gve
+sudo rmmod gve && sudo modprobe gve
 ```
 
 Check via `ethtool -i <DEV>` that the new driver is installed.
@@ -246,30 +246,5 @@ bpftool net attach xdp name <XDP_PROG> dev <DEV>
 
 
 # Feature Changelog
-Below is a changelog of features and major fixes which have been introduced to GVE. Note that it is recommended to always use the latest version of GVE, regardless of the features being used, as there might be smaller stability and compatibility patches introduced in more minor releases.
-
-#### v1.4.6
-* Control/dataplane interaction fixes for XDP
-* SKB RX timestamping
-* XDP for DQO-RDA queue format (including AF_XDP zero-copy)
-#### v1.4.5
-* Page pool buffer support
-#### v1.4.3
-* RSS support
-#### v1.4.2
-* Receive flow steering
-* TSO descriptor limit fix
-* XDP GQ counter overflow fix
-#### v1.4.0
-* DQO QPL queue format
-* Non-4K page size support
-* Header-data split
-* Modify ring size
-#### v1.3.4
-* XDP support for GQI-QPL (including AF_XDP zero-copy)
-* IPv6 BigTCP support on DQ
-#### v1.3.0
-* DQO RDA queue format
-#### v1.2.0
-* Support for driver suspend/resume
+See [CHANGELOG.md](CHANGELOG.md) for the feature changelog.
 
