@@ -19,19 +19,14 @@ Device Class  | `0x200`  | Ethernet
 
 # Supported Kernels
 
-This driver s supported on any of the [distros listed as supporting gVNIC](https://cloud.google.com/compute/docs/images/os-details#networking).
+This driver is supported on any of the [distros listed as supporting gVNIC](https://cloud.google.com/compute/docs/images/os-details#networking).
 Those distros have native drivers for gVNIC, but this driver can be used to
 replace the native driver to get the latest enhancements. Note that native
-drivers are likely to report version 1.0.0, this should be ignored. The
+drivers are likely to report version `1.0.0`; this should be ignored. The
 upstream community has deprecated the use of driver versions it has not
 been updated since the initial upstream version.
 
 This driver is also supported on [clean Linux LTS kernels that are not EOL](https://www.kernel.org/category/releases.html).
-Linux kernels starting 5.4 have the driver built in, but this driver can be
-installed on any LTS kernel to get the latest enhancements.
-
-Debian 9 and 10 are supported since they use clean Linux LTS kernels
-(4.9 and 4.19 respectively).
 
 Versions that are not marked as a release candidate (rc) correspond to upstream
 versions of the driver. It is our intention that release candidates
@@ -42,163 +37,239 @@ will be accepted upstream at all.
 
 # Installation
 
-## GitHub
+## RPM/DEB Package Installation
+Official GVE releases can be found [here](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/releases). GVE releases support installation as either a DEB or an RPM.
 
-If you downloaded a release tarball from GitHub: This source code should
-already be multi-kernel compatible. You can skip down to Compiling the Driver.
+Download the target release and run
 
-### Building the multi-kernel compatible driver source
+```
+sudo rpm -ivh gve-<VERSION>-1dkms.noarch.rpm
+```
 
-If you downloaded the source from GitHub: To install this driver on anything
-other than the current upstream kernel, you will need to download Coccinelle,
-and untar it. It can be found here: https://coccinelle.gitlabpages.inria.fr/website/download.html
+to install as an RPM, or
 
-NOTE: Most distros will include a version of Coccinelle in their package manager
-but we require version 1.0.6 or newer, available from the official website.
+```
+sudo dpkg -i gve-dkms_<VERSION>_all.deb
+```
 
-To build the multi-kernel compatible driver source:
+to install as a DEB. `VERSION` above is simply the GVE release version that was downloaded, say, `1.4.6`.
+
+Depending on the distro, installing the package might not load the driver. If the driver has not been loaded, refer to [Loading the Driver](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/tree/release?tab=readme-ov-file#loading-the-driver).
+
+## Building from Source
+If the source is part of a tarball from GitHub, this source code should
+already be multi-kernel compatible. Continue on to [Building the Driver](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/tree/release?tab=readme-ov-file#building-the-driver).
+
+### Generating the Multi-Kernel Compatible Driver Source
+
+If the driver source is downloaded from GitHub, depending on the version, multi-kernel compatible source code might need to be built. Check for a `build` directory in the root directory of the git repo. If it exists, this step can be skipped.
+
+If there is no `build` directory, [Coccinelle](https://coccinelle.gitlabpages.inria.fr/website/), a semantic patching tool, will be needed to generate the multi-kernel compatible source. Many distros will include a version of Coccinelle in their package manager but generating GVE source will require version 1.1.0 or newer.
+
+> [!NOTE]
+> The latest version of Coccinelle can be downloaded and installed from source from the official [website](https://coccinelle.gitlabpages.inria.fr/website/download.html), or via the OCaml Package Manager, [opam](https://opam.ocaml.org/).
+
+To generate the source:
 
 ```bash
 export SPATCH='/path/to/coccinelle/spatch'
 ./build_src.sh --target=oot
 ```
 
-TIP: The spatch path may be omitted if it has been installed on the search path.
+> [!TIP]
+> The `spatch` path may be omitted if it has been installed on the search path.
 
-### Compiling the driver
+### Building the Driver
 
-Building and installing this driver requires that you have the headers installed
-for your current kernel version. On CentOS, you might have to additionally
-install the `kernel-devel` package.
+#### Kernel Header Dependencies
 
-Ensure the headers are installed, then build,
-install, and load `gve.ko`:
+Building and installing this driver requires that kernel headers installed for kernel version on which the driver will be loaded.
+
+Using `apt`:
+```
+sudo apt-get install -y linux-headers-$(uname -r)
+```
+
+Using `dnf`:
+```
+sudo dnf install -y kernel-devel-$(uname -r)
+```
+
+#### Compilation and Installation
+Once kernel headers are installed, GVE can be compiled and loaded.
 
 ```bash
 make -C /lib/modules/`uname -r`/build M=$(pwd)/build modules modules_install
-depmod
-modprobe gve
 ```
 
-Check via `ethtool -i devname` that the new driver is installed. If not, you can
-install it manually.
+## Loading the Driver
+To load the new driver, run:
+
+```bash
+depmod
+rmmod && modprobe gve
+```
+
+Check via `ethtool -i <DEV>` that the new driver is installed.
+
+If not, it can be installed manually using the `.ko` file. Depending on whether the driver was installed via `make` or `DEB/RPM`, the `.ko` file can be in different locations within `/lib/modules/$(uname -r)`.
+
+|Install method|Module location|
+|---|---|
+|From source|`/lib/modules/$(uname -r)/extra/`|
+|DEB|`/lib/modules/$(uname -r)/updates/dkms/`|
+|RPM|`/lib/modules/$(uname -r)/extra/`|
+
+> [!NOTE]
+> Depnding on the distro, the module might be compressed as an XZ file. It should still be possible to directly `insmod` such a file.
 
 > [!WARNING]
 > Run this as a single line, as running `rmmod` alone will remove the existing
-> driver and disconnect you if connected over SSH.
+> driver and network connectivity will be lost.
 
 ```bash
-sudo rmmod gve; sudo insmod ./build/gve.ko
+sudo rmmod gve; sudo insmod ./path/to/gve.ko
 ```
 
-# Configuration
+### Automatically loading GVE on boot
 
-## Ethtool
+Installing GVE from source will not necessarily allow the out-of-tree driver to load on boot. To load the out-of-tree driver on boot, the initramfs will need to re-generated:
 
-gve supports common ethtool operations including controlling offloads and
-multi-queue operation.
+```bash
+sudo dracut -f
+```
+
+# Driver Features and Configuration
+
+## Queue Counts
 
 Viewing/Changing the number of queues per traffic class is done via ethtool.
 
 ```bash
-ethtool --show-channels devname
+ethtool -l|--show-channels <DEV>
 ```
 
 Returns the number of transmit and receive queues per traffic class, along with
 those maximums.
 
 ```bash
-ethtool --set-channels devname [rx N] [tx N] [combined N]
+ethtool -L|--set-channels <DEV> [rx N] [tx N]
 ```
 
-combined: attempts to set both rx and tx queues to N rx: attempts to set rx
-queues to N tx: attempts to set tx queues to N
+## Modify Ring Size
+GVE has support for changing the ring descriptor counts. To check the current ring size/hardware limits:
 
-## XDP
-
-To attach an XDP program to the driver, the number of RX and TX queues must be
-no more than half their maximum values. The maximum values are based on the
-number of CPUs available.
-
-### Manual Configuration
-
-To manually configure gVNIC, you'll need to complete the following steps:
-
-* Install a driver capable of driving the new device installed in the guest OS.
-The Linux driver source is available on GitHub and is upstreamed into the Linux kernel. 
-* Create a boot disk tagged with the 'GVNIC' guest OS feature. 
-* Ensure that the nic-type is set to GVNIC for all interfaces intended to use gVNIC. To switch back to VirtioNet (the default option), using the same image, recreate the VM with change the nic-type set to VIRTIO_NET.
-
-
-The crucial step for both is ensuring you have a capable driver installed. An instance created with a gVNIC interface and no driver will have no internal or external network connectivity, including SSH and RDP. The interactive serial console may be useful for debugging if this situation arises.
-
-#### Instructions
-To build and install the kernel driver from source you must have a supported kernel with headers installed. Our driver supports building against mainline and major distribution kernels versions 3.10 and later. Follow your distro's instructions for how to do that. Source code and driver packages can be obtained from GitHub under [GoogleCloudPlatform/compute-virtual-ethernet-linux](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux).
-
-1. Install or update kernel and headers to version 3.10 or later. To complete this step, review the documentation for your operating system. Source code and driver packages can be obtained from GitHub, see [GoogleCloudPlatform/compute-virtual-ethernet-linux](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux).
-
-For example, if you are using Debian, you can install the kernel driver using the deb package either by running:
-```shell
-dpkg -i gve-dkms_1.1.0_all.deb
+```
+ethtool -g|--show-ring <DEV>
 ```
 
-or
-
-```shell
-apt update
-apt install ./gve-dkms_1.1.0_all.deb
+To update the ring size:
 ```
-Where gve-dkms_1.1.0_all.deb is the driver deb package that you have been supplied with. This will install the driver into the correct place in your filesystem.
-
-2. To load the driver run:
-```shell
-modprobe gve
+ethtool -G|--set-ring <DEV> [rx N] [tx N]
 ```
 
-This loads the driver until you remove it with rmmod or you reboot. If a driver
-was already installed or came with the kernel and `modprobe` does not update the
-driver version, you need to manually remove the module and point to the `gve.ko`
-file installed from the debian package (you can find the path in the output of
-the command in step 1). You can use this command to do so:
+## RSS Configuration
+The DQO RDA queue format has support for querying and configuring the RSS hash and indirection table.
 
-> [!WARNING]
-> Run this as a single line, as running `rmmod` alone will remove the existing
-> driver and disconnect you if connected over SSH.
+GVE only supports Toeplitz hashing, and the RSS hash key must be exactly 40 bytes. Upon RSS hash configuration, a default RSS indirection table will be set using a round-robin assignment of hash values to queues. The GVE indirection table has 128 entries.
+
+To read the RSS hash and indirection table:
+```
+ethtool -x|--show-rxfh <DEV>
+```
+
+The `ethtool -X` command can be used to set the RSS hash and the indirection table. The ethtool man pages have more information about this, but as an example:
+```
+ethtool -X eth0 hkey 00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77 \
+        start 4 equal 4
+```
+
+will create an RSS table with hash key `00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77` and an indirection table with all entries filled with `4 5 6 7` in a round-robin fashion, causing an even distribution of traffic on RX queues 4, 5, 6, and 7.
+
+## Receive Flow Steering
+Receive flow steering allows the traffic to be routed to a specific queue based on a configured N-tuple. Support for flow steering varies by VM platform, so it is best to check for support before attempting to use the feature:
 
 ```bash
-sudo rmmod gve; sudo insmod /path/to/gve.ko
+$ ethtool -k <DEV> | grep ntuple-filters
+ntuple-filters: off [fixed] # not supported
+ntuple-filters: off # supported, but not enabled
+ntuple-filters: on # enabled
 ```
 
-3. To have the driver automatically load on boot if you are using systemd run:
-```shell
-echo gve > /etc/modules-load.d/gve.conf
+To enable/disable:
+
+```
+ethtool -K <DEV> ntuple on|off
 ```
 
-Optional: If you are using debian run the following instead of the above command:
-```shell
-echo gve >> /etc/modules
+Once enabled, flow rules can be programmed using the standard `ethtool --config-ntuple` interface.
+
+As an example:
+```
+ethtool --config-ntuple eth0 flow-type tcp4 src-ip 192.168.100.2 dst-ip 192.168.100.1 src-port 12345 dst-port 7777 action 8 loc 1
 ```
 
-4. Stop the VM.
+Creates an IPv4 TCP flow rule (ID 1) for interface `eth0` that routes packets from 192.168.100.1:7777 destined for 192.168.100.2:12345 to be directed to queue 8.
 
-5. Create an image from the disk that is attached to the VM that you just stopped.
-```shell
-gcloud compute images create IMAGE_NAME\
-        --source-disk DISK_NAME \
-        --guest-os-features=GVNIC
+## Header-Data Split
+Header-data split, or TCP data split is only supported on the DQO RDA format. Support can be tested using `ethtool -g`.
+
+To enable/disable:
+```
+ethtool -G <DEV> tcp-data-split on|off
 ```
 
-6. Replace the following:
+## XDP
+Driver-mode support for [XDP](https://docs.cilium.io/en/latest/reference-guides/bpf/progtypes/#xdp) support was introduced in release [1.3.4](github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/releases/tag/v1.3.4) for the GQI QPL queue format and [1.4.6](github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/releases/tag/v1.4.6) for the DQO RDA queue format. The XDP implementation supports the following features:
 
-IMAGE_NAME: The name of the image that you want to create. This image has the Compute Engine virtual network driver installed.
-DISK_NAME: The name of the boot disk on the VM instance that you just stopped.
+1) Basic XDP action support (`PASS`, `DROP`, `TX`, )
+1) `NDO_XDP_XMIT` API
+1) XDP redirect support
+1) AF_XDP zero-copy
 
-7. Use the image, which now has the gVNIC driver installed, to create and start a VM with a gVNIC network interface.
-```shell
-gcloud compute instances create INSTANCE_NAME\
-		--image IMAGE_NAME \
-		--zone <preferred compute zone> \
-		--network-interface=nic-type=GVNIC
+### Configuration
+
+To attach an XDP program to the driver, the number of RX and TX queues must be
+no more than half their maximum values to accommodate the creation of extra XDP TX queues. The maximum values are based on the number of CPUs available. See [Queue Counts](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/tree/release?tab=readme-ov-file#queue-counts) to see how to get/set the number of queues.
+
+XDP can be enabled via comand line through `iproute2` or `bpftool`, or in a C program using `libbpf`.
+
+`iproute2`:
+```
+ip link set dev <DEV> xdp obj <XDP_PROG>
 ```
 
-Note: Before conducting a manual installation of the gVNIC driver, you will want to consult with your distro's out-of-tree (oot) support policy and [tainted](https://www.kernel.org/doc/html/latest/admin-guide/tainted-kernels.html) kernel support policy.
+`bpftool`:
+```
+bpftool net attach xdp name <XDP_PROG> dev <DEV>
+```
+
+
+# Feature Changelog
+Below is a changelog of features and major fixes which have been introduced to GVE. Note that it is recommended to always use the latest version of GVE, regardless of the features being used, as there might be smaller stability and compatibility patches introduced in more minor releases.
+
+#### v1.4.6
+* Control/dataplane interaction fixes for XDP
+* SKB RX timestamping
+* XDP for DQO-RDA queue format (including AF_XDP zero-copy)
+#### v1.4.5
+* Page pool buffer support
+#### v1.4.3
+* RSS support
+#### v1.4.2
+* Receive flow steering
+* TSO descriptor limit fix
+* XDP GQ counter overflow fix
+#### v1.4.0
+* DQO QPL queue format
+* Non-4K page size support
+* Header-data split
+* Modify ring size
+#### v1.3.4
+* XDP support for GQI-QPL (including AF_XDP zero-copy)
+* IPv6 BigTCP support on DQ
+#### v1.3.0
+* DQO RDA queue format
+#### v1.2.0
+* Support for driver suspend/resume
+
