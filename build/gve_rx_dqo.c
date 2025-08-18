@@ -881,6 +881,30 @@ static int gve_rx_xsk_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
+static void gve_dma_sync(struct gve_priv *priv, struct gve_rx_ring *rx,
+			 struct gve_rx_buf_state_dqo *buf_state, u16 buf_len)
+{
+	struct gve_rx_slot_page_info *page_info = &buf_state->page_info;
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
+	if (rx->dqo.page_pool) {
+		page_pool_dma_sync_netmem_for_cpu(rx->dqo.page_pool,
+						  page_info->netmem,
+						  page_info->page_offset,
+						  buf_len);
+	} else {
+		dma_sync_single_range_for_cpu(&priv->pdev->dev, buf_state->addr,
+					      page_info->page_offset +
+					      page_info->pad,
+					      buf_len, DMA_FROM_DEVICE);
+	}
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+	dma_sync_single_range_for_cpu(&priv->pdev->dev, buf_state->addr,
+				      page_info->page_offset, buf_len,
+				      DMA_FROM_DEVICE);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+}
+
 /* Returns 0 if descriptor is completed successfully.
  * Returns -EINVAL if descriptor is invalid.
  * Returns -ENOMEM if data cannot be copied to skb.
@@ -977,13 +1001,22 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 		rx->rx_hsplit_unsplit_pkt += unsplit;
 		rx->rx_hsplit_bytes += hdr_len;
 		u64_stats_update_end(&rx->statss);
+	} else {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
+		if (!rx->ctx.skb_head && rx->dqo.page_pool &&
+			   netmem_is_net_iov(buf_state->page_info.netmem)) {
+		/* when header split is disabled, the header went to the packet
+		 * buffer. If the packet buffer is a net_iov, those can't be
+		 * easily mapped into the kernel space to access the header
+		 * required to process the packet.
+		 */
+			goto error;
+		}
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	}
 
 	/* Sync the portion of dma buffer for CPU to read. */
-	dma_sync_single_range_for_cpu(&priv->pdev->dev, buf_state->addr,
-				      buf_state->page_info.page_offset +
-				      buf_state->page_info.pad,
-				      buf_len, DMA_FROM_DEVICE);
+	gve_dma_sync(priv, rx, buf_state, buf_len);
 
 	/* Append to current skb if one exists. */
 	if (rx->ctx.skb_head) {
@@ -1023,7 +1056,13 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 	}
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
-	if (eop && buf_len <= priv->rx_copybreak) {
+	if (eop && buf_len <= priv->rx_copybreak
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
+	     &&
+	    !(rx->dqo.page_pool &&
+	      netmem_is_net_iov(buf_state->page_info.netmem))
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+	    ) {
 		rx->ctx.skb_head = gve_rx_copy(priv->dev, napi,
 					       &buf_state->page_info, buf_len);
 		if (unlikely(!rx->ctx.skb_head))

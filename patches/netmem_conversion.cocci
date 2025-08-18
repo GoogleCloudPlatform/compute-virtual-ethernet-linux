@@ -179,3 +179,53 @@ for (init; cond; inc) {
 }
 ...
 }
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
+pp.flags |= PP_FLAG_ALLOW_UNREADABLE_NETMEM;
+pp.queue_idx = rx->q_num;
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
+if (!rx->ctx.skb_head && rx->dqo.page_pool &&
+    netmem_is_net_iov(buf_state->page_info.netmem))
+{
+	...
+}
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
+if (rx->dqo.page_pool) {
+	page_pool_dma_sync_netmem_for_cpu(rx->dqo.page_pool,
+				page_info->netmem,
+				page_info->page_offset,
+				buf_len);
+} else {
+	dma_sync_single_range_for_cpu(&priv->pdev->dev, buf_state->addr,
+				page_info->page_offset +
+				page_info->pad,
+				buf_len, DMA_FROM_DEVICE);
+}
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
++	dma_sync_single_range_for_cpu(&priv->pdev->dev, buf_state->addr,
++				      page_info->page_offset,
++				      buf_len, DMA_FROM_DEVICE);
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+
+
+@@
+@@
+if (eop && buf_len <= priv->rx_copybreak
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
+    && !(rx->dqo.page_pool &&
+	      netmem_is_net_iov(buf_state->page_info.netmem))
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+ )
+{
+	...
+}
