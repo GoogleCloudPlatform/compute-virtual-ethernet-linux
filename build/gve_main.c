@@ -39,7 +39,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.7-5-b41fb23-6fc6a7f-oot"
+#define GVE_VERSION		 "1.4.7-0--e01de3f-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -3240,6 +3240,7 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	struct gve_priv *priv;
 	int err;
 
+	dev_info(&pdev->dev, "GVE version %s\n", gve_version_str);
 	err = pci_enable_device(pdev);
 	if (err)
 		return err;
@@ -3349,7 +3350,6 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (err)
 		goto abort_with_gve_init;
 
-	dev_info(&pdev->dev, "GVE version %s\n", gve_version_str);
 	dev_info(&pdev->dev, "GVE queue format %d\n", (int)priv->queue_format);
 	gve_clear_probe_in_progress(priv);
 	queue_work(priv->gve_wq, &priv->service_task);
@@ -3400,6 +3400,8 @@ static void gve_shutdown(struct pci_dev *pdev)
 	struct net_device *netdev = pci_get_drvdata(pdev);
 	struct gve_priv *priv = netdev_priv(netdev);
 	bool was_up = netif_running(priv->dev);
+
+	netif_device_detach(netdev);
 
 	rtnl_lock();
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
