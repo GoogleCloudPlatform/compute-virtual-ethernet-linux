@@ -408,6 +408,13 @@ struct page_pool *gve_rx_create_page_pool(struct gve_priv *priv,
 		.offset = xdp ? XDP_PACKET_HEADROOM : 0,
 	};
 
+	if (priv->header_split_enabled) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
+		pp.flags |= PP_FLAG_ALLOW_UNREADABLE_NETMEM;
+		pp.queue_idx = rx->q_num;
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+	}
+
 	return page_pool_create(&pp);
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
