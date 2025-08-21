@@ -469,9 +469,16 @@ void gve_rx_post_buffers_dqo(struct gve_rx_ring *rx)
 		}
 
 		desc->buf_id = cpu_to_le16(buf_state - rx->dqo.buf_states);
-		desc->buf_addr = cpu_to_le64(buf_state->addr + buf_state->page_info.page_offset);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)
+		if (rx->xsk_pool)
+			desc->buf_addr = cpu_to_le64(xsk_buff_xdp_get_dma(buf_state->xsk_buff));
+		else
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0) */
+			
+			desc->buf_addr = cpu_to_le64(buf_state->addr + buf_state->page_info.page_offset + buf_state->page_info.pad);
 
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+		
 
 		if (rx->dqo.hdr_bufs.data)
 			desc->header_buf_addr =
