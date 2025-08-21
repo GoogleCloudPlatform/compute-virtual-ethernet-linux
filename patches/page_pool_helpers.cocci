@@ -309,8 +309,14 @@ void gve_rx_post_buffers_dqo(struct gve_rx_ring *rx)
 +		}
 +
 +		desc->buf_id = cpu_to_le16(buf_state - rx->dqo.buf_states);
-+		desc->buf_addr = cpu_to_le64(buf_state->addr +
-+					     buf_state->page_info.page_offset);
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)
++		if (rx->xsk_pool)
++			desc->buf_addr = cpu_to_le64(xsk_buff_xdp_get_dma(buf_state->xsk_buff));
++		else
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0) */
++			desc->buf_addr = cpu_to_le64(buf_state->addr +
++						     buf_state->page_info.page_offset +
++						     buf_state->page_info.pad);
 +
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
 		...
@@ -534,6 +540,19 @@ identifier gve_try_recycle_buf;
 +{
 +	struct gve_priv *priv = rx->gve;
 +	u32 idx;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
++	if  (rx->xsk_pool) {
++		buf_state->xsk_buff = xsk_buff_alloc(rx->xsk_pool);
++		if (unlikely(!buf_state->xsk_buff)) {
++			xsk_set_rx_need_wakeup(rx->xsk_pool);
++			gve_free_buf_state(rx, buf_state);
++			return -ENOMEM;
++		}
++		/* Allocated xsk buffer. Clear wakeup in case it was set. */
++		xsk_clear_rx_need_wakeup(rx->xsk_pool);
++		return 0;
++	}
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 +
 +	if (!rx->dqo.qpl) {
 +		int err;
@@ -558,7 +577,8 @@ identifier gve_try_recycle_buf;
 +	buf_state->page_info.page_offset = 0;
 +	buf_state->page_info.page_address =
 +		page_address(buf_state->page_info.page);
-+	buf_state->page_info.buf_size = rx->packet_buffer_size;
++	buf_state->page_info.buf_size = rx->packet_buffer_truesize;
++	buf_state->page_info.pad = rx->rx_headroom;
 +	buf_state->last_single_ref_offset = 0;
 +
 +	/* The page already has 1 ref. */
