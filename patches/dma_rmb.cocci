@@ -1,8 +1,0 @@
-@@
-@@
-
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0)
-dma_rmb();
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) */
-+rmb();
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0) */
