@@ -227,7 +227,6 @@ int gve_alloc_page_dqo(struct gve_rx_ring *rx,
 		buf_state->xsk_buff = xsk_buff_alloc(rx->xsk_pool);
 		if (unlikely(!buf_state->xsk_buff)) {
 			xsk_set_rx_need_wakeup(rx->xsk_pool);
-			gve_free_buf_state(rx, buf_state);
 			return -ENOMEM;
 		}
 		/* Allocated xsk buffer. Clear wakeup in case it was set. */
