@@ -49,11 +49,11 @@ static int gve_get_ts_info(struct net_device *netdev,
 @@
 @@
 static int gve_get_ts_info(struct net_device *netdev
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) || RHEL_VERSION_GTE(9,6)
  , struct kernel_ethtool_ts_info *info
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) || RHEL_VERSION_GTE(9,6) */
 + , struct ethtool_ts_info *info
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0) || RHEL_VERSION_GTE(9,6) */
  )
 {
 	...
