@@ -840,11 +840,11 @@ static int gve_rx_xsk_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 	int xdp_act;
 
 	xdp->data_end = xdp->data + buf_len;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0) || RHEL_VERSION_GTE(9,6)
 	xsk_buff_dma_sync_for_cpu(xdp);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0) || RHEL_VERSION_GTE(9,6) */
 	xsk_buff_dma_sync_for_cpu(xdp, rx->xsk_pool);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0) || RHEL_VERSION_GTE(9,6) */
 
 	if (xprog) {
 		xdp_act = bpf_prog_run_xdp(xprog, xdp);
