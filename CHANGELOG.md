@@ -3,6 +3,7 @@ Below is a changelog of features and major fixes which have been introduced to G
 
 #### [v1.4.7](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/releases/tag/v1.4.7)
 * Coccinelle fixes for XDP
+* Documentation updates
 #### [v1.4.6](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/releases/tag/v1.4.6)[Deprecated]
 * Control/dataplane interaction fixes for XDP
 * SKB RX timestamping
