@@ -37,7 +37,7 @@ gve_set_ringparam(...)
 -int err;
 +int err = 0;
 ...
-
+gve_get_curr_alloc_cfgs(priv, &tx_alloc_cfg, &rx_alloc_cfg);
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0))
 err = gve_set_rx_buf_len_config(...);
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
