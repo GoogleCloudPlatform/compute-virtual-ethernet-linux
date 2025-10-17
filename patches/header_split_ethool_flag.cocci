@@ -25,17 +25,17 @@ gve_get_ringparam(...)
 
 
 @ gve_set_ringparam @
+identifier err =~ "err";
 @@
 gve_set_ringparam(...)
 {
 ...
+-int err;
++int err = 0;
+...
+
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
-	int err;
-
-	err = gve_set_hsplit_config(...);
-	if (err)
-		return err;
-
+err = gve_set_hsplit_config(...);
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
 ...
 }
@@ -55,7 +55,9 @@ const struct ethtool_ops gve_ethtool_ops = {
 @ gve_set_hsplit_config @
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
-int gve_set_hsplit_config(struct gve_priv *priv, u8 tcp_data_split)
+int gve_set_hsplit_config(struct gve_priv *priv,
+			  u8 tcp_data_split,
+			  struct gve_rx_alloc_rings_cfg *rx_alloc_cfg)
 {
 	...
 }
@@ -65,7 +67,9 @@ int gve_set_hsplit_config(struct gve_priv *priv, u8 tcp_data_split)
 @ gve_set_hsplit_config_declaration @
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
-int gve_set_hsplit_config(struct gve_priv *priv, u8 tcp_data_split);
+int gve_set_hsplit_config(struct gve_priv *priv,
+			  u8 tcp_data_split,
+			  struct gve_rx_alloc_rings_cfg *rx_alloc_cfg);
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
 
 
