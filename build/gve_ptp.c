@@ -26,6 +26,20 @@ int gve_clock_nic_ts_read(struct gve_priv *priv)
 	return 0;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,0,0))
+static int gve_ptp_gettimex64(struct ptp_clock_info *info,
+			      struct timespec64 *ts,
+			      struct ptp_system_timestamp *sts)
+{
+	return -EOPNOTSUPP;
+}
+#else /*(LINUX_VERSION_CODE >= KERNEL_VERSION(5,0,0)) */
+static int gve_ptp_gettime64(struct ptp_clock_info *ptp,
+			     struct timespec64 *ts) {
+	return -EOPNOTSUPP;
+}
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,0,0) */
+
 static long gve_ptp_do_aux_work(struct ptp_clock_info *info)
 {
 	const struct gve_ptp *ptp = container_of(info, struct gve_ptp, info);
@@ -47,7 +61,13 @@ out:
 static const struct ptp_clock_info gve_ptp_caps = {
 	.owner          = THIS_MODULE,
 	.name		= "gve clock",
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,0,0))
+	.gettimex64	= gve_ptp_gettimex64,
+#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,0,0)) */
+	.gettime64 = gve_ptp_gettime64,
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,0,0) */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0))
+	
 	.do_aux_work	= gve_ptp_do_aux_work,
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0) */
 };
