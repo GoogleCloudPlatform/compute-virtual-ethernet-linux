@@ -40,6 +40,12 @@ static int gve_ptp_gettime64(struct ptp_clock_info *ptp,
 }
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,0,0) */
 
+static int gve_ptp_settime64(struct ptp_clock_info *info,
+			     const struct timespec64 *ts)
+{
+	return -EOPNOTSUPP;
+}
+
 static long gve_ptp_do_aux_work(struct ptp_clock_info *info)
 {
 	const struct gve_ptp *ptp = container_of(info, struct gve_ptp, info);
@@ -66,8 +72,9 @@ static const struct ptp_clock_info gve_ptp_caps = {
 #else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,0,0)) */
 	.gettime64 = gve_ptp_gettime64,
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,0,0) */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0))
 	
+	.settime64	= gve_ptp_settime64,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0))
 	.do_aux_work	= gve_ptp_do_aux_work,
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0) */
 };

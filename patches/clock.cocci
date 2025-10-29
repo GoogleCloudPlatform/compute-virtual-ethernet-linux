@@ -8,6 +8,7 @@ static const struct ptp_clock_info gve_ptp_caps = {
 +#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,0,0)) */
 +	.gettime64	= gve_ptp_gettime64,
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,0,0) */
+	.settime64	= gve_ptp_settime64,
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0))
 	.do_aux_work	= gve_ptp_do_aux_work,
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0) */
