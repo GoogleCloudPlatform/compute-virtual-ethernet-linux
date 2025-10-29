@@ -36,9 +36,9 @@ netdev_tx_t gve_tx_dqo(struct sk_buff *skb, struct net_device *dev);
 netdev_features_t gve_features_check_dqo(struct sk_buff *skb,
 					 struct net_device *dev,
 					 netdev_features_t features);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0))
 int gve_xdp_rx_timestamp(const struct xdp_md *_ctx, u64 *timestamp);
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) */
 bool gve_tx_poll_dqo(struct gve_notify_block *block, bool do_clean);
 bool gve_xdp_poll_dqo(struct gve_notify_block *block);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))

@@ -39,7 +39,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.7-0--25f4c9f-oot"
+#define GVE_VERSION		 "1.4.7-0--af55b5a-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -2831,11 +2831,11 @@ static void gve_set_netdev_xdp_features(struct gve_priv *priv)
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL) || RHEL_VERSION_GTE(9,4) */
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0))
 static const struct xdp_metadata_ops gve_xdp_metadata_ops = {
 	.xmo_rx_timestamp	= gve_xdp_rx_timestamp,
 };
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) */
 
 static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 {
@@ -2944,10 +2944,10 @@ setup_device:
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 	gve_set_netdev_xdp_features(priv);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0))
 	if (!gve_is_gqi(priv))
 		priv->dev->xdp_metadata_ops = &gve_xdp_metadata_ops;
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) */
 
 	err = gve_setup_device_resources(priv);
 	if (err)
