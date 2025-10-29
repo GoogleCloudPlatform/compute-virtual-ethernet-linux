@@ -274,9 +274,9 @@ int gve_rx_alloc_ring_dqo(struct gve_priv *priv,
 	/* struct gve_xdp_buff is overlaid on struct xdp_buff_xsk and utilizes
 	 * the 24 byte field cb to store gve specific data.
 	 */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0))
 	XSK_CHECK_PRIV_TYPE(struct gve_xdp_buff);
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) */
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 	rx->dqo.num_buf_states = cfg->raw_addressing ? min_t(s16, S16_MAX,
@@ -586,7 +586,7 @@ static void gve_rx_skb_hwtstamp(struct gve_rx_ring *rx,
 	}
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0))
 int gve_xdp_rx_timestamp(const struct xdp_md *_ctx, u64 *timestamp)
 {
 	const struct gve_xdp_buff *ctx = (void *)_ctx;
@@ -601,7 +601,7 @@ int gve_xdp_rx_timestamp(const struct xdp_md *_ctx, u64 *timestamp)
 					 le32_to_cpu(ctx->compl_desc->ts));
 	return 0;
 }
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) */
 
 static void gve_rx_free_skb(struct napi_struct *napi, struct gve_rx_ring *rx)
 {
