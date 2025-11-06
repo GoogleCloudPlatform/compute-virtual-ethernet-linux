@@ -39,7 +39,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.7-0--efad73f-oot"
+#define GVE_VERSION		 "1.4.7-0--197a1fa-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -2011,14 +2011,25 @@ static int gve_verify_xdp_configuration(struct net_device *dev,
 		return -EOPNOTSUPP;
 	}
 
+	if (priv->rx_cfg.packet_buffer_size != SZ_2K) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,2,0)
+		NL_SET_ERR_MSG_FMT_MOD(extack,
+				       "XDP is not supported for Rx buf len %d, only %d supported.",
+				       priv->rx_cfg.packet_buffer_size, SZ_2K);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,2,0) */
+		return -EOPNOTSUPP;
+	}
+
 	max_xdp_mtu = priv->rx_cfg.packet_buffer_size - sizeof(struct ethhdr);
 	if (priv->queue_format == GVE_GQI_QPL_FORMAT)
 		max_xdp_mtu -= GVE_RX_PAD;
 
 	if (dev->mtu > max_xdp_mtu) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,2,0)
 		NL_SET_ERR_MSG_FMT_MOD(extack,
 				       "XDP is not supported for mtu %d.",
 				       dev->mtu);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,2,0) */
 		return -EOPNOTSUPP;
 	}
 
@@ -2427,6 +2438,46 @@ bool gve_header_split_supported(const struct gve_priv *priv)
 	return priv->header_buf_size &&
 		priv->queue_format == GVE_DQO_RDA_FORMAT && !priv->xdp_prog;
 }
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0))
+int gve_set_rx_buf_len_config(struct gve_priv *priv, u32 rx_buf_len,
+			      struct netlink_ext_ack *extack,
+			      struct gve_rx_alloc_rings_cfg *rx_alloc_cfg)
+{
+	u32 old_rx_buf_len = rx_alloc_cfg->packet_buffer_size;
+
+	if (rx_buf_len == old_rx_buf_len)
+		return 0;
+
+	/* device options may not always contain support for 4K buffers */
+	if (!gve_is_dqo(priv) || priv->max_rx_buffer_size < SZ_4K) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Modifying Rx buf len is not supported");
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,12,0) */
+		return -EOPNOTSUPP;
+	}
+
+	if (priv->xdp_prog && rx_buf_len != SZ_2K) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Rx buf len can only be 2048 when XDP is on");
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,12,0) */
+		return -EINVAL;
+	}
+
+	if (rx_buf_len != SZ_2K && rx_buf_len != SZ_4K) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Rx buf len can only be 2048 or 4096");
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,12,0) */
+		return -EINVAL;
+	}
+	rx_alloc_cfg->packet_buffer_size = rx_buf_len;
+
+	return 0;
+}
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
 int gve_set_hsplit_config(struct gve_priv *priv, u8 tcp_data_split,

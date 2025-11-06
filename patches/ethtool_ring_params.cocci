@@ -12,6 +12,10 @@
 gve_get_ringparam(...)
 {
 ...
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0))
+	kernel_cmd->rx_buf_len = priv->rx_cfg.packet_buffer_size;
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
+...
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
 	if (!gve_header_split_supported(priv))
 		kernel_cmd->tcp_data_split = ETHTOOL_TCP_DATA_SPLIT_UNKNOWN;
@@ -34,6 +38,11 @@ gve_set_ringparam(...)
 +int err = 0;
 ...
 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0))
+err = gve_set_rx_buf_len_config(...);
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
+...
+
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
 err = gve_set_hsplit_config(...);
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
@@ -42,12 +51,19 @@ err = gve_set_hsplit_config(...);
 
 
 @ gve_ethtool_ops @
-identifier gve_ethtool_ops, ethtool_use_hsplit_flag;
+identifier gve_ethtool_ops;
+expression supported_ring_params_flags;
 @@
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0))
++#define ETHTOOL_RING_USE_TCP_DATA_SPLIT 0
++#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0) */
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(5,17,0))
++#define ETHTOOL_RING_USE_RX_BUF_LEN 0
++#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(5,17,0) */
 const struct ethtool_ops gve_ethtool_ops = {
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
-	.supported_ring_params = ethtool_use_hsplit_flag,
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0))
+	.supported_ring_params = supported_ring_params_flags,
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
 	.get_drvinfo = gve_get_drvinfo,
 };
 
@@ -71,6 +87,27 @@ int gve_set_hsplit_config(struct gve_priv *priv,
 			  u8 tcp_data_split,
 			  struct gve_rx_alloc_rings_cfg *rx_alloc_cfg);
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
+
+
+@ gve_set_rx_buf_len_config @
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0))
+int gve_set_rx_buf_len_config(struct gve_priv *priv, u32 rx_buf_len,
+			      struct netlink_ext_ack *extack,
+			      struct gve_rx_alloc_rings_cfg *rx_alloc_cfg)
+{
+	...
+}
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
+
+
+@ gve_set_rx_buf_len_config_declaration @
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0))
+int gve_set_rx_buf_len_config(struct gve_priv *priv, u32 rx_buf_len,
+			      struct netlink_ext_ack *extack,
+			      struct gve_rx_alloc_rings_cfg *rx_alloc_cfg);
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
 
 
 @ add_gve_priv_variables @
