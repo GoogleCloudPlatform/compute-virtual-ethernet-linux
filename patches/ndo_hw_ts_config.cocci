@@ -119,9 +119,3 @@ struct gve_priv {
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0) */
 ...
 };
-
-@@
-@@
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
-NL_SET_ERR_MSG_MOD(...);
-+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,12,0) */
