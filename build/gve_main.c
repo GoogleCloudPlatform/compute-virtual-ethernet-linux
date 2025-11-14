@@ -39,7 +39,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.7-0--71ceaf8-oot"
+#define GVE_VERSION		 "1.4.7-0--7b155a4-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -2596,14 +2596,6 @@ static int gve_set_ts_config(struct net_device *dev,
 		}
 
 		kernel_config->rx_filter = HWTSTAMP_FILTER_ALL;
-		gve_clock_nic_ts_read(priv);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0))
-		ptp_schedule_worker(priv->ptp->clock, 0);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0) */
-	} else {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0))
-		ptp_cancel_worker_sync(priv->ptp->clock);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) */
 	}
 
 	priv->ts_config.rx_filter = kernel_config->rx_filter;
