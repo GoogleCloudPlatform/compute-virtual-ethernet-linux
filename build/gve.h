@@ -231,6 +231,8 @@ struct gve_rx_buf_state_dqo {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
 struct gve_xdp_buff {
 	struct xdp_buff xdp;
+	struct gve_priv *gve;
+	const struct gve_rx_compl_desc_dqo *compl_desc;
 };
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
