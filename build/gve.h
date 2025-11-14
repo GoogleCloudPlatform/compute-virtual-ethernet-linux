@@ -227,6 +227,13 @@ struct gve_rx_buf_state_dqo {
 	s16 next;
 };
 
+/* Wrapper for XDP Rx metadata */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+struct gve_xdp_buff {
+	struct xdp_buff xdp;
+};
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
+
 /* `head` and `tail` are indices into an array, or -1 if empty. */
 struct gve_index_list {
 	s16 head;

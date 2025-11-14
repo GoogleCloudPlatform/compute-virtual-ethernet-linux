@@ -39,7 +39,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.7-0--7b155a4-oot"
+#define GVE_VERSION		 "1.4.7-0--3130597-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -1810,10 +1810,10 @@ static int gve_set_xdp(struct gve_priv *priv, struct bpf_prog *prog,
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 	if (!netif_running(priv->dev)) {
 		WRITE_ONCE(priv->xdp_prog, prog);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
 		if (old_prog)
 			bpf_prog_put(old_prog);
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
 		/* Update priv XDP queue configuration */
 		priv->tx_cfg.num_xdp_queues = priv->xdp_prog ?
@@ -1830,10 +1830,10 @@ static int gve_set_xdp(struct gve_priv *priv, struct bpf_prog *prog,
 		goto out;
 
 	WRITE_ONCE(priv->xdp_prog, prog);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
 	if (old_prog)
 		bpf_prog_put(old_prog);
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
 out:
 	status = ioread32be(&priv->reg_bar0->device_status);

@@ -835,8 +835,8 @@ err:
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
 static int gve_rx_xsk_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 			  struct gve_rx_buf_state_dqo *buf_state, int buf_len,
 			  struct bpf_prog *xprog)
@@ -884,8 +884,8 @@ static int gve_rx_xsk_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 	u64_stats_update_end(&rx->statss);
 	return 0;
 }
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
 static void gve_dma_sync(struct gve_priv *priv, struct gve_rx_ring *rx,
 			 struct gve_rx_buf_state_dqo *buf_state, u16 buf_len)
@@ -963,10 +963,10 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 	xprog = ACCESS_ONCE(priv->xdp_prog);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,20,0) */
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
 	if (buf_state->xsk_buff)
 		return gve_rx_xsk_dqo(napi, rx, buf_state, buf_len, xprog);
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
 	/* Page might have not been used for awhile and was likely last written
 	 * by a different thread.
@@ -1033,25 +1033,25 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 		return 0;
 	}
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
 	if (xprog) {
-		struct xdp_buff xdp;
+		struct gve_xdp_buff gve_xdp;
 		void *old_data;
 		int xdp_act;
 
-		xdp_init_buff(&xdp, buf_state->page_info.buf_size,
+		xdp_init_buff(&gve_xdp.xdp, buf_state->page_info.buf_size,
 			      &rx->xdp_rxq);
-		xdp_prepare_buff(&xdp,
+		xdp_prepare_buff(&gve_xdp.xdp,
 				 buf_state->page_info.page_address +
 				 buf_state->page_info.page_offset,
 				 buf_state->page_info.pad,
 				 buf_len, false);
-		old_data = xdp.data;
-		xdp_act = bpf_prog_run_xdp(xprog, &xdp);
-		buf_state->page_info.pad += xdp.data - old_data;
-		buf_len = xdp.data_end - xdp.data;
+		old_data = gve_xdp.xdp.data;
+		xdp_act = bpf_prog_run_xdp(xprog, &gve_xdp.xdp);
+		buf_state->page_info.pad += gve_xdp.xdp.data - old_data;
+		buf_len = gve_xdp.xdp.data_end - gve_xdp.xdp.data;
 		if (xdp_act != XDP_PASS) {
-			gve_xdp_done_dqo(priv, rx, &xdp, xprog, xdp_act,
+			gve_xdp_done_dqo(priv, rx, &gve_xdp.xdp, xprog, xdp_act,
 					 buf_state);
 			return 0;
 		}
@@ -1060,7 +1060,7 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 		rx->xdp_actions[XDP_PASS]++;
 		u64_stats_update_end(&rx->statss);
 	}
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
 	if (eop && buf_len <= priv->rx_copybreak
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))

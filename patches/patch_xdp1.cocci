@@ -455,17 +455,17 @@ xsk_buff_free(...)
 @@
 identifier buf_state;
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
 if (buf_state->xsk_buff) {
   return gve_rx_xsk_dqo(...);
 }
-+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
 @@
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
 static int gve_rx_xsk_dqo(...) { ... }
-+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
 @@
 @@
@@ -513,9 +513,9 @@ pending_packet gve_xsk_reorder_queue_head(...) { ... }
 
 @@
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
 static int gve_rx_xsk_dqo(...) { ... }
-+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
 @@
 @@
@@ -593,4 +593,12 @@ err = verify_xdp_configuration(dev
  );
 ...
 }
+
+@@
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+struct gve_xdp_buff {
+...
+};
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
