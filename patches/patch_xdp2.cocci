@@ -118,11 +118,11 @@ identifier READ_ONCE;
 xprog = READ_ONCE(priv->xdp_prog);
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 ...
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
 if (xprog) {
 ...
 }
-+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
 @ assign3 @
 identifier xdp_act, rx, XDP_ACT;
