@@ -271,6 +271,13 @@ int gve_rx_alloc_ring_dqo(struct gve_priv *priv,
 		rx->rx_headroom = 0;
 	}
 
+	/* struct gve_xdp_buff is overlaid on struct xdp_buff_xsk and utilizes
+	 * the 24 byte field cb to store gve specific data.
+	 */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+	XSK_CHECK_PRIV_TYPE(struct gve_xdp_buff);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
+
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 	rx->dqo.num_buf_states = cfg->raw_addressing ? min_t(s16, S16_MAX,
 							     buffer_queue_slots * 4) : gve_get_rx_pages_per_qpl_dqo(cfg->ring_size);
@@ -859,11 +866,14 @@ err:
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
 static int gve_rx_xsk_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
-			  struct gve_rx_buf_state_dqo *buf_state, int buf_len,
+			  const struct gve_rx_compl_desc_dqo *compl_desc,
+			  struct gve_rx_buf_state_dqo *buf_state,
 			  struct bpf_prog *xprog)
 {
 	struct xdp_buff *xdp = buf_state->xsk_buff;
+	int buf_len = compl_desc->packet_len;
 	struct gve_priv *priv = rx->gve;
+	struct gve_xdp_buff *gve_xdp;
 	int xdp_act;
 
 	xdp->data_end = xdp->data + buf_len;
@@ -872,6 +882,10 @@ static int gve_rx_xsk_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0) || RHEL_VERSION_GTE(9,6) */
 	xsk_buff_dma_sync_for_cpu(xdp, rx->xsk_pool);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0) || RHEL_VERSION_GTE(9,6) */
+
+	gve_xdp = (void *)xdp;
+	gve_xdp->gve = priv;
+	gve_xdp->compl_desc = compl_desc;
 
 	if (xprog) {
 		xdp_act = bpf_prog_run_xdp(xprog, xdp);
@@ -986,7 +1000,7 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
 	if (buf_state->xsk_buff)
-		return gve_rx_xsk_dqo(napi, rx, buf_state, buf_len, xprog);
+		return gve_rx_xsk_dqo(napi, rx, compl_desc, buf_state, xprog);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
 	/* Page might have not been used for awhile and was likely last written
