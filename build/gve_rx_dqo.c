@@ -934,15 +934,13 @@ static void gve_dma_sync(struct gve_priv *priv, struct gve_rx_ring *rx,
 						  page_info->page_offset,
 						  buf_len);
 	} else {
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 		dma_sync_single_range_for_cpu(&priv->pdev->dev, buf_state->addr,
 					      page_info->page_offset +
 					      page_info->pad,
 					      buf_len, DMA_FROM_DEVICE);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	}
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
-	dma_sync_single_range_for_cpu(&priv->pdev->dev, buf_state->addr,
-				      page_info->page_offset, buf_len,
-				      DMA_FROM_DEVICE);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 }
 
