@@ -198,25 +198,17 @@ if (!rx->ctx.skb_head && rx->dqo.page_pool &&
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 
 @@
+expression dev, offset, pad, buf_len, dma_mode, addr;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 if (rx->dqo.page_pool) {
-	page_pool_dma_sync_netmem_for_cpu(rx->dqo.page_pool,
-				page_info->netmem,
-				page_info->page_offset,
-				buf_len);
+	page_pool_dma_sync_netmem_for_cpu(...);
 } else {
-	dma_sync_single_range_for_cpu(&priv->pdev->dev, buf_state->addr,
-				page_info->page_offset +
-				page_info->pad,
-				buf_len, DMA_FROM_DEVICE);
-}
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
-+	dma_sync_single_range_for_cpu(&priv->pdev->dev, buf_state->addr,
-+				      page_info->page_offset,
-+				      buf_len, DMA_FROM_DEVICE);
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
-
+	dma_sync_single_range_for_cpu(...);
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
+}
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 
 @@
 @@
