@@ -39,7 +39,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.8-0--ec73589-oot"
+#define GVE_VERSION		 "1.4.8-0--34ae86a-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -317,12 +317,12 @@ static void gve_stats_report_timer(unsigned long data) {
 #else /* LINUX_VERSION_CODE < KERNEL_VERSION(4,15,0) */
 static void gve_stats_report_timer(struct timer_list *t)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || (RHEL_VERSION_GTE(9,8) && RHEL_VERSION_LT(10,0)) || RHEL_VERSION_GTE(10,2)
 	struct gve_priv *priv = timer_container_of(priv, t,
 						   stats_report_timer);
-#else /* LINUX_VERSION_CODE < KERNEL_VERSION(6,16,0) */
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(6,16,0) || (RHEL_VERSION_GTE(9,8) && RHEL_VERSION_LT(10,0)) || RHEL_VERSION_GTE(10,2) */
 	struct gve_priv *priv = from_timer(priv, t, stats_report_timer);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || (RHEL_VERSION_GTE(9,8) && RHEL_VERSION_LT(10,0)) || RHEL_VERSION_GTE(10,2) */
 
 	mod_timer(&priv->stats_report_timer,
 		  round_jiffies(jiffies +

@@ -59,9 +59,9 @@ timer_delete_sync(t);
 expression list l;
 @@
 
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || (RHEL_VERSION_GTE(9,8) && RHEL_VERSION_LT(10,0)) || RHEL_VERSION_GTE(10,2)
 struct gve_priv *priv = timer_container_of(l);
-+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(6,16,0) */
++#else /* LINUX_VERSION_CODE < KERNEL_VERSION(6,16,0) || (RHEL_VERSION_GTE(9,8) && RHEL_VERSION_LT(10,0)) || RHEL_VERSION_GTE(10,2) */
 +struct gve_priv *priv = from_timer(l);
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || (RHEL_VERSION_GTE(9,8) && RHEL_VERSION_LT(10,0)) || RHEL_VERSION_GTE(10,2) */
 
