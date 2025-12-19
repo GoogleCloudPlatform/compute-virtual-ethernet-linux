@@ -1046,7 +1046,7 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 		if (!rx->ctx.skb_head && rx->dqo.page_pool &&
 			   netmem_is_net_iov(buf_state->page_info.netmem)) {
-		/* when header split is disabled, the header went to the packet
+			/* when header split is disabled, the header went to the packet
 		 * buffer. If the packet buffer is a net_iov, those can't be
 		 * easily mapped into the kernel space to access the header
 		 * required to process the packet.

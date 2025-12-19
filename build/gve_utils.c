@@ -133,12 +133,14 @@ void gve_add_napi(struct gve_priv *priv, int ntfy_idx,
 	netif_napi_set_irq(&block->napi, block->irq);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+	enable_irq(block->irq);
 }
 
 void gve_remove_napi(struct gve_priv *priv, int ntfy_idx)
 {
 	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 
+	disable_irq(block->irq);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
 	netif_napi_del_locked(&block->napi);
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
