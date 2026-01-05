@@ -991,15 +991,23 @@ static int gve_set_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd)
 	return err;
 }
 
+static u32 gve_get_rx_ring_count(struct net_device *netdev)
+{
+	struct gve_priv *priv = netdev_priv(netdev);
+
+	return priv->rx_cfg.num_queues;
+}
+
 static int gve_get_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd, u32 *rule_locs)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
 	int err = 0;
 
 	switch (cmd->cmd) {
-	case ETHTOOL_GRXRINGS:
-		cmd->data = priv->rx_cfg.num_queues;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,19,0)
+	case ETHTOOL_GRXRINGS:  cmd->data = gve_get_rx_ring_count(netdev);
 		break;
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,19,0) */
 	case ETHTOOL_GRXCLSRLCNT:
 		if (!priv->max_flow_rules)
 			return -EOPNOTSUPP;
@@ -1233,6 +1241,9 @@ const struct ethtool_ops gve_ethtool_ops = {
 	.get_channels = gve_get_channels,
 	.set_rxnfc = gve_set_rxnfc,
 	.get_rxnfc = gve_get_rxnfc,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,19,0)
+	.get_rx_ring_count = gve_get_rx_ring_count,
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,19,0) */
 	.get_rxfh_indir_size = gve_get_rxfh_indir_size,
 	.get_rxfh_key_size = gve_get_rxfh_key_size,
 	.get_rxfh = gve_get_rxfh,
