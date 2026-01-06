@@ -39,7 +39,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.8-2-fea5d84-b11241f-oot"
+#define GVE_VERSION		 "1.4.8-3-fea5d84-497ffa6-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -3123,9 +3123,9 @@ static void gve_rx_queue_mem_free(struct net_device *dev, void *per_q_mem)
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
-static int gve_rx_queue_mem_alloc(struct net_device *dev, void *per_q_mem,
-				  int idx)
+static int gve_rx_queue_mem_alloc(struct net_device *dev,
+				  struct netdev_queue_config *qcfg,
+				  void *per_q_mem, int idx)
 {
 	struct gve_priv *priv = netdev_priv(dev);
 	struct gve_rx_alloc_rings_cfg cfg = {0};
@@ -3145,10 +3145,10 @@ static int gve_rx_queue_mem_alloc(struct net_device *dev, void *per_q_mem,
 
 	return err;
 }
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
-static int gve_rx_queue_start(struct net_device *dev, void *per_q_mem, int idx)
+static int gve_rx_queue_start(struct net_device *dev,
+			      struct netdev_queue_config *qcfg,
+			      void *per_q_mem, int idx)
 {
 	struct gve_priv *priv = netdev_priv(dev);
 	struct gve_rx_ring *gve_per_q_mem;
@@ -3197,7 +3197,6 @@ abort:
 	memset(&priv->rx[idx], 0, sizeof(priv->rx[idx]));
 	return err;
 }
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 static const struct netdev_queue_mgmt_ops gve_queue_mgmt_ops = {
