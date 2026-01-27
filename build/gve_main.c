@@ -39,7 +39,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.8-0--e225bfb-oot"
+#define GVE_VERSION		 "1.4.8-0--291c218-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -863,10 +863,12 @@ static int gve_setup_device_resources(struct gve_priv *priv)
 		}
 	}
 
-	err = gve_init_clock(priv);
-	if (err) {
-		dev_err(&priv->pdev->dev, "Failed to init clock");
-		goto abort_with_ptype_lut;
+	if (priv->nic_timestamp_supported) {
+		err = gve_init_clock(priv);
+		if (err) {
+			dev_warn(&priv->pdev->dev, "Failed to init clock, continuing without PTP support");
+			err = 0;
+		}
 	}
 
 	err = gve_init_rss_config(priv, priv->rx_cfg.num_queues);
@@ -2597,7 +2599,7 @@ static int gve_set_ts_config(struct net_device *dev,
 	}
 
 	if (kernel_config->rx_filter != HWTSTAMP_FILTER_NONE) {
-		if (!priv->nic_ts_report) {
+		if (!gve_is_clock_enabled(priv)) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
 			NL_SET_ERR_MSG_MOD(extack,
 					   "RX timestamping is not supported");
