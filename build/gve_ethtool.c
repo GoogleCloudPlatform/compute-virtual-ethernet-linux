@@ -1196,9 +1196,8 @@ static int gve_get_ts_info(struct net_device *netdev
 	struct gve_priv *priv = netdev_priv(netdev);
 
 	ethtool_op_get_ts_info(netdev, info);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0)
 
-	if (priv->nic_timestamp_supported) {
+	if (gve_is_clock_enabled(priv)) {
 		info->so_timestamping |= SOF_TIMESTAMPING_RX_HARDWARE |
 					 SOF_TIMESTAMPING_RAW_HARDWARE;
 
@@ -1208,7 +1207,6 @@ static int gve_get_ts_info(struct net_device *netdev
 		if (priv->ptp)
 			info->phc_index = ptp_clock_index(priv->ptp->clock);
 	}
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0) */
 
 	return 0;
 }
