@@ -39,7 +39,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.8-0--291c218-oot"
+#define GVE_VERSION		 "1.4.8-0--58c7edb-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -336,9 +336,9 @@ static int gve_alloc_stats_report(struct gve_priv *priv)
 	int tx_stats_num, rx_stats_num;
 
 	tx_stats_num = (GVE_TX_STATS_REPORT_NUM + NIC_TX_STATS_REPORT_NUM) *
-		       gve_num_tx_queues(priv);
+				priv->tx_cfg.max_queues;
 	rx_stats_num = (GVE_RX_STATS_REPORT_NUM + NIC_RX_STATS_REPORT_NUM) *
-		       priv->rx_cfg.num_queues;
+				priv->rx_cfg.max_queues;
 #if !defined(struct_size) || !defined(size_add)
 	priv->stats_report_len = sizeof(*priv->stats_report) + sizeof((priv->stats_report)->stats[0]) * (tx_stats_num + rx_stats_num);
 #else
