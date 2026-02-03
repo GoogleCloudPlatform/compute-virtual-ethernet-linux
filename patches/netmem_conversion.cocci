@@ -14,31 +14,21 @@ struct gve_rx_slot_page_info {
 };
 
 @@
+expression pp;
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
-static void gve_skb_add_rx_frag(...)
+void gve_skb_add_rx_frag(...)
 {
-	...
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
+if (pp) {
+...
+} else {
++#endif
+...
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 }
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) */
++#endif
 
-@@
-@@
-static int gve_rx_append_frags(...)
-{
-	...
-	if (gve_rx_should_trigger_copy_ondemand(rx))
-		return gve_rx_copy_ondemand(rx, buf_state, buf_len);
 
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
-	gve_skb_add_rx_frag(rx, buf_state, num_frags, buf_len);
-+#else
-+	skb_add_rx_frag(rx->ctx.skb_tail, num_frags,
-+			buf_state->page_info.page,
-+			buf_state->page_info.page_offset,
-+			buf_len, buf_state->page_info.buf_size);
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) */
-	...
 }
 
 @@
@@ -56,15 +46,6 @@ static int gve_rx_dqo(...)
 +#else
 +	prefetch(buf_state->page_info.page);
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
-	...
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
-	gve_skb_add_rx_frag(rx, buf_state, 0, buf_len);
-+#else
-+	skb_add_rx_frag(rx->ctx.skb_head, 0, buf_state->page_info.page,
-+			buf_state->page_info.page_offset, buf_len,
-+			buf_state->page_info.buf_size);
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
-	gve_reuse_buffer(rx, buf_state);
 	...
 }
 
