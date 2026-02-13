@@ -64,11 +64,11 @@ static int gve_get_rxnfc(...)
 {
     ...
 	switch (cmd->cmd) {
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,19,0)
++#if LINUX_VERSION_CODE < KERNEL_VERSION(7,0,0)
 +	case ETHTOOL_GRXRINGS:
 +		cmd->data = gve_get_rx_ring_count(netdev);
 +		break;
-+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,19,0) */
++#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(7,0,0) */
     case ETHTOOL_GRXCLSRLCNT:
     ...
     }

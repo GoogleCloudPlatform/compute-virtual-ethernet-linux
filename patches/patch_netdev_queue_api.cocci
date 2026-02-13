@@ -38,9 +38,9 @@ parameter P1, P2, P3, P4;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 static int gve_rx_queue_mem_alloc(P1
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,19,0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
                                   ,P2
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,19,0) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0) */
                                   ,P3, P4)
 {
 ...
@@ -61,9 +61,9 @@ parameter P1, P2, P3, P4;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 static int gve_rx_queue_start(P1
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,19,0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
                                   ,P2
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,19,0) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0) */
                                   ,P3, P4)
 {
 ...
