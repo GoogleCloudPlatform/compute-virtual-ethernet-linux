@@ -591,7 +591,7 @@ int gve_xdp_rx_timestamp(const struct xdp_md *_ctx, u64 *timestamp)
 {
 	const struct gve_xdp_buff *ctx = (void *)_ctx;
 
-	if (!ctx->gve->nic_ts_report)
+	if (!gve_is_clock_enabled(ctx->gve))
 		return -ENODATA;
 
 	if (!(ctx->compl_desc->ts_sub_nsecs_low & GVE_DQO_RX_HWTSTAMP_VALID))
@@ -652,11 +652,11 @@ static int gve_rx_copy_ondemand(struct gve_rx_ring *rx,
 	return 0;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 static void gve_skb_add_rx_frag(struct gve_rx_ring *rx,
 				struct gve_rx_buf_state_dqo *buf_state,
 				int num_frags, u16 buf_len)
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	if (rx->dqo.page_pool) {
 		skb_add_rx_frag_netmem(rx->ctx.skb_tail, num_frags,
 				       buf_state->page_info.netmem,
@@ -664,14 +664,16 @@ static void gve_skb_add_rx_frag(struct gve_rx_ring *rx,
 				       buf_state->page_info.pad, buf_len,
 				       buf_state->page_info.buf_size);
 	} else {
+#endif
 		skb_add_rx_frag(rx->ctx.skb_tail, num_frags,
 				buf_state->page_info.page,
 				buf_state->page_info.page_offset +
 				buf_state->page_info.pad, buf_len,
 				buf_state->page_info.buf_size);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	}
+#endif
 }
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) */
 
 /* Chains multi skbs for single rx packet.
  * Returns 0 if buffer is appended, -1 otherwise.
@@ -711,15 +713,8 @@ static int gve_rx_append_frags(struct napi_struct *napi,
 	/* Trigger ondemand page allocation if we are running low on buffers */
 	if (gve_rx_should_trigger_copy_ondemand(rx))
 		return gve_rx_copy_ondemand(rx, buf_state, buf_len);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 
 	gve_skb_add_rx_frag(rx, buf_state, num_frags, buf_len);
-#else
-	skb_add_rx_frag(rx->ctx.skb_tail, num_frags,
-			buf_state->page_info.page,
-			buf_state->page_info.page_offset, buf_len,
-			buf_state->page_info.buf_size);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) */
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 	gve_dec_pagecnt_bias(&buf_state->page_info);
 	gve_try_recycle_buf(priv, rx, buf_state);
@@ -934,15 +929,13 @@ static void gve_dma_sync(struct gve_priv *priv, struct gve_rx_ring *rx,
 						  page_info->page_offset,
 						  buf_len);
 	} else {
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 		dma_sync_single_range_for_cpu(&priv->pdev->dev, buf_state->addr,
 					      page_info->page_offset +
 					      page_info->pad,
 					      buf_len, DMA_FROM_DEVICE);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	}
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
-	dma_sync_single_range_for_cpu(&priv->pdev->dev, buf_state->addr,
-				      page_info->page_offset, buf_len,
-				      DMA_FROM_DEVICE);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 }
 
@@ -1046,7 +1039,7 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 		if (!rx->ctx.skb_head && rx->dqo.page_pool &&
 			   netmem_is_net_iov(buf_state->page_info.netmem)) {
-		/* when header split is disabled, the header went to the packet
+			/* when header split is disabled, the header went to the packet
 		 * buffer. If the packet buffer is a net_iov, those can't be
 		 * easily mapped into the kernel space to access the header
 		 * required to process the packet.
@@ -1143,13 +1136,7 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 		skb_mark_for_recycle(rx->ctx.skb_head);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	gve_skb_add_rx_frag(rx, buf_state, 0, buf_len);
-#else
-	skb_add_rx_frag(rx->ctx.skb_head, 0, buf_state->page_info.page,
-			buf_state->page_info.page_offset, buf_len,
-			buf_state->page_info.buf_size);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 	gve_dec_pagecnt_bias(&buf_state->page_info);
 	gve_try_recycle_buf(priv, rx, buf_state);

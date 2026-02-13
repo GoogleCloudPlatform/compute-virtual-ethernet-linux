@@ -39,7 +39,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.8-0--34ae86a-oot"
+#define GVE_VERSION		 "1.4.9-0--6cc52f7-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -336,9 +336,9 @@ static int gve_alloc_stats_report(struct gve_priv *priv)
 	int tx_stats_num, rx_stats_num;
 
 	tx_stats_num = (GVE_TX_STATS_REPORT_NUM + NIC_TX_STATS_REPORT_NUM) *
-		       gve_num_tx_queues(priv);
+				priv->tx_cfg.max_queues;
 	rx_stats_num = (GVE_RX_STATS_REPORT_NUM + NIC_RX_STATS_REPORT_NUM) *
-		       priv->rx_cfg.num_queues;
+				priv->rx_cfg.max_queues;
 #if !defined(struct_size) || !defined(size_add)
 	priv->stats_report_len = sizeof(*priv->stats_report) + sizeof((priv->stats_report)->stats[0]) * (tx_stats_num + rx_stats_num);
 #else
@@ -706,9 +706,17 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 		snprintf(block->name, sizeof(block->name), "gve-ntfy-blk%d@pci:%s",
 			 i, pci_name(priv->pdev));
 		block->priv = priv;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,13,0)
+		err = request_irq(priv->msix_vectors[msix_idx].vector,
+				  gve_is_gqi(priv) ? gve_intr : gve_intr_dqo,
+				  IRQF_NO_AUTOEN, block->name, block);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,13,0) */
+		irq_set_status_flags(priv->msix_vectors[msix_idx].vector,
+				     IRQ_NOAUTOEN);
 		err = request_irq(priv->msix_vectors[msix_idx].vector,
 				  gve_is_gqi(priv) ? gve_intr : gve_intr_dqo,
 				  0, block->name, block);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,13,0) */
 		if (err) {
 			dev_err(&priv->pdev->dev,
 				"Failed to receive msix vector %d\n", i);
@@ -855,10 +863,12 @@ static int gve_setup_device_resources(struct gve_priv *priv)
 		}
 	}
 
-	err = gve_init_clock(priv);
-	if (err) {
-		dev_err(&priv->pdev->dev, "Failed to init clock");
-		goto abort_with_ptype_lut;
+	if (priv->nic_timestamp_supported) {
+		err = gve_init_clock(priv);
+		if (err) {
+			dev_warn(&priv->pdev->dev, "Failed to init clock, continuing without PTP support");
+			err = 0;
+		}
 	}
 
 	err = gve_init_rss_config(priv, priv->rx_cfg.num_queues);
@@ -2589,7 +2599,7 @@ static int gve_set_ts_config(struct net_device *dev,
 	}
 
 	if (kernel_config->rx_filter != HWTSTAMP_FILTER_NONE) {
-		if (!priv->nic_ts_report) {
+		if (!gve_is_clock_enabled(priv)) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
 			NL_SET_ERR_MSG_MOD(extack,
 					   "RX timestamping is not supported");
@@ -3124,8 +3134,13 @@ static void gve_rx_queue_mem_free(struct net_device *dev, void *per_q_mem)
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
-static int gve_rx_queue_mem_alloc(struct net_device *dev, void *per_q_mem,
-				  int idx)
+static int gve_rx_queue_mem_alloc(struct net_device *dev
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
+				  ,
+				  struct netdev_queue_config *qcfg
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0) */
+				  ,
+				  void *per_q_mem, int idx)
 {
 	struct gve_priv *priv = netdev_priv(dev);
 	struct gve_rx_alloc_rings_cfg cfg = {0};
@@ -3148,7 +3163,13 @@ static int gve_rx_queue_mem_alloc(struct net_device *dev, void *per_q_mem,
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
-static int gve_rx_queue_start(struct net_device *dev, void *per_q_mem, int idx)
+static int gve_rx_queue_start(struct net_device *dev
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
+			      ,
+			      struct netdev_queue_config *qcfg
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0) */
+			      ,
+			      void *per_q_mem, int idx)
 {
 	struct gve_priv *priv = netdev_priv(dev);
 	struct gve_rx_ring *gve_per_q_mem;
