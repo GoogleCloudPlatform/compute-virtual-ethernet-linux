@@ -380,13 +380,8 @@ int gve_rx_alloc_rings_dqo(struct gve_priv *priv,
 	int err;
 	int i;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
-	rx = kvcalloc(cfg->qcfg_rx->max_queues, sizeof(struct gve_rx_ring),
-		      GFP_KERNEL);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-	rx = kcalloc(cfg->qcfg_rx->max_queues, sizeof(struct gve_rx_ring),
-		     GFP_KERNEL);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	rx = kvzalloc_objs(struct gve_rx_ring, cfg->qcfg_rx->max_queues,
+			   GFP_KERNEL);
 	if (!rx)
 		return -ENOMEM;
 
@@ -1039,7 +1034,7 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 		if (!rx->ctx.skb_head && rx->dqo.page_pool &&
 			   netmem_is_net_iov(buf_state->page_info.netmem)) {
-			/* when header split is disabled, the header went to the packet
+		/* when header split is disabled, the header went to the packet
 		 * buffer. If the packet buffer is a net_iov, those can't be
 		 * easily mapped into the kernel space to access the header
 		 * required to process the packet.
