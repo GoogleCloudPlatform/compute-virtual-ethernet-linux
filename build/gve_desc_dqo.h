@@ -19,7 +19,7 @@
 #define GVE_TX_MIN_TSO_MSS_DQO 88
 
 #ifndef __LITTLE_ENDIAN_BITFIELD
-"Only little endian supported"
+#error "Only little endian supported"
 #endif
 
 /* Basic TX descriptor (DTYPE 0x0C) */
