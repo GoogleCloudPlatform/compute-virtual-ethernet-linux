@@ -39,7 +39,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.9-3-328e95fda549-ce4aa9c090f1-oot"
+#define GVE_VERSION		 "1.4.9-4-328e95fda549-5ceacddc0f27-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -168,7 +168,7 @@ static int gve_alloc_flow_rule_caches(struct gve_priv *priv)
 
 	flow_rules_cache->rules_cache =
 		kvzalloc_objs(*flow_rules_cache->rules_cache,
-			      GVE_FLOW_RULES_CACHE_SIZE, GFP_KERNEL);
+			      GVE_FLOW_RULES_CACHE_SIZE);
 	if (!flow_rules_cache->rules_cache) {
 		dev_err(&priv->pdev->dev, "Cannot alloc flow rules cache\n");
 		return -ENOMEM;
@@ -585,7 +585,7 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 	int err;
 
 	priv->msix_vectors = kvzalloc_objs(*priv->msix_vectors,
-					   num_vecs_requested, GFP_KERNEL);
+					   num_vecs_requested);
 	if (!priv->msix_vectors)
 		return -ENOMEM;
 	for (i = 0; i < num_vecs_requested; i++)
