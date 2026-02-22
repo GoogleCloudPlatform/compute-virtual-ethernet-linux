@@ -39,7 +39,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.9-2-328e95fda549-741f365ea4ec-oot"
+#define GVE_VERSION		 "1.4.9-2-328e95fda549-3a2f743f6599-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -1265,17 +1265,17 @@ struct gve_queue_page_list *gve_alloc_queue_page_list(struct gve_priv *priv,
 	int err;
 	int i;
 
-	qpl = kvzalloc_obj(*qpl, GFP_KERNEL);
+	qpl = kvzalloc_obj(*qpl);
 	if (!qpl)
 		return NULL;
 
 	qpl->id = id;
 	qpl->num_entries = 0;
-	qpl->pages = kvzalloc_objs(*qpl->pages, pages, GFP_KERNEL);
+	qpl->pages = kvzalloc_objs(*qpl->pages, pages);
 	if (!qpl->pages)
 		goto abort;
 
-	qpl->page_buses = kvzalloc_objs(*qpl->page_buses, pages, GFP_KERNEL);
+	qpl->page_buses = kvzalloc_objs(*qpl->page_buses, pages);
 	if (!qpl->page_buses)
 		goto abort;
 
