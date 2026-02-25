@@ -114,9 +114,9 @@ void gve_add_napi(struct gve_priv *priv, int ntfy_idx,
 {
 	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)|| RHEL_VERSION_GTE(10,2)
 	netif_napi_add_locked(priv->dev, &block->napi, gve_poll);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,0,0) || RHEL_VERSION_GTE(9,2) || (RHEL_VERSION_GTE(8,8) && RHEL_VERSION_LT(9,0))
 	netif_napi_add(priv->dev, &block->napi, gve_poll);
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,0,0) || RHEL_VERSION_GTE(9,2) || (RHEL_VERSION_GTE(8,8) && RHEL_VERSION_LT(9,0)) */
@@ -125,14 +125,14 @@ void gve_add_napi(struct gve_priv *priv, int ntfy_idx,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,5,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0)
 	napi_hash_add(&block->napi);
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,5,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0) */
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2)
 	netif_napi_set_irq_locked(&block->napi, block->irq);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0)
 	netif_napi_set_irq(&block->napi, block->irq);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
 	enable_irq(block->irq);
 }
 
@@ -141,13 +141,13 @@ void gve_remove_napi(struct gve_priv *priv, int ntfy_idx)
 	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 
 	disable_irq(block->irq);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2)
 	netif_napi_del_locked(&block->napi);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,5,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0)
 	napi_hash_del(&block->napi);
 	synchronize_net();
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,5,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0) */
 	netif_napi_del(&block->napi);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
 }
