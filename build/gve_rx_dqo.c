@@ -249,7 +249,6 @@ int gve_rx_alloc_ring_dqo(struct gve_priv *priv,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
 	struct page_pool *pool;
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
-	int qpl_page_cnt;
 	size_t size;
 	u32 qpl_id;
 
@@ -280,10 +279,10 @@ int gve_rx_alloc_ring_dqo(struct gve_priv *priv,
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 	rx->dqo.num_buf_states = cfg->raw_addressing ? min_t(s16, S16_MAX,
-							     buffer_queue_slots * 4) : gve_get_rx_pages_per_qpl_dqo(cfg->ring_size);
+							     buffer_queue_slots * 4) : cfg->pages_per_qpl;
 #else
 	rx->dqo.num_buf_states = cfg->raw_addressing ? buffer_queue_slots :
-		gve_get_rx_pages_per_qpl_dqo(cfg->ring_size);
+		cfg->pages_per_qpl;
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0)) */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)
 	rx->dqo.buf_states = kvcalloc_node(rx->dqo.num_buf_states,
@@ -321,10 +320,9 @@ int gve_rx_alloc_ring_dqo(struct gve_priv *priv,
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 	if (!cfg->raw_addressing) {
 		qpl_id = gve_get_rx_qpl_id(cfg->qcfg_tx, rx->q_num);
-		qpl_page_cnt = gve_get_rx_pages_per_qpl_dqo(cfg->ring_size);
 
 		rx->dqo.qpl = gve_alloc_queue_page_list(priv, qpl_id,
-							qpl_page_cnt);
+							cfg->pages_per_qpl);
 		if (!rx->dqo.qpl)
 			goto err;
 		rx->dqo.next_qpl_page_idx = 0;
@@ -340,10 +338,9 @@ int gve_rx_alloc_ring_dqo(struct gve_priv *priv,
 		rx->dqo.page_pool = pool;
 	} else {
 		qpl_id = gve_get_rx_qpl_id(cfg->qcfg_tx, rx->q_num);
-		qpl_page_cnt = gve_get_rx_pages_per_qpl_dqo(cfg->ring_size);
 
 		rx->dqo.qpl = gve_alloc_queue_page_list(priv, qpl_id,
-							qpl_page_cnt);
+							cfg->pages_per_qpl);
 		if (!rx->dqo.qpl)
 			goto err;
 		rx->dqo.next_qpl_page_idx = 0;

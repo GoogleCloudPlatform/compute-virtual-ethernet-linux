@@ -457,10 +457,10 @@ static int gve_rx_dqo(...)
 +#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 +	rx->dqo.num_buf_states = cfg->raw_addressing ?
 +		min_t(s16, S16_MAX, buffer_queue_slots * 4) :
-+		gve_get_rx_pages_per_qpl_dqo(cfg->ring_size);
++		cfg->pages_per_qpl;
 +#else
 	rx->dqo.num_buf_states = cfg->raw_addressing ? buffer_queue_slots :
-		gve_get_rx_pages_per_qpl_dqo(cfg->ring_size);
+		cfg->pages_per_qpl;
 +#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0)) */
 
 @@
@@ -479,10 +479,9 @@ int gve_rx_alloc_ring_dqo(...)
 +#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
 +       if (!cfg->raw_addressing) {
 +		qpl_id = gve_get_rx_qpl_id(cfg->qcfg_tx, rx->q_num);
-+		qpl_page_cnt = gve_get_rx_pages_per_qpl_dqo(cfg->ring_size);
 +
 +		rx->dqo.qpl = gve_alloc_queue_page_list(priv, qpl_id,
-+							qpl_page_cnt);
++							cfg->pages_per_qpl);
 +		if (!rx->dqo.qpl)
 +			goto err;
 +		rx->dqo.next_qpl_page_idx = 0;
@@ -497,10 +496,9 @@ int gve_rx_alloc_ring_dqo(...)
 		rx->dqo.page_pool = pool;
 	} else {
 		qpl_id = gve_get_rx_qpl_id(cfg->qcfg_tx, rx->q_num);
-		qpl_page_cnt = gve_get_rx_pages_per_qpl_dqo(cfg->ring_size);
 
 		rx->dqo.qpl = gve_alloc_queue_page_list(priv, qpl_id,
-							qpl_page_cnt);
+							cfg->pages_per_qpl);
 		if (!rx->dqo.qpl)
 			goto err;
 		rx->dqo.next_qpl_page_idx = 0;
@@ -564,7 +562,7 @@ identifier gve_try_recycle_buf;
 +			return err;
 +	} else {
 +		idx = rx->dqo.next_qpl_page_idx;
-+		if (idx >= gve_get_rx_pages_per_qpl_dqo(priv->rx_desc_cnt)) {
++		if (idx >= priv->rx_pages_per_qpl) {
 +			net_err_ratelimited("%s: Out of QPL pages\n",
 +					    priv->dev->name);
 +			return -ENOMEM;

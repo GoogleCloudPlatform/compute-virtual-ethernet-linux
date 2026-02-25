@@ -171,7 +171,7 @@ int gve_alloc_qpl_page_dqo(struct gve_rx_ring *rx,
 	u32 idx;
 
 	idx = rx->dqo.next_qpl_page_idx;
-	if (idx >= gve_get_rx_pages_per_qpl_dqo(priv->rx_desc_cnt)) {
+	if (idx >= priv->rx_pages_per_qpl) {
 		net_err_ratelimited("%s: Out of QPL pages\n",
 				    priv->dev->name);
 		return -ENOMEM;
@@ -249,7 +249,7 @@ int gve_alloc_page_dqo(struct gve_rx_ring *rx,
 	}
 	else {
 		idx = rx->dqo.next_qpl_page_idx;
-		if (idx >= gve_get_rx_pages_per_qpl_dqo(priv->rx_desc_cnt)) {
+		if (idx >= priv->rx_pages_per_qpl) {
 			net_err_ratelimited("%s: Out of QPL pages\n",
 					    priv->dev->name);
 			return -ENOMEM;
