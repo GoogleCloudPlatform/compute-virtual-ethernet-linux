@@ -40,7 +40,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.9-14-328e95fda549-1e8c009064e0-oot"
+#define GVE_VERSION		 "1.4.9-15-328e95fda549-4924b16f911a-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -2264,7 +2264,7 @@ static void gve_turndown(struct gve_priv *priv)
 	/* Stop tx queues */
 	netif_tx_disable(priv->dev);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(10,2)
 	xdp_features_clear_redirect_target_locked(priv->dev);
 #elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4)
 	xdp_features_clear_redirect_target(priv->dev);
@@ -2353,7 +2353,7 @@ static void gve_turnup(struct gve_priv *priv)
 	}
 
 	if (priv->tx_cfg.num_xdp_queues && gve_supports_xdp_xmit(priv)) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(10,2)
 		xdp_features_set_redirect_target_locked(priv->dev, false);
 #elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4)
 		xdp_features_set_redirect_target(priv->dev, false);
@@ -2849,11 +2849,11 @@ static void gve_set_netdev_xdp_features(struct gve_priv *priv)
 		xdp_features = 0;
 	}
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(10,2)
 	xdp_set_features_flag_locked(priv->dev, xdp_features);
-#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) */
+#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(10,2) */
 	xdp_set_features_flag(priv->dev, xdp_features);
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) */
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(10,2) */
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL) || RHEL_VERSION_GTE(9,4) */
 }
 

@@ -529,16 +529,16 @@ static void gve_set_netdev_xdp_features(struct gve_priv *priv)
 @@
 expression list args;
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(10,2)
 xdp_set_features_flag_locked(args);
-+#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) */
++#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(10,2) */
 +xdp_set_features_flag(args);
-+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) */
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(10,2) */
 
 @@
 expression list args;
 @@
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(10,2)
 xdp_features_set_redirect_target_locked(args);
 +#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4)
 +xdp_features_set_redirect_target(args);
@@ -548,7 +548,7 @@ xdp_features_set_redirect_target_locked(args);
 @@
 expression list args;
 @@
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(10,2)
 xdp_features_clear_redirect_target_locked(args);
 +#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,4)
 +xdp_features_clear_redirect_target(args);
