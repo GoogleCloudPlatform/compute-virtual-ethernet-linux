@@ -565,7 +565,7 @@ int verify_xdp_configuration(args
  )
 {
 ...
-if (dev->features & NETIF_F_LRO) { ... }
+if (dev->features & NETIF_F_GRO_HW) { ... }
 +#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL)
 +	/* Check XDP support for various queue formats. */
 +	switch (priv->queue_format) {
