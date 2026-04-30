@@ -34,7 +34,7 @@
 
 USAGE=$(cat <<-END
 build_src.sh [-t|--target=T] [-c|--compress=CF] [-d|--deb] [-v|--version=V | -r|--release]
-    -t=T or --target=T: target for build (oot, upstream, cos).
+    -t=T or --target=T: target for build (oot, upstream, cos, upstream_test).
     -c=CF or --compress=CF: compression format (gz).
     -d or --deb: Package into a .deb as well.
     --rpm: Package into a .rpm .
@@ -132,6 +132,11 @@ elif [ "$TARGET" == "cos" ]; then
  MAKEFILE="google/gve/Makefile"
  if [ -z "$RELEASE" ]; then
   VERSION="${VERSION}-cos"
+ fi
+elif [ "$TARGET" == "upstream_test" ]; then
+ MAKEFILE="Makefile.oot"
+ if [ -z "$RELEASE" ]; then
+  VERSION="${VERSION}-k-test"
  fi
 else
  echo ERROR: Invalid target "$TARGET"
