@@ -179,11 +179,20 @@ fi
 
 cp "$MAINDIR"/"$MAKEFILE" "$DESTDIR"/Makefile;
 
+function cocci_file() {
+  c_h=$1
+  for f in $(ls "$PATCHDIR"/*.cocci); do
+    $SPATCH "$f" $c_h --in-place --no-includes
+  done
+}
+
 function cocci() {
- file_extension=$1
- for f in $(ls "$PATCHDIR"/*.cocci); do
-  $SPATCH "$f" "$DESTDIR"/*.${file_extension} --in-place --no-includes
- done
+  # Run spatch in parallel per-file
+  file_extension=$1
+  for f in "$DESTDIR"/*.${file_extension}; do
+    cocci_file "$f" &
+  done
+  wait
 }
 
 if [ "$TARGET" == "oot" ] || [ "$TARGET" == "cos" ]; then
