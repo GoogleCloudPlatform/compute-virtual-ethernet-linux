@@ -40,7 +40,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.9-16-328e95fda549-4c4b425580e2-oot"
+#define GVE_VERSION		 "1.4.9-17-328e95fda549-c07ddd89b244-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -167,9 +167,21 @@ static int gve_alloc_flow_rule_caches(struct gve_priv *priv)
 	if (!priv->max_flow_rules)
 		return 0;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
 	flow_rules_cache->rules_cache =
 		kvzalloc_objs(*flow_rules_cache->rules_cache,
 			      GVE_FLOW_RULES_CACHE_SIZE);
+#else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
+	flow_rules_cache->rules_cache = kvcalloc(GVE_FLOW_RULES_CACHE_SIZE,
+						 sizeof(*flow_rules_cache->rules_cache),
+						 GFP_KERNEL);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	flow_rules_cache->rules_cache = kcalloc(GVE_FLOW_RULES_CACHE_SIZE,
+						sizeof(*flow_rules_cache->rules_cache),
+						GFP_KERNEL);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+#endif
 	if (!flow_rules_cache->rules_cache) {
 		dev_err(&priv->pdev->dev, "Cannot alloc flow rules cache\n");
 		return -ENOMEM;
@@ -585,8 +597,18 @@ static int gve_alloc_notify_blocks(struct gve_priv *priv)
 	int i, j;
 	int err;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
 	priv->msix_vectors = kvzalloc_objs(*priv->msix_vectors,
 					   num_vecs_requested);
+#else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
+	priv->msix_vectors = kvcalloc(num_vecs_requested,
+				      sizeof(*priv->msix_vectors), GFP_KERNEL);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	priv->msix_vectors = kcalloc(num_vecs_requested,
+				     sizeof(*priv->msix_vectors), GFP_KERNEL);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+#endif
 	if (!priv->msix_vectors)
 		return -ENOMEM;
 	for (i = 0; i < num_vecs_requested; i++)
@@ -834,7 +856,17 @@ static int gve_setup_device_resources(struct gve_priv *priv)
 	}
 
 	if (!gve_is_gqi(priv)) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
 		priv->ptype_lut_dqo = kvzalloc_obj(*priv->ptype_lut_dqo);
+#else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
+		priv->ptype_lut_dqo = kvzalloc(sizeof(*priv->ptype_lut_dqo),
+					       GFP_KERNEL);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+		priv->ptype_lut_dqo = kcalloc(1, sizeof(*priv->ptype_lut_dqo),
+					      GFP_KERNEL);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+#endif
 		if (!priv->ptype_lut_dqo) {
 			err = -ENOMEM;
 			goto abort_with_stats_report;
@@ -1302,17 +1334,42 @@ struct gve_queue_page_list *gve_alloc_queue_page_list(struct gve_priv *priv,
 	int err;
 	int i;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
 	qpl = kvzalloc_obj(*qpl);
+#else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
+	qpl = kvzalloc(sizeof(*qpl), GFP_KERNEL);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	qpl = kcalloc(1, sizeof(*qpl), GFP_KERNEL);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+#endif
 	if (!qpl)
 		return NULL;
 
 	qpl->id = id;
 	qpl->num_entries = 0;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
 	qpl->pages = kvzalloc_objs(*qpl->pages, pages);
+#else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
+	qpl->pages = kvcalloc(pages, sizeof(*qpl->pages), GFP_KERNEL);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	qpl->pages = kcalloc(pages, sizeof(*qpl->pages), GFP_KERNEL);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+#endif
 	if (!qpl->pages)
 		goto abort;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
 	qpl->page_buses = kvzalloc_objs(*qpl->page_buses, pages);
+#else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
+	qpl->page_buses = kvcalloc(pages, sizeof(*qpl->page_buses),
+				   GFP_KERNEL);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	qpl->page_buses = kcalloc(pages, sizeof(*qpl->page_buses), GFP_KERNEL);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+#endif
 	if (!qpl->page_buses)
 		goto abort;
 

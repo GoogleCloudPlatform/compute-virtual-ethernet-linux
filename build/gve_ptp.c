@@ -84,7 +84,11 @@ static int gve_ptp_init(struct gve_priv *priv)
 	struct gve_ptp *ptp;
 	int err;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
 	priv->ptp = kzalloc_obj(*priv->ptp);
+#else
+	priv->ptp = kzalloc(sizeof(*priv->ptp), GFP_KERNEL);
+#endif
 	if (!priv->ptp)
 		return -ENOMEM;
 
