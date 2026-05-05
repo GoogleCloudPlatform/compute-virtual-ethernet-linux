@@ -249,7 +249,13 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	priv = netdev_priv(netdev);
 	num_tx_queues = gve_num_tx_queues(priv);
 	report_stats = priv->stats_report->stats;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
 	rx_qid_to_stats_idx = kmalloc_objs(int, priv->rx_cfg.num_queues);
+#else
+	rx_qid_to_stats_idx = kmalloc_array(priv->rx_cfg.num_queues,
+					    sizeof(*rx_qid_to_stats_idx),
+					    GFP_KERNEL);
+#endif
 	if (!rx_qid_to_stats_idx)
 		return;
 	for (ring = 0; ring < priv->rx_cfg.num_queues; ring++) {
@@ -257,7 +263,13 @@ gve_get_ethtool_stats(struct net_device *netdev,
 		if (!gve_rx_was_added_to_block(priv, ring))
 			num_stopped_rxqs++;
 	}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
 	tx_qid_to_stats_idx = kmalloc_objs(int, num_tx_queues);
+#else
+	tx_qid_to_stats_idx = kmalloc_array(num_tx_queues,
+					    sizeof(*tx_qid_to_stats_idx),
+					    GFP_KERNEL);
+#endif
 	if (!tx_qid_to_stats_idx) {
 		kfree(rx_qid_to_stats_idx);
 		return;

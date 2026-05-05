@@ -377,7 +377,15 @@ int gve_rx_alloc_rings_dqo(struct gve_priv *priv,
 	int err;
 	int i;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
 	rx = kvzalloc_objs(struct gve_rx_ring, cfg->qcfg_rx->max_queues);
+#else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
+	rx = kvcalloc(cfg->qcfg_rx->max_queues, sizeof(*rx), GFP_KERNEL);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	rx = kcalloc(cfg->qcfg_rx->max_queues, sizeof(*rx), GFP_KERNEL);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+#endif
 	if (!rx)
 		return -ENOMEM;
 

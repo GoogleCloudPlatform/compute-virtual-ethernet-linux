@@ -306,8 +306,20 @@ static int gve_tx_qpl_buf_init(struct gve_tx_ring *tx)
 		tx->dqo.qpl->num_entries;
 	int i;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
 	tx->dqo.tx_qpl_buf_next = kvzalloc_objs(tx->dqo.tx_qpl_buf_next[0],
 						num_tx_qpl_bufs);
+#else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
+	tx->dqo.tx_qpl_buf_next = kvcalloc(num_tx_qpl_bufs,
+					   sizeof(*tx->dqo.tx_qpl_buf_next),
+					   GFP_KERNEL);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	tx->dqo.tx_qpl_buf_next = kcalloc(num_tx_qpl_bufs,
+					  sizeof(*tx->dqo.tx_qpl_buf_next),
+					  GFP_KERNEL);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+#endif
 	if (!tx->dqo.tx_qpl_buf_next)
 		return -ENOMEM;
 
@@ -375,8 +387,20 @@ static int gve_tx_alloc_ring_dqo(struct gve_priv *priv,
 	num_pending_packets /= 2;
 
 	tx->dqo.num_pending_packets = min_t(int, num_pending_packets, S16_MAX);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
 	tx->dqo.pending_packets = kvzalloc_objs(tx->dqo.pending_packets[0],
 						tx->dqo.num_pending_packets);
+#else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
+	tx->dqo.pending_packets = kvcalloc(tx->dqo.num_pending_packets,
+					   sizeof(*tx->dqo.pending_packets),
+					   GFP_KERNEL);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	tx->dqo.pending_packets = kcalloc(tx->dqo.num_pending_packets,
+					  sizeof(*tx->dqo.pending_packets),
+					  GFP_KERNEL);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+#endif
 	if (!tx->dqo.pending_packets)
 		goto err;
 
@@ -459,7 +483,15 @@ int gve_tx_alloc_rings_dqo(struct gve_priv *priv,
 		return -EINVAL;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
 	tx = kvzalloc_objs(struct gve_tx_ring, cfg->qcfg->max_queues);
+#else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
+	tx = kvcalloc(cfg->qcfg->max_queues, sizeof(*tx), GFP_KERNEL);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	tx = kcalloc(cfg->qcfg->max_queues, sizeof(*tx), GFP_KERNEL);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+#endif
 	if (!tx)
 		return -ENOMEM;
 

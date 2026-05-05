@@ -292,7 +292,15 @@ int gve_add_flow_rule(struct gve_priv *priv, struct ethtool_rxnfc *cmd)
 	if (!priv->max_flow_rules)
 		return -EOPNOTSUPP;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
 	rule = kvzalloc_obj(*rule);
+#else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
+	rule = kvzalloc(sizeof(*rule), GFP_KERNEL);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+	rule = kcalloc(1, sizeof(*rule), GFP_KERNEL);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+#endif
 	if (!rule)
 		return -ENOMEM;
 
