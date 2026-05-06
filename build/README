@@ -168,6 +168,24 @@ To update the ring size:
 ethtool -G|--set-ring <DEV> [rx N] [tx N]
 ```
 
+## Modify RX Buffer Length
+
+On DQO queue format, GVE supports changing the RX buffer length. This requires kernel version 5.17 or newer and ethtool support.
+
+To check the current RX buffer length:
+```bash
+ethtool -g <DEV>
+```
+Look for `RX Buf Len` in the output.
+
+To update the RX buffer length:
+```bash
+ethtool -G <DEV> rx-buf-len <2048|4096>
+```
+Note: GVE only supports buffer lengths of 2048 and 4096. Buffer length of 4096 is only supported if the device supports it (check `max_rx_buffer_size` in device options, usually enabled if the device supports larger buffers).
+
+**Important**: If XDP is enabled, the RX buffer length must be set to 2048.
+
 ## RSS Configuration
 The DQO RDA queue format has support for querying and configuring the RSS hash and indirection table.
 
@@ -222,15 +240,17 @@ ethtool -G <DEV> tcp-data-split on|off
 ## XDP
 Driver-mode support for [XDP](https://docs.cilium.io/en/latest/reference-guides/bpf/progtypes/#xdp) support was introduced in release [1.3.4](github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/releases/tag/v1.3.4) for the GQI QPL queue format and [1.4.6](github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/releases/tag/v1.4.6) for the DQO RDA queue format. The XDP implementation supports the following features:
 
-1) Basic XDP action support (`PASS`, `DROP`, `TX`, )
+1) Basic XDP action support (`PASS`, `DROP`, `TX`)
 1) `NDO_XDP_XMIT` API
 1) XDP redirect support
 1) AF_XDP zero-copy
 
 ### Configuration
 
-To attach an XDP program to the driver, the number of RX and TX queues must be
-no more than half their maximum values to accommodate the creation of extra XDP TX queues. The maximum values are based on the number of CPUs available. See [Queue Counts](#queue-counts) to see how to get/set the number of queues.
+To attach an XDP program to the driver, the following conditions must be met:
+1) The number of RX and TX queues must be no more than half their maximum values to accommodate the creation of extra XDP TX queues. The maximum values are based on the number of CPUs available. See [Queue Counts](#queue-counts) to see how to get/set the number of queues.
+2) Header-data split (TCP data split) must be disabled.
+3) The RX buffer length must be configured to 2048 (see [Modify RX Buffer Length](#modify-rx-buffer-length)).
 
 XDP can be enabled via comand line through `iproute2` or `bpftool`, or in a C program using `libbpf`.
 
