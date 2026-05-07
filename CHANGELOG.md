@@ -1,6 +1,11 @@
 # Feature Changelog
 Below is a changelog of features and major fixes which have been introduced to GVE. Note that it is recommended to always use the latest version of GVE, regardless of the features being used, as there might be smaller stability and compatibility patches introduced in more minor releases.
 
+#### [v1.4.10](https://github.com/googlecloudplatform/compute-virtual-ethernet-linux/releases/tag/v1.5.0)
+* Optimize and enable HW GRO for DQO.
+* Enable support for UDP GSO when using DQO format.
+* Improve QPL management and enable support for larger ring sizes when using the DQO-QPL queue format.
+* Fix out-of-bounds access in `gve_tx_stop_ring_dqo()` due to incorrect QPL buffer cleanup.
 #### [v1.4.9](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/releases/tag/v1.4.9)
 * Convert to use `.get_rx_ring_count`.
 * Fix probe failure if clock read fails.
