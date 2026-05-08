@@ -1,6 +1,16 @@
 # Feature Changelog
 Below is a changelog of features and major fixes which have been introduced to GVE. Note that it is recommended to always use the latest version of GVE, regardless of the features being used, as there might be smaller stability and compatibility patches introduced in more minor releases.
 
+#### [v1.4.9](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/releases/tag/v1.4.9)
+* Convert to use `.get_rx_ring_count`.
+* Fix probe failure if clock read fails.
+* Stats reporting fixes.
+#### [v1.4.8](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/releases/tag/v1.4.8)
+* Add support for modifying RX buffer length via ethtool for DQO.
+* Add XDP HW RX Timestamping support for DQ.
+* Decouple header split from RX buffer length.
+* Fix: prevent ethtool operations after device shutdown.
+* Fix: check for valid timestamp bit in RX descriptor before applying hardware timestamp.
 #### [v1.4.7](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/releases/tag/v1.4.7)
 * Coccinelle fixes for XDP
 * Documentation updates
