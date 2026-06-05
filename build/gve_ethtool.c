@@ -5,7 +5,7 @@
  */
 
 #include "gve_linux_version.h"
-#include <linux/rtnetlink.h>
+#include <net/netdev_lock.h>
 #include "gve.h"
 #include "gve_adminq.h"
 #include "gve_dqo.h"
@@ -241,10 +241,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	int ring;
 	int i, j;
 
-	ASSERT_RTNL();
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0))
-	memset(data, 0, stats->n_stats * sizeof(*data));
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0)) */
+	netdev_assert_locked(netdev);
 
 	priv = netdev_priv(netdev);
 	num_tx_queues = gve_num_tx_queues(priv);
