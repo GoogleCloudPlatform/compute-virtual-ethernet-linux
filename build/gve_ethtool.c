@@ -1262,7 +1262,8 @@ const struct ethtool_ops gve_ethtool_ops = {
 				 ETHTOOL_RING_USE_RX_BUF_LEN,
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
 	.op_needs_rtnl = ETHTOOL_OP_NEEDS_RTNL_SCHANNELS |
-			 ETHTOOL_OP_NEEDS_RTNL_SRINGPARAM,
+			 ETHTOOL_OP_NEEDS_RTNL_SRINGPARAM |
+			 ETHTOOL_OP_NEEDS_RTNL_GLINK,
 	.get_drvinfo = gve_get_drvinfo,
 	.get_strings = gve_get_strings,
 	.get_sset_count = gve_get_sset_count,
