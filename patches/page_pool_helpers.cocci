@@ -239,9 +239,7 @@ identifier rx;
 void gve_rx_stop_ring_dqo(...)
 {
 	...
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
 	struct gve_rx_ring *rx = &priv->rx[idx];
-+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
 	...
 
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0))
@@ -272,6 +270,8 @@ void gve_rx_post_buffers_dqo(struct gve_rx_ring *rx)
 	struct gve_rx_compl_queue_dqo *complq = &rx->dqo.complq;
 	struct gve_rx_buf_queue_dqo *bufq = &rx->dqo.bufq;
 	struct gve_priv *priv = rx->gve;
+-	...
++	u32 num_bufs_avail_to_hw;
 	u32 num_avail_slots;
 	u32 num_full_slots;
 	u32 num_posted = 0;
@@ -322,6 +322,16 @@ void gve_rx_post_buffers_dqo(struct gve_rx_ring *rx)
 		...
 	}
 ...
+	rx->fill_cnt += num_posted;
+-	...
++	num_bufs_avail_to_hw =
++		((bufq->tail & ~(GVE_RX_BUF_THRESH_DQO - 1)) -
++		 bufq->head) & bufq->mask;
++
++	if (num_bufs_avail_to_hw < GVE_RX_BUF_THRESH_DQO) {
++		mod_timer(&rx->starvation_timer,
++			  jiffies + msecs_to_jiffies(GVE_RX_NAPI_RESCHED_MS));
++	}
 }
 
 @@
