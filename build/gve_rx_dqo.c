@@ -23,6 +23,20 @@
 #include <net/xdp_sock_drv.h>
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
+static void gve_rx_starvation_timer(struct timer_list *t)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || (RHEL_VERSION_GTE(9,8) && RHEL_VERSION_LT(10,0)) || RHEL_VERSION_GTE(10,2)
+	struct gve_rx_ring *rx = timer_container_of(rx, t, starvation_timer);
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(6,16,0) || (RHEL_VERSION_GTE(9,8) && RHEL_VERSION_LT(10,0)) || RHEL_VERSION_GTE(10,2) */
+	struct gve_rx_ring *rx = from_timer(rx, t, starvation_timer);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || (RHEL_VERSION_GTE(9,8) && RHEL_VERSION_LT(10,0)) || RHEL_VERSION_GTE(10,2) */
+	struct gve_priv *priv = rx->gve;
+	struct gve_notify_block *block;
+
+	block = &priv->ntfy_blocks[rx->ntfy_id];
+	napi_schedule(&block->napi);
+}
+
 static void gve_rx_free_hdr_bufs(struct gve_priv *priv, struct gve_rx_ring *rx)
 {
 	struct device *hdev = &priv->pdev->dev;
@@ -123,9 +137,7 @@ static void gve_rx_reset_ring_dqo(struct gve_priv *priv, int idx)
 void gve_rx_stop_ring_dqo(struct gve_priv *priv, int idx)
 {
 	int ntfy_idx = gve_rx_idx_to_ntfy(priv, idx);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
 	struct gve_rx_ring *rx = &priv->rx[idx];
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
 
 	if (!gve_rx_was_added_to_block(priv, idx))
 		return;
@@ -136,6 +148,11 @@ void gve_rx_stop_ring_dqo(struct gve_priv *priv, int idx)
 #elif (LINUX_VERSION_CODE < KERNEL_VERSION(6,11,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
 	if (rx->dqo.page_pool) rx->dqo.page_pool->p.napi = NULL;
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,2,0)
+	timer_shutdown_sync(&rx->starvation_timer);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,2,0) */
+	del_timer_sync(&rx->starvation_timer);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,2,0) */
 	gve_remove_napi(priv, ntfy_idx);
 	gve_rx_remove_from_block(priv, idx);
 	gve_rx_reset_ring_dqo(priv, idx);
@@ -237,8 +254,10 @@ static int gve_rx_alloc_hdr_bufs(struct gve_priv *priv, struct gve_rx_ring *rx,
 void gve_rx_start_ring_dqo(struct gve_priv *priv, int idx)
 {
 	int ntfy_idx = gve_rx_idx_to_ntfy(priv, idx);
+	struct gve_rx_ring *rx = &priv->rx[idx];
 
 	gve_rx_add_to_block(priv, idx);
+	timer_setup(&rx->starvation_timer, gve_rx_starvation_timer, 0);
 	gve_add_napi(priv, ntfy_idx, gve_napi_poll_dqo);
 }
 
@@ -440,6 +459,7 @@ void gve_rx_post_buffers_dqo(struct gve_rx_ring *rx)
 	struct gve_rx_compl_queue_dqo *complq = &rx->dqo.complq;
 	struct gve_rx_buf_queue_dqo *bufq = &rx->dqo.bufq;
 	struct gve_priv *priv = rx->gve;
+	u32 num_bufs_avail_to_hw;
 	u32 num_avail_slots;
 	u32 num_full_slots;
 	u32 num_posted = 0;
@@ -505,6 +525,12 @@ void gve_rx_post_buffers_dqo(struct gve_rx_ring *rx)
 	}
 
 	rx->fill_cnt += num_posted;
+	num_bufs_avail_to_hw = ((bufq->tail & ~(GVE_RX_BUF_THRESH_DQO - 1)) - bufq->head) & bufq->mask;
+
+	if (num_bufs_avail_to_hw < GVE_RX_BUF_THRESH_DQO) {
+		mod_timer(&rx->starvation_timer,
+		          jiffies + msecs_to_jiffies(GVE_RX_NAPI_RESCHED_MS));
+	}
 }
 
 static void gve_rx_skb_csum(struct sk_buff *skb,
