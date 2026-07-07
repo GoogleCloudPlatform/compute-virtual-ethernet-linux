@@ -369,6 +369,7 @@ struct gve_rx_ring {
 	struct xsk_buff_pool *xsk_pool;
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 	struct page_frag_cache page_cache; /* Page cache to allocate XDP frames */
+	u64 rx_critical_low_bufs; /* count of critical low buffer events */
 	struct timer_list starvation_timer; /* for queue starvation recovery */
 };
 
