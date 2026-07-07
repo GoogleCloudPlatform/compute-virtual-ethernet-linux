@@ -343,6 +343,7 @@ struct gve_rx_ring {
 	struct xdp_rxq_info xdp_rxq;
 	struct xsk_buff_pool *xsk_pool;
 	struct page_frag_cache page_cache; /* Page cache to allocate XDP frames */
+	u64 rx_critical_low_bufs; /* count of critical low buffer events */
 	struct timer_list starvation_timer; /* for queue starvation recovery */
 };
 
