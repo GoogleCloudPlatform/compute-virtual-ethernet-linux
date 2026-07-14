@@ -152,13 +152,13 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	u64 tmp_rx_pkts, tmp_rx_hsplit_pkt, tmp_rx_bytes, tmp_rx_hsplit_bytes,
 		tmp_rx_skb_alloc_fail, tmp_rx_buf_alloc_fail,
 		tmp_rx_desc_err_dropped_pkt, tmp_rx_hsplit_unsplit_pkt,
-		tmp_tx_pkts, tmp_tx_bytes,
-		tmp_xdp_tx_errors, tmp_xdp_redirect_errors;
+		tmp_tx_pkts, tmp_tx_bytes;
 	u64 rx_buf_alloc_fail, rx_desc_err_dropped_pkt, rx_hsplit_unsplit_pkt,
 		rx_pkts, rx_hsplit_pkt, rx_skb_alloc_fail, rx_bytes, tx_pkts, tx_bytes,
-		tx_dropped, xdp_tx_errors, xdp_redirect_errors;
+		tx_dropped;
 	int rx_base_stats_idx, max_rx_stats_idx, max_tx_stats_idx;
 	int stats_idx, stats_region_len, nic_stats_len;
+	struct gve_adapter *adapter;
 	struct stats *report_stats;
 	int *rx_qid_to_stats_idx;
 	int *tx_qid_to_stats_idx;
@@ -174,9 +174,11 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	ASSERT_RTNL();
 
 	priv = netdev_priv(netdev);
+	adapter = priv->adapter;
 	num_tx_queues = gve_num_tx_queues(priv);
 	report_stats = priv->stats_report->stats;
-	rx_qid_to_stats_idx = kmalloc_objs(int, priv->rx_cfg.num_queues);
+	rx_qid_to_stats_idx = kmalloc_array(priv->rx_cfg.num_queues,
+					    sizeof(int), GFP_KERNEL);
 	if (!rx_qid_to_stats_idx)
 		return;
 	for (ring = 0; ring < priv->rx_cfg.num_queues; ring++) {
@@ -184,7 +186,8 @@ gve_get_ethtool_stats(struct net_device *netdev,
 		if (!gve_rx_was_added_to_block(priv, ring))
 			num_stopped_rxqs++;
 	}
-	tx_qid_to_stats_idx = kmalloc_objs(int, num_tx_queues);
+	tx_qid_to_stats_idx = kmalloc_array(num_tx_queues,
+					    sizeof(int), GFP_KERNEL);
 	if (!tx_qid_to_stats_idx) {
 		kfree(rx_qid_to_stats_idx);
 		return;
@@ -198,7 +201,6 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	for (rx_pkts = 0, rx_bytes = 0, rx_hsplit_pkt = 0,
 	     rx_skb_alloc_fail = 0, rx_buf_alloc_fail = 0,
 	     rx_desc_err_dropped_pkt = 0, rx_hsplit_unsplit_pkt = 0,
-	     xdp_tx_errors = 0, xdp_redirect_errors = 0,
 	     ring = 0;
 	     ring < priv->rx_cfg.num_queues; ring++) {
 		if (priv->rx) {
@@ -216,9 +218,6 @@ gve_get_ethtool_stats(struct net_device *netdev,
 					rx->rx_desc_err_dropped_pkt;
 				tmp_rx_hsplit_unsplit_pkt =
 					rx->rx_hsplit_unsplit_pkt;
-				tmp_xdp_tx_errors = rx->xdp_tx_errors;
-				tmp_xdp_redirect_errors =
-					rx->xdp_redirect_errors;
 			} while (u64_stats_fetch_retry(&priv->rx[ring].statss,
 						       start));
 			rx_pkts += tmp_rx_pkts;
@@ -228,8 +227,6 @@ gve_get_ethtool_stats(struct net_device *netdev,
 			rx_buf_alloc_fail += tmp_rx_buf_alloc_fail;
 			rx_desc_err_dropped_pkt += tmp_rx_desc_err_dropped_pkt;
 			rx_hsplit_unsplit_pkt += tmp_rx_hsplit_unsplit_pkt;
-			xdp_tx_errors += tmp_xdp_tx_errors;
-			xdp_redirect_errors += tmp_xdp_redirect_errors;
 		}
 	}
 	for (tx_pkts = 0, tx_bytes = 0, tx_dropped = 0, ring = 0;
@@ -255,8 +252,8 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	data[i++] = rx_bytes;
 	data[i++] = tx_bytes;
 	/* total rx dropped packets */
-	data[i++] = rx_skb_alloc_fail + rx_desc_err_dropped_pkt +
-		    xdp_tx_errors + xdp_redirect_errors;
+	data[i++] = rx_skb_alloc_fail + rx_buf_alloc_fail +
+		    rx_desc_err_dropped_pkt;
 	data[i++] = tx_dropped;
 	data[i++] = priv->tx_timeo_cnt;
 	data[i++] = rx_skb_alloc_fail;
@@ -274,25 +271,20 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	rx_base_stats_idx = 0;
 	max_rx_stats_idx = 0;
 	max_tx_stats_idx = 0;
-	stats_region_len = priv->stats_report_len -
-				sizeof(struct gve_stats_report);
+	stats_region_len = priv->stats_report_len - sizeof(struct gve_stats_report);
 	nic_stats_len = (NIC_RX_STATS_REPORT_NUM * priv->rx_cfg.num_queues +
 		NIC_TX_STATS_REPORT_NUM * num_tx_queues) * sizeof(struct stats);
-	if (unlikely((stats_region_len -
-				nic_stats_len) % sizeof(struct stats))) {
+	if (unlikely((stats_region_len - nic_stats_len) % sizeof(struct stats))) {
 		net_err_ratelimited("Starting index of NIC stats should be multiple of stats size");
 	} else {
-		/* For rx cross-reporting stats,
-		 * start from nic rx stats in report
-		 */
+		/* For rx cross-reporting stats, start from nic rx stats in report */
 		rx_base_stats_idx = (stats_region_len - nic_stats_len) /
 							sizeof(struct stats);
-		/* The boundary between driver stats and NIC stats
-		 * shifts if there are stopped queues
+		/* The boundary between driver stats and NIC stats shifts if there are
+		 * stopped queues
 		 */
-		rx_base_stats_idx += NIC_RX_STATS_REPORT_NUM *
-			num_stopped_rxqs + NIC_TX_STATS_REPORT_NUM *
-			num_stopped_txqs;
+		rx_base_stats_idx += NIC_RX_STATS_REPORT_NUM * num_stopped_rxqs +
+			NIC_TX_STATS_REPORT_NUM * num_stopped_txqs;
 		max_rx_stats_idx = NIC_RX_STATS_REPORT_NUM *
 			(priv->rx_cfg.num_queues - num_stopped_rxqs) +
 			rx_base_stats_idx;
@@ -335,9 +327,6 @@ gve_get_ethtool_stats(struct net_device *netdev,
 				tmp_rx_buf_alloc_fail = rx->rx_buf_alloc_fail;
 				tmp_rx_desc_err_dropped_pkt =
 					rx->rx_desc_err_dropped_pkt;
-				tmp_xdp_tx_errors = rx->xdp_tx_errors;
-				tmp_xdp_redirect_errors =
-					rx->xdp_redirect_errors;
 			} while (u64_stats_fetch_retry(&priv->rx[ring].statss,
 						       start));
 			data[i++] = tmp_rx_bytes;
@@ -348,9 +337,8 @@ gve_get_ethtool_stats(struct net_device *netdev,
 			data[i++] = rx->rx_frag_alloc_cnt;
 			/* rx dropped packets */
 			data[i++] = tmp_rx_skb_alloc_fail +
-				    tmp_rx_desc_err_dropped_pkt +
-				    tmp_xdp_tx_errors +
-				    tmp_xdp_redirect_errors;
+				tmp_rx_buf_alloc_fail +
+				tmp_rx_desc_err_dropped_pkt;
 			data[i++] = rx->rx_copybreak_pkt;
 			data[i++] = rx->rx_copied_pkt;
 			/* stats from NIC */
@@ -428,7 +416,10 @@ gve_get_ethtool_stats(struct net_device *netdev,
 			data[i++] = tmp_tx_bytes;
 			data[i++] = tx->wake_queue;
 			data[i++] = tx->stop_queue;
-			data[i++] = gve_tx_load_event_counter(priv, tx);
+			if (gve_is_gqi(priv))
+				data[i++] = gve_tx_load_event_counter(priv, tx);
+			else
+				data[i++] = 0;
 			data[i++] = tx->dma_mapping_error;
 			/* stats from NIC */
 			stats_idx = tx_qid_to_stats_idx[ring];
@@ -459,27 +450,27 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	kfree(rx_qid_to_stats_idx);
 	kfree(tx_qid_to_stats_idx);
 	/* AQ Stats */
-	data[i++] = priv->adminq_prod_cnt;
-	data[i++] = priv->adminq_cmd_fail;
-	data[i++] = priv->adminq_timeouts;
-	data[i++] = priv->adminq_describe_device_cnt;
-	data[i++] = priv->adminq_cfg_device_resources_cnt;
-	data[i++] = priv->adminq_register_page_list_cnt;
-	data[i++] = priv->adminq_unregister_page_list_cnt;
-	data[i++] = priv->adminq_create_tx_queue_cnt;
-	data[i++] = priv->adminq_create_rx_queue_cnt;
-	data[i++] = priv->adminq_destroy_tx_queue_cnt;
-	data[i++] = priv->adminq_destroy_rx_queue_cnt;
-	data[i++] = priv->adminq_dcfg_device_resources_cnt;
-	data[i++] = priv->adminq_set_driver_parameter_cnt;
-	data[i++] = priv->adminq_report_stats_cnt;
-	data[i++] = priv->adminq_report_link_speed_cnt;
-	data[i++] = priv->adminq_get_ptype_map_cnt;
-	data[i++] = priv->adminq_query_flow_rules_cnt;
-	data[i++] = priv->adminq_cfg_flow_rule_cnt;
-	data[i++] = priv->adminq_cfg_rss_cnt;
-	data[i++] = priv->adminq_query_rss_cnt;
-	data[i++] = priv->adminq_report_nic_timestamp_cnt;
+	data[i++] = adapter->adminq_prod_cnt;
+	data[i++] = adapter->adminq_cmd_fail;
+	data[i++] = adapter->adminq_timeouts;
+	data[i++] = adapter->adminq_describe_device_cnt;
+	data[i++] = adapter->adminq_cfg_device_resources_cnt;
+	data[i++] = adapter->adminq_register_page_list_cnt;
+	data[i++] = adapter->adminq_unregister_page_list_cnt;
+	data[i++] = adapter->adminq_create_tx_queue_cnt;
+	data[i++] = adapter->adminq_create_rx_queue_cnt;
+	data[i++] = adapter->adminq_destroy_tx_queue_cnt;
+	data[i++] = adapter->adminq_destroy_rx_queue_cnt;
+	data[i++] = adapter->adminq_dcfg_device_resources_cnt;
+	data[i++] = adapter->adminq_set_driver_parameter_cnt;
+	data[i++] = adapter->adminq_report_stats_cnt;
+	data[i++] = adapter->adminq_report_link_speed_cnt;
+	data[i++] = adapter->adminq_get_ptype_map_cnt;
+	data[i++] = adapter->adminq_query_flow_rules_cnt;
+	data[i++] = adapter->adminq_cfg_flow_rule_cnt;
+	data[i++] = adapter->adminq_cfg_rss_cnt;
+	data[i++] = adapter->adminq_query_rss_cnt;
+	data[i++] = adapter->adminq_report_nic_timestamp_cnt;
 }
 
 static void gve_get_channels(struct net_device *netdev,
@@ -562,8 +553,8 @@ static void gve_get_ringparam(struct net_device *netdev,
 		kernel_cmd->tcp_data_split = ETHTOOL_TCP_DATA_SPLIT_DISABLED;
 }
 
-static int gve_validate_req_ring_size(struct gve_priv *priv, u16 new_tx_desc_cnt,
-				      u16 new_rx_desc_cnt)
+static int gve_validate_req_ring_size(struct gve_priv *priv,
+				      u16 new_tx_desc_cnt, u16 new_rx_desc_cnt)
 {
 	/* check for valid range */
 	if (new_tx_desc_cnt < priv->min_tx_desc_cnt ||
@@ -581,17 +572,19 @@ static int gve_validate_req_ring_size(struct gve_priv *priv, u16 new_tx_desc_cnt
 	return 0;
 }
 
-static int gve_set_ring_sizes_config(struct gve_priv *priv, u16 new_tx_desc_cnt,
-				     u16 new_rx_desc_cnt,
-				     struct gve_tx_alloc_rings_cfg *tx_alloc_cfg,
-				     struct gve_rx_alloc_rings_cfg *rx_alloc_cfg)
+static int
+gve_set_ring_sizes_config(struct gve_priv *priv, u16 new_tx_desc_cnt,
+			  u16 new_rx_desc_cnt,
+			  struct gve_tx_alloc_rings_cfg *tx_alloc_cfg,
+			  struct gve_rx_alloc_rings_cfg *rx_alloc_cfg)
 {
 	if (new_tx_desc_cnt == priv->tx_desc_cnt &&
 	    new_rx_desc_cnt == priv->rx_desc_cnt)
 		return 0;
 
 	if (!priv->modify_ring_size_enabled) {
-		dev_err(&priv->pdev->dev, "Modify ring size is not supported.\n");
+		dev_err(&priv->pdev->dev,
+			"Modify ring size is not supported.\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -651,7 +644,7 @@ static int gve_user_reset(struct net_device *netdev, u32 *flags)
 
 	if (*flags == ETH_RESET_ALL) {
 		*flags = 0;
-		return gve_reset(priv, true);
+		return gve_reset(priv);
 	}
 
 	return -EOPNOTSUPP;
@@ -748,8 +741,14 @@ static int gve_get_link_ksettings(struct net_device *netdev,
 	struct gve_priv *priv = netdev_priv(netdev);
 	int err = 0;
 
-	if (priv->link_speed == 0)
-		err = gve_adminq_report_link_speed(priv);
+	if (priv->link_speed == 0) {
+		const struct gve_ctrl_ops *ops = priv->adapter->ctrl_ops;
+
+		if (ops->report_link_speed)
+			err = ops->report_link_speed(priv->adapter);
+		else
+			err = -ENOENT;
+	}
 
 	cmd->base.speed = priv->link_speed;
 
@@ -838,24 +837,22 @@ static int gve_set_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd)
 	return err;
 }
 
-static u32 gve_get_rx_ring_count(struct net_device *netdev)
-{
-	struct gve_priv *priv = netdev_priv(netdev);
-
-	return priv->rx_cfg.num_queues;
-}
-
 static int gve_get_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd, u32 *rule_locs)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
+	const struct gve_ctrl_ops *ops = priv->adapter->ctrl_ops;
 	int err = 0;
 
 	switch (cmd->cmd) {
+	case ETHTOOL_GRXRINGS:
+		cmd->data = priv->rx_cfg.num_queues;
+		break;
 	case ETHTOOL_GRXCLSRLCNT:
-		if (!priv->max_flow_rules)
+		if (!priv->max_flow_rules || !ops->query_flow_rules)
 			return -EOPNOTSUPP;
 
-		err = gve_adminq_query_flow_rules(priv, GVE_FLOW_RULE_QUERY_STATS, 0);
+		err = ops->query_flow_rules(priv->adapter,
+					    GVE_FLOW_RULE_QUERY_STATS, 0);
 		if (err)
 			return err;
 
@@ -912,6 +909,7 @@ static void gve_get_rss_config_cache(struct gve_priv *priv,
 static int gve_get_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rxfh)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
+	const struct gve_ctrl_ops *ops = priv->adapter->ctrl_ops;
 
 	if (!priv->rss_key_size || !priv->rss_lut_size)
 		return -EOPNOTSUPP;
@@ -921,7 +919,10 @@ static int gve_get_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rx
 		return 0;
 	}
 
-	return gve_adminq_query_rss_config(priv, rxfh);
+	if (!ops->query_rss)
+		return -EOPNOTSUPP;
+
+	return ops->query_rss(priv->adapter, rxfh);
 }
 
 static void gve_set_rss_config_cache(struct gve_priv *priv,
@@ -946,7 +947,7 @@ static int gve_set_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rx
 	if (!priv->rss_key_size || !priv->rss_lut_size)
 		return -EOPNOTSUPP;
 
-	err = gve_adminq_configure_rss(priv, rxfh);
+	err = gve_configure_rss(priv, rxfh);
 	if (err) {
 		NL_SET_ERR_MSG_MOD(extack, "Fail to configure RSS config");
 		return err;
@@ -965,7 +966,7 @@ static int gve_get_ts_info(struct net_device *netdev,
 
 	ethtool_op_get_ts_info(netdev, info);
 
-	if (gve_is_clock_enabled(priv)) {
+	if (priv->nic_timestamp_supported) {
 		info->so_timestamping |= SOF_TIMESTAMPING_RX_HARDWARE |
 					 SOF_TIMESTAMPING_RAW_HARDWARE;
 
@@ -993,7 +994,6 @@ const struct ethtool_ops gve_ethtool_ops = {
 	.get_channels = gve_get_channels,
 	.set_rxnfc = gve_set_rxnfc,
 	.get_rxnfc = gve_get_rxnfc,
-	.get_rx_ring_count = gve_get_rx_ring_count,
 	.get_rxfh_indir_size = gve_get_rxfh_indir_size,
 	.get_rxfh_key_size = gve_get_rxfh_key_size,
 	.get_rxfh = gve_get_rxfh,

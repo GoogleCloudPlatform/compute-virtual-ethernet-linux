@@ -8,7 +8,7 @@
 #define _GVE_REGISTER_H_
 
 /* Fixed Configuration Registers */
-struct gve_registers {
+struct gve_adminq_registers {
 	__be32	device_status;
 	__be32	driver_status;
 	__be32	max_tx_queues;

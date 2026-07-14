@@ -1,12 +1,25 @@
 # Linux kernel driver for Compute Engine Virtual Ethernet
 
 This repository contains the source for building an out-of-tree Linux kernel
-module for the Compute Engine Virtual Ethernet device.
+module for the Compute Engine Virtual Ethernet device. This branch specifically
+contains a driver with support for U4 instances using the GVE network
+interface:
+* Support for Gvnic network interfaces on u4c-metal. **u4c-metal instances will fail to gain network connectivity without this driver**
+* Support for PTP clock synchronization on u4s VMs. If your u4s VM needs to syncrhonize the system clock to the NIC clock with chrony, you must use this driver.
+
+NOTE: This branch is temporary and will be deleted following the changes in this
+branch being upstreamed. Following that, users of this branch can rely on the
+in tree driver of the distro of their choosing or the OOT driver in this repo in
+the `release` branch.
 
 # Supported Hardware
 
-The driver here binds to a single PCI device id used by the virtual Ethernet
-device found in some Compute Engine VMs.
+NOTE: This driver is intended only for use on the U4 family of machines. All other families should be utilizing the in-tree driver or the driver located in the `release` branch.
+
+The driver here binds to two PCI device ids used by the virtual Ethernet
+device.
+
+The following virtual device is utilized exclusively in VMs.
 
 Field         | Value    | Comments
 ------------- | -------- | --------
@@ -17,28 +30,37 @@ Sub-device ID | `0x0058` |
 Revision ID   | `0x0`    |
 Device Class  | `0x200`  | Ethernet
 
+The following physical device is utilized in U4-metal instances.
+
+Field         | Value    | Comments
+------------- | -------- | --------
+Vendor ID     | `0x1AE0` | Google
+Device ID     | `0x0043` |
+Sub-vendor ID | `0x1AE0` | Google
+Sub-device ID | `0x0058` |
+Revision ID   | `0x0`    |
+Device Class  | `0x200`  | Ethernet
+
 # Supported Kernels
 
-This driver is supported on any of the [distros listed as supporting gVNIC](https://cloud.google.com/compute/docs/images/os-details#networking).
-Those distros have native drivers for gVNIC, but this driver can be used to
-replace the native driver to get the latest enhancements. Note that native
-drivers are likely to report version `1.0.0`; this should be ignored. The
-upstream community has deprecated the use of driver versions it has not
-been updated since the initial upstream version.
+This driver has formally been tested in the following distros:
+* RHEL 10.2
 
-This driver is also supported on [clean Linux LTS kernels that are not EOL](https://www.kernel.org/category/releases.html).
+Reach out to support to request verification for more distros/kernels.
 
-Versions that are not marked as a release candidate (rc) correspond to upstream
-versions of the driver. It is our intention that release candidates
-will be upstreamed in the near future, but when and in what form this happens
-depends on the Linux community and the upstream review process. We can't
-guarantee that a release candidate will land upstream as-is or if it
-will be accepted upstream at all.
+NOTE: The requirement to run this variant of gve may be different than the requirement to run other critical software (i.e. onload) on U4.
 
 # Installation
 
-## RPM/DEB Package Installation
-Official GVE releases can be found [here](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/releases). GVE releases support installation as either a DEB or an RPM.
+The source code in this repository should not be used to build production images. It is offered for reference and development only. For production images, the driver should be installed via the published packages. Utilizing the appropriate package repository is strongly encouraged over installing the github artifacts directly to receive critical functionality and security fixes automatically.
+
+## RPM Package Installation
+
+This driver has been published to a yum repo found at https://packages.cloud.google.com/yum/repos/gve-el10-stable
+
+The public key for this RPM can be found at https://packages.cloud.google.com/yum/doc/rpm-package-key-v10.gpg
+
+Alternatively GVE releases can be found [here](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/releases). GVE releases support installation as an RPM.
 
 Download the target release and run
 
@@ -46,13 +68,9 @@ Download the target release and run
 sudo rpm -ivh gve-<VERSION>-1dkms.noarch.rpm
 ```
 
-to install as an RPM, or
+to install as an RPM.
 
-```
-sudo dpkg -i gve-dkms_<VERSION>_all.deb
-```
-
-to install as a DEB. `VERSION` above is simply the GVE release version that was downloaded, say, `1.4.6`.
+`VERSION` above is simply the GVE release version that was downloaded, say, `1.4.10~17`.
 
 Depending on the distro, installing the package might not load the driver. If the driver has not been loaded, refer to [Loading the Driver](#loading-the-driver).
 
@@ -168,24 +186,6 @@ To update the ring size:
 ethtool -G|--set-ring <DEV> [rx N] [tx N]
 ```
 
-## Modify RX Buffer Length
-
-On DQO queue format, GVE supports changing the RX buffer length. This requires kernel version 5.17 or newer and ethtool support.
-
-To check the current RX buffer length:
-```bash
-ethtool -g <DEV>
-```
-Look for `RX Buf Len` in the output.
-
-To update the RX buffer length:
-```bash
-ethtool -G <DEV> rx-buf-len <2048|4096>
-```
-Note: GVE only supports buffer lengths of 2048 and 4096. Buffer length of 4096 is only supported if the device supports it (check `max_rx_buffer_size` in device options, usually enabled if the device supports larger buffers).
-
-**Important**: If XDP is enabled, the RX buffer length must be set to 2048.
-
 ## RSS Configuration
 The DQO RDA queue format has support for querying and configuring the RSS hash and indirection table.
 
@@ -240,17 +240,15 @@ ethtool -G <DEV> tcp-data-split on|off
 ## XDP
 Driver-mode support for [XDP](https://docs.cilium.io/en/latest/reference-guides/bpf/progtypes/#xdp) support was introduced in release [1.3.4](github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/releases/tag/v1.3.4) for the GQI QPL queue format and [1.4.6](github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/releases/tag/v1.4.6) for the DQO RDA queue format. The XDP implementation supports the following features:
 
-1) Basic XDP action support (`PASS`, `DROP`, `TX`)
+1) Basic XDP action support (`PASS`, `DROP`, `TX`, )
 1) `NDO_XDP_XMIT` API
 1) XDP redirect support
 1) AF_XDP zero-copy
 
 ### Configuration
 
-To attach an XDP program to the driver, the following conditions must be met:
-1) The number of RX and TX queues must be no more than half their maximum values to accommodate the creation of extra XDP TX queues. The maximum values are based on the number of CPUs available. See [Queue Counts](#queue-counts) to see how to get/set the number of queues.
-2) Header-data split (TCP data split) must be disabled.
-3) The RX buffer length must be configured to 2048 (see [Modify RX Buffer Length](#modify-rx-buffer-length)).
+To attach an XDP program to the driver, the number of RX and TX queues must be
+no more than half their maximum values to accommodate the creation of extra XDP TX queues. The maximum values are based on the number of CPUs available. See [Queue Counts](#queue-counts) to see how to get/set the number of queues.
 
 XDP can be enabled via comand line through `iproute2` or `bpftool`, or in a C program using `libbpf`.
 
@@ -267,3 +265,4 @@ bpftool net attach xdp name <XDP_PROG> dev <DEV>
 
 # Feature Changelog
 See [CHANGELOG.md](CHANGELOG.md) for the feature changelog.
+

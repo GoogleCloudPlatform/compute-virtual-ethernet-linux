@@ -9,6 +9,8 @@
 
 #include <linux/build_bug.h>
 
+#include "gve_flow_rule.h"
+
 /* Admin queue opcodes */
 enum gve_adminq_opcodes {
 	GVE_ADMINQ_DESCRIBE_DEVICE		= 0x1,
@@ -354,7 +356,10 @@ static_assert(sizeof(struct gve_adminq_create_rx_queue) == 56);
 struct gve_queue_resources {
 	union {
 		struct {
-			__be32 db_index;	/* Device -> Guest */
+			union {
+				__be32 db_index;	/* Device -> Guest */
+				__le32 mbx_db_index;
+			};
 			__be32 counter_index;	/* Device -> Guest */
 		};
 		u8 reserved[64];
@@ -411,8 +416,8 @@ static_assert(sizeof(struct gve_adminq_report_nic_ts) == 16);
 
 struct gve_nic_ts_report {
 	__be64 nic_timestamp; /* NIC clock in nanoseconds */
-	__be64 reserved1;
-	__be64 reserved2;
+	__be64 pre_tsc; /* System cycle counter before NIC clock read */
+	__be64 post_tsc; /* System cycle counter after NIC clock read */
 	__be64 reserved3;
 	__be64 reserved4;
 };
@@ -467,18 +472,6 @@ enum gve_l4_type {
 	GVE_L4_TYPE_SCTP,
 };
 
-/* These are control path types for PTYPE which are the same as the data path
- * types.
- */
-struct gve_ptype_entry {
-	u8 l3_type;
-	u8 l4_type;
-};
-
-struct gve_ptype_map {
-	struct gve_ptype_entry ptypes[GVE_NUM_PTYPES]; /* PTYPES are always 10 bits. */
-};
-
 struct gve_adminq_get_ptype_map {
 	__be64 ptype_map_len;
 	__be64 ptype_map_addr;
@@ -491,37 +484,10 @@ enum gve_adminq_flow_rule_cfg_opcode {
 	GVE_FLOW_RULE_CFG_RESET	= 2,
 };
 
-enum gve_adminq_flow_rule_query_opcode {
-	GVE_FLOW_RULE_QUERY_RULES	= 0,
-	GVE_FLOW_RULE_QUERY_IDS		= 1,
-	GVE_FLOW_RULE_QUERY_STATS	= 2,
-};
-
-enum gve_adminq_flow_type {
-	GVE_FLOW_TYPE_TCPV4,
-	GVE_FLOW_TYPE_UDPV4,
-	GVE_FLOW_TYPE_SCTPV4,
-	GVE_FLOW_TYPE_AHV4,
-	GVE_FLOW_TYPE_ESPV4,
-	GVE_FLOW_TYPE_TCPV6,
-	GVE_FLOW_TYPE_UDPV6,
-	GVE_FLOW_TYPE_SCTPV6,
-	GVE_FLOW_TYPE_AHV6,
-	GVE_FLOW_TYPE_ESPV6,
-};
-
-/* Flow-steering command */
-struct gve_adminq_flow_rule {
-	__be16 flow_type;
-	__be16 action; /* RX queue id */
-	struct gve_flow_spec key;
-	struct gve_flow_spec mask;
-};
-
 struct gve_adminq_configure_flow_rule {
 	__be16 opcode;
 	u8 padding[2];
-	struct gve_adminq_flow_rule rule;
+	struct gve_flow_rule rule;
 	__be32 location;
 };
 
@@ -534,11 +500,6 @@ struct gve_query_flow_rules_descriptor {
 	__be32 total_length;
 };
 
-struct gve_adminq_queried_flow_rule {
-	__be32 location;
-	struct gve_adminq_flow_rule flow_rule;
-};
-
 struct gve_adminq_query_flow_rules {
 	__be16 opcode;
 	u8 padding[2];
@@ -548,18 +509,6 @@ struct gve_adminq_query_flow_rules {
 };
 
 static_assert(sizeof(struct gve_adminq_query_flow_rules) == 24);
-
-enum gve_rss_hash_type {
-	GVE_RSS_HASH_IPV4,
-	GVE_RSS_HASH_TCPV4,
-	GVE_RSS_HASH_IPV6,
-	GVE_RSS_HASH_IPV6_EX,
-	GVE_RSS_HASH_TCPV6,
-	GVE_RSS_HASH_TCPV6_EX,
-	GVE_RSS_HASH_UDPV4,
-	GVE_RSS_HASH_UDPV6,
-	GVE_RSS_HASH_UDPV6_EX,
-};
 
 struct gve_adminq_configure_rss {
 	__be16 hash_types;
@@ -619,42 +568,58 @@ union gve_adminq_command {
 
 static_assert(sizeof(union gve_adminq_command) == 64);
 
-int gve_adminq_alloc(struct device *dev, struct gve_priv *priv);
-void gve_adminq_free(struct device *dev, struct gve_priv *priv);
-void gve_adminq_release(struct gve_priv *priv);
-int gve_adminq_describe_device(struct gve_priv *priv);
+int gve_adminq_init(struct gve_adapter *adapter);
+int gve_adminq_alloc(struct gve_adapter *adapter);
+void gve_adminq_free(struct gve_adapter *adapter);
+int gve_adminq_describe_device(struct gve_adapter *adapter);
 int gve_adminq_configure_device_resources(struct gve_priv *priv,
 					  dma_addr_t counter_array_bus_addr,
 					  u32 num_counters,
 					  dma_addr_t db_array_bus_addr,
 					  u32 num_ntfy_blks);
 int gve_adminq_deconfigure_device_resources(struct gve_priv *priv);
-int gve_adminq_create_tx_queues(struct gve_priv *priv, u32 start_id, u32 num_queues);
+int gve_adminq_create_queues(struct gve_adapter *adapter);
+int gve_adminq_create_tx_queues(struct gve_adapter *adapter, u32 start_id,
+				u32 num_queues);
 int gve_adminq_destroy_tx_queues(struct gve_priv *priv, u32 start_id, u32 num_queues);
 int gve_adminq_create_single_rx_queue(struct gve_priv *priv, u32 queue_index);
-int gve_adminq_create_rx_queues(struct gve_priv *priv, u32 num_queues);
+int gve_adminq_create_rx_queues(struct gve_adapter *adapter, u32 num_queues);
 int gve_adminq_destroy_single_rx_queue(struct gve_priv *priv, u32 queue_index);
 int gve_adminq_destroy_rx_queues(struct gve_priv *priv, u32 queue_id);
 int gve_adminq_register_page_list(struct gve_priv *priv,
 				  struct gve_queue_page_list *qpl);
 int gve_adminq_unregister_page_list(struct gve_priv *priv, u32 page_list_id);
-int gve_adminq_report_stats(struct gve_priv *priv, u64 stats_report_len,
+int gve_adminq_report_stats(struct gve_adapter *adapter, u64 stats_report_len,
 			    dma_addr_t stats_report_addr, u64 interval);
-int gve_adminq_verify_driver_compatibility(struct gve_priv *priv,
-					   u64 driver_info_len,
-					   dma_addr_t driver_info_addr);
-int gve_adminq_report_link_speed(struct gve_priv *priv);
-int gve_adminq_add_flow_rule(struct gve_priv *priv, struct gve_adminq_flow_rule *rule, u32 loc);
-int gve_adminq_del_flow_rule(struct gve_priv *priv, u32 loc);
-int gve_adminq_reset_flow_rules(struct gve_priv *priv);
-int gve_adminq_query_flow_rules(struct gve_priv *priv, u16 query_opcode, u32 starting_loc);
-int gve_adminq_configure_rss(struct gve_priv *priv, struct ethtool_rxfh_param *rxfh);
-int gve_adminq_query_rss_config(struct gve_priv *priv, struct ethtool_rxfh_param *rxfh);
+int gve_adminq_verify_driver_compatibility(struct gve_adapter *adapter);
+int gve_adminq_report_link_speed(struct gve_adapter *adapter);
+int gve_adminq_add_flow_rule(struct gve_adapter *adapter,
+			     struct gve_flow_rule *rule, u32 loc);
+int gve_adminq_del_flow_rule(struct gve_adapter *adapter, u32 loc);
+int gve_adminq_reset_flow_rules(struct gve_adapter *adapter);
+int gve_adminq_query_flow_rules(struct gve_adapter *adapter, u16 query_opcode,
+				u32 starting_loc);
+int gve_adminq_configure_rss(struct gve_adapter *adapter, struct ethtool_rxfh_param *rxfh);
+int gve_adminq_query_rss_config(struct gve_adapter *adapter, struct ethtool_rxfh_param *rxfh);
 int gve_adminq_report_nic_ts(struct gve_priv *priv,
 			     dma_addr_t nic_ts_report_addr);
 
-struct gve_ptype_lut;
-int gve_adminq_get_ptype_map_dqo(struct gve_priv *priv,
-				 struct gve_ptype_lut *ptype_lut);
-
+int gve_adminq_get_ptype_map_dqo(struct gve_adapter *adapter);
+int gve_adminq_map_db_bar(struct gve_adapter *adapter);
+void gve_adminq_unmap_db_bar(struct gve_adapter *adapter);
+int gve_adminq_set_num_ntfy_blks(struct gve_adapter *adapter);
+void gve_adminq_set_num_queues(struct gve_adapter *adapter);
+void gve_adminq_get_max_queues(struct gve_adapter *adapter, int *max_tx_queues,
+			       int *max_rx_queues);
+int gve_adminq_request_db_info(struct gve_adapter *adapter);
+void gve_adminq_free_db_resources(struct gve_adapter *adapter);
+int gve_adminq_setup_mgmt_irq(struct gve_adapter *adapter);
+void gve_adminq_teardown_mgmt_irq(struct gve_adapter *adapter);
+int gve_adminq_report_link_status(struct gve_adapter *adapter);
+void gve_adminq_write_q_doorbell(struct gve_adapter *adapter,
+				 const struct gve_queue_resources *q_resources,
+				 u32 val);
+void gve_adminq_write_irq_doorbell_dqo(struct gve_adapter *adapter,
+				       const struct gve_notify_block *block,
+				       u32 val);
 #endif /* _GVE_ADMINQ_H */

@@ -19,14 +19,3 @@ const int header_len = skb_tcp_all_headers(skb);
 +const int header_len = skb_checksum_start_offset(skb) + tcp_hdrlen(skb);
 +#endif
 
-/* Skipping GRO header linearization in kunit kernel as few of the methods
- * used don't exist in our very old kunit kernel and flow-disector logic is
- * severely outdated.
- */
-@@
-@@
-+#if !defined(KUNIT_KERNEL)
-skb_copy_to_linear_data(skb, va, hdr_len);
-...
-skb->tail += hdr_len;
-+#endif

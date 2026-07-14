@@ -15,17 +15,22 @@
 #include <linux/pci.h>
 #include <linux/ptp_clock_kernel.h>
 #include <linux/u64_stats_sync.h>
+#include <linux/utsname.h>
+#include <linux/version.h>
 #include <net/page_pool/helpers.h>
 #include <net/xdp.h>
 
 #include "gve_desc.h"
 #include "gve_desc_dqo.h"
+#include "gve_mailbox.h"
+#include "gve_flow_rule.h"
 
 #ifndef PCI_VENDOR_ID_GOOGLE
 #define PCI_VENDOR_ID_GOOGLE	0x1ae0
 #endif
 
 #define PCI_DEV_ID_GVNIC	0x0042
+#define PCI_DEV_ID_GVNIC_MBX	0x0043
 
 #define GVE_REGISTER_BAR	0
 #define GVE_DOORBELL_BAR	2
@@ -66,9 +71,9 @@
 #define GVE_PAGE_POOL_SIZE_MULTIPLIER 4
 
 #define GVE_FLOW_RULES_CACHE_SIZE \
-	(GVE_ADMINQ_BUFFER_SIZE / sizeof(struct gve_adminq_queried_flow_rule))
+	(GVE_ADMINQ_BUFFER_SIZE / sizeof(struct gve_flow_rule_config))
 #define GVE_FLOW_RULE_IDS_CACHE_SIZE \
-	(GVE_ADMINQ_BUFFER_SIZE / sizeof(((struct gve_adminq_queried_flow_rule *)0)->location))
+	(GVE_ADMINQ_BUFFER_SIZE / sizeof(((struct gve_flow_rule_config *)0)->location))
 
 #define GVE_RSS_KEY_SIZE	40
 #define GVE_RSS_INDIR_SIZE	128
@@ -142,6 +147,18 @@ struct gve_rx_data_queue {
 };
 
 struct gve_priv;
+
+/* These are control path types for PTYPE which are the same as the data path
+ * types.
+ */
+struct gve_ptype_entry {
+	u8 l3_type;
+	u8 l4_type;
+};
+
+struct gve_ptype_map {
+	struct gve_ptype_entry ptypes[GVE_NUM_PTYPES]; /* PTYPES are always 10 bits. */
+};
 
 /* RX buffer queue for posting buffers to HW.
  * Each RX (completion) queue has a corresponding buffer queue.
@@ -664,7 +681,11 @@ struct gve_tx_ring {
  * associated with that irq.
  */
 struct gve_notify_block {
-	__be32 *irq_db_index; /* pointer to idx into Bar2 */
+	union {
+		__be32 *aq_irq_db_index; /* pointer to idx into Bar2 */
+		struct gve_mbx_interrupt_db_info mbx_db_info;
+	}; /* doorbell info */
+
 	char name[IFNAMSIZ + 16]; /* name registered with the kernel */
 	struct napi_struct napi; /* kernel napi struct for this block */
 	struct gve_priv *priv;
@@ -750,34 +771,10 @@ enum gve_queue_format {
 	GVE_DQO_QPL_FORMAT		= 0x4,
 };
 
-struct gve_flow_spec {
-	__be32 src_ip[4];
-	__be32 dst_ip[4];
-	union {
-		struct {
-			__be16 src_port;
-			__be16 dst_port;
-		};
-		__be32 spi;
-	};
-	union {
-		u8 tos;
-		u8 tclass;
-	};
-};
-
-struct gve_flow_rule {
-	u32 location;
-	u16 flow_type;
-	u16 action;
-	struct gve_flow_spec key;
-	struct gve_flow_spec mask;
-};
-
 struct gve_flow_rules_cache {
 	bool rules_cache_synced; /* False if the driver's rules_cache is outdated */
-	struct gve_adminq_queried_flow_rule *rules_cache;
-	__be32 *rule_ids_cache;
+	struct gve_flow_rule_config *rules_cache;
+	u32 *rule_ids_cache;
 	/* The total number of queried rules that stored in the caches */
 	u32 rules_cache_num;
 	u32 rule_ids_cache_num;
@@ -788,13 +785,175 @@ struct gve_rss_config {
 	u32 *hash_lut;
 };
 
+enum gve_rss_hash_type {
+	GVE_RSS_HASH_IPV4,
+	GVE_RSS_HASH_TCPV4,
+	GVE_RSS_HASH_IPV6,
+	GVE_RSS_HASH_IPV6_EX,
+	GVE_RSS_HASH_TCPV6,
+	GVE_RSS_HASH_TCPV6_EX,
+	GVE_RSS_HASH_UDPV4,
+	GVE_RSS_HASH_UDPV6,
+	GVE_RSS_HASH_UDPV6_EX,
+};
+
 struct gve_ptp {
 	struct ptp_clock_info info;
 	struct ptp_clock *clock;
 	struct gve_priv *priv;
+	bool started;
+};
+
+enum gve_dev_clk_read_type {
+	  GVE_DEV_CLK_ADMINQ = 1,
+	  GVE_DEV_CLK_MMIO = 2,
+};
+
+struct gve_device_info {
+	enum gve_queue_format queue_format;
+	enum gve_dev_clk_read_type clk_read_type;
+	u16 default_tx_queues;
+	u16 default_rx_queues;
+	u16 max_tx_queues;
+	u16 max_rx_queues;
+	u16 default_tx_ring_size;
+	u16 default_rx_ring_size;
+	u16 max_tx_ring_size;
+	u16 max_rx_ring_size;
+	u16 min_tx_ring_size;
+	u16 min_rx_ring_size;
+	u16 num_msix_vectors;
+	u16 max_mtu;
+	u8 mac[ETH_ALEN];
+	u16 max_rx_buffer_size;
+	u16 header_buf_size;
+	u32 max_flow_rules;
+	u16 rss_key_size;
+	u16 rss_lut_size;
+	u64 max_registered_pages;
+	u16 tx_pages_per_qpl;
+	u16 num_event_counters;
+	bool default_min_ring_size;
+	bool nic_timestamp_supported;
+	bool modify_ring_size_enabled;
+	bool cache_rss_config;
+};
+
+/* It is the caller's responsibility to ensure the op is
+ * supported before calling it.
+ */
+struct gve_ctrl_ops {
+	int (*init_ctrl_plane)(struct gve_adapter *adapter);
+	void (*free_ctrl_plane)(struct gve_adapter *adapter);
+	int (*get_device_properties)(struct gve_adapter *adapter);
+	int (*map_db_bar)(struct gve_adapter *adapter);
+	void (*unmap_db_bar)(struct gve_adapter *adapter);
+	void (*set_num_queues)(struct gve_adapter *adapter);
+	int (*set_num_ntfy_blks)(struct gve_adapter *adapter);
+	void (*get_max_queues)(struct gve_adapter *adapter,
+			       int *max_tx_qs, int *max_rx_qs);
+	/* Retrieve link status from device and set in
+	 * adapter->priv->link_up. */
+	int (*report_link_status)(struct gve_adapter *adapter);
+	/* Retrieve link speed from device and set in
+	 * adapter->priv->link_speed. */
+	int (*report_link_speed)(struct gve_adapter *adapter);
+
+	int (*request_db_info)(struct gve_adapter *adapter);
+	void (*free_db_resources)(struct gve_adapter *adapter);
+	int (*setup_mgmt_irq)(struct gve_adapter *adapter);
+	void (*teardown_mgmt_irq)(struct gve_adapter *adapter);
+	int (*get_ptype_map)(struct gve_adapter *adapter);
+	int (*query_rss)(struct gve_adapter *adapter,
+			 struct ethtool_rxfh_param *rxfh);
+	int (*configure_rss)(struct gve_adapter *adapter,
+			     struct ethtool_rxfh_param *param);
+	int (*setup_stats_report)(struct gve_adapter *adapter,
+				  u64 stats_rerport_len,
+				  dma_addr_t stats_report_addr,
+				  u64 interval_ms); /* AQ-specific */
+	int (*create_queues)(struct gve_adapter *adapter);
+	int (*destroy_queues)(struct gve_adapter *adapter);
+	void (*write_q_doorbell)(struct gve_adapter *adapter,
+				 const struct gve_queue_resources *q_resources,
+				 u32 val);
+	void (*write_irq_doorbell_dqo)(struct gve_adapter *adapter,
+				       const struct gve_notify_block *block,
+				       u32 val);
+	int (*query_flow_rules)(struct gve_adapter *adapter,
+				u16 query_opcode, u32 starting_loc);
+	int (*add_flow_rule)(struct gve_adapter *adapter,
+			     struct gve_flow_rule *rule, u32 loc);
+	int (*del_flow_rule)(struct gve_adapter *adapter, u32 loc);
+	int (*reset_flow_rules)(struct gve_adapter *adapter);
+};
+
+struct gve_adapter {
+	/* mailbox mode */
+	bool mailbox_mode;
+	struct gve_mbx_queue *mbx_rx;
+	struct gve_mbx_queue *mbx_tx;
+	struct gve_dma_mem **mbx_rx_bufs;
+	struct gve_dma_mem **mbx_tx_bufs;
+	struct gve_mbx_msg_queue *mbx_msg_queue;
+	struct gve_mbx_msg **mbx_msgs;
+	struct workqueue_struct *gve_mbx_wq;
+	struct delayed_work gve_mbx_task;
+	struct work_struct gve_mbx_lsc_event_task;
+	u32 mbx_irq_db_offset;
+
+	int next_msix_vec;
+
+	unsigned long service_task_flags;
+	unsigned long state_flags;
+
+	/* Admin queue - see gve_adminq.h*/
+	union gve_adminq_command *adminq;
+	dma_addr_t adminq_bus_addr;
+	struct dma_pool *adminq_pool;
+	struct mutex adminq_lock; /* Protects adminq command execution */
+	u32 adminq_mask; /* masks prod_cnt to adminq size */
+	u32 adminq_prod_cnt; /* free-running count of AQ cmds executed */
+	u32 adminq_cmd_fail; /* free-running count of AQ cmds failed */
+	u32 adminq_timeouts; /* free-running count of AQ cmds timeouts */
+	/* free-running count of per AQ cmd executed */
+	u32 adminq_describe_device_cnt;
+	u32 adminq_cfg_device_resources_cnt;
+	u32 adminq_register_page_list_cnt;
+	u32 adminq_unregister_page_list_cnt;
+	u32 adminq_create_tx_queue_cnt;
+	u32 adminq_create_rx_queue_cnt;
+	u32 adminq_destroy_tx_queue_cnt;
+	u32 adminq_destroy_rx_queue_cnt;
+	u32 adminq_dcfg_device_resources_cnt;
+	u32 adminq_set_driver_parameter_cnt;
+	u32 adminq_report_stats_cnt;
+	u32 adminq_report_link_speed_cnt;
+	u32 adminq_report_nic_timestamp_cnt;
+	u32 adminq_get_ptype_map_cnt;
+	u32 adminq_verify_driver_compatibility_cnt;
+	u32 adminq_query_flow_rules_cnt;
+	u32 adminq_cfg_flow_rule_cnt;
+	u32 adminq_cfg_rss_cnt;
+	u32 adminq_query_rss_cnt;
+
+	struct gve_device_info *device_info;
+	struct gve_mbx_caps_resp *caps;
+
+	struct pci_dev *pdev;
+	void __iomem *reg_bar0;
+	struct gve_priv *priv;
+	const struct gve_ctrl_ops *ctrl_ops;
+
+	__le64 __iomem *dev_clk_ns_l;
+	__le64 __iomem *dev_clk_ns_h;
+	__le64 __iomem *dev_art_ns_l;
+	__le64 __iomem *dev_art_ns_h;
+	__le64 __iomem *dev_clk_cmd_sync;
 };
 
 struct gve_priv {
+	struct gve_adapter *adapter;
 	struct net_device *dev;
 	struct gve_tx_ring *tx; /* array of tx_cfg.num_queues */
 	struct gve_rx_ring *rx; /* array of rx_cfg.num_queues */
@@ -830,43 +989,14 @@ struct gve_priv {
 	u32 num_ntfy_blks; /* split between TX and RX so must be even */
 	int numa_node;
 
-	struct gve_registers __iomem *reg_bar0; /* see gve_register.h */
-	__be32 __iomem *db_bar2; /* "array" of doorbells */
+	struct gve_adminq_registers __iomem *reg_bar0; /* see gve_register.h */
+	__be32 __iomem *db_adminq_bar2; /* "array" of doorbells */
 	u32 msg_enable;	/* level for netif* netdev print macros	*/
 	struct pci_dev *pdev;
 
 	/* metrics */
 	u32 tx_timeo_cnt;
 
-	/* Admin queue - see gve_adminq.h*/
-	union gve_adminq_command *adminq;
-	dma_addr_t adminq_bus_addr;
-	struct dma_pool *adminq_pool;
-	struct mutex adminq_lock; /* Protects adminq command execution */
-	u32 adminq_mask; /* masks prod_cnt to adminq size */
-	u32 adminq_prod_cnt; /* free-running count of AQ cmds executed */
-	u32 adminq_cmd_fail; /* free-running count of AQ cmds failed */
-	u32 adminq_timeouts; /* free-running count of AQ cmds timeouts */
-	/* free-running count of per AQ cmd executed */
-	u32 adminq_describe_device_cnt;
-	u32 adminq_cfg_device_resources_cnt;
-	u32 adminq_register_page_list_cnt;
-	u32 adminq_unregister_page_list_cnt;
-	u32 adminq_create_tx_queue_cnt;
-	u32 adminq_create_rx_queue_cnt;
-	u32 adminq_destroy_tx_queue_cnt;
-	u32 adminq_destroy_rx_queue_cnt;
-	u32 adminq_dcfg_device_resources_cnt;
-	u32 adminq_set_driver_parameter_cnt;
-	u32 adminq_report_stats_cnt;
-	u32 adminq_report_link_speed_cnt;
-	u32 adminq_report_nic_timestamp_cnt;
-	u32 adminq_get_ptype_map_cnt;
-	u32 adminq_verify_driver_compatibility_cnt;
-	u32 adminq_query_flow_rules_cnt;
-	u32 adminq_cfg_flow_rule_cnt;
-	u32 adminq_cfg_rss_cnt;
-	u32 adminq_query_rss_cnt;
 
 	/* Global stats */
 	u32 interface_up_cnt; /* count of times interface turned up since last reset */
@@ -880,8 +1010,6 @@ struct gve_priv {
 	struct workqueue_struct *gve_wq;
 	struct work_struct service_task;
 	struct work_struct stats_report_task;
-	unsigned long service_task_flags;
-	unsigned long state_flags;
 
 	struct gve_stats_report *stats_report;
 	u64 stats_report_len;
@@ -893,6 +1021,7 @@ struct gve_priv {
 
 	/* Gvnic device link speed from hypervisor. */
 	u64 link_speed;
+	bool link_up;
 	bool up_before_suspend; /* True if dev was up before suspend */
 
 	struct gve_ptype_lut *ptype_lut_dqo;
@@ -919,154 +1048,163 @@ struct gve_priv {
 	bool cache_rss_config;
 	struct gve_rss_config rss_config;
 
-	/* True if the device supports reading the nic clock */
 	bool nic_timestamp_supported;
+	enum gve_dev_clk_read_type clk_read_type;
+	__le64 __iomem *dev_clk_ns_l;
+	__le64 __iomem *dev_clk_ns_h;
+	__le64 __iomem *dev_art_ns_l;
+	__le64 __iomem *dev_art_ns_h;
+	__le64 __iomem *dev_clk_cmd_sync;
+	spinlock_t clk_lock;
 	struct gve_ptp *ptp;
 	struct kernel_hwtstamp_config ts_config;
 	struct gve_nic_ts_report *nic_ts_report;
 	dma_addr_t nic_ts_report_bus;
+	struct mutex nic_ts_read_lock; /* Protects nic timestamp reads */
 	u64 last_sync_nic_counter; /* Clock counter from last NIC TS report */
 };
 
 enum gve_service_task_flags_bit {
-	GVE_PRIV_FLAGS_DO_RESET			= 1,
-	GVE_PRIV_FLAGS_RESET_IN_PROGRESS	= 2,
-	GVE_PRIV_FLAGS_PROBE_IN_PROGRESS	= 3,
-	GVE_PRIV_FLAGS_DO_REPORT_STATS = 4,
+	GVE_FLAGS_DO_RESET		= 1,
+	GVE_FLAGS_RESET_IN_PROGRESS	= 2,
+	GVE_FLAGS_PROBE_IN_PROGRESS	= 3,
+	GVE_FLAGS_DO_REPORT_STATS	= 4,
 };
 
 enum gve_state_flags_bit {
-	GVE_PRIV_FLAGS_ADMIN_QUEUE_OK		= 1,
-	GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK	= 2,
-	GVE_PRIV_FLAGS_DEVICE_RINGS_OK		= 3,
-	GVE_PRIV_FLAGS_NAPI_ENABLED		= 4,
+	GVE_FLAGS_ADMIN_QUEUE_OK	= 1,
+	GVE_FLAGS_DEVICE_RESOURCES_OK	= 2,
+	GVE_FLAGS_DEVICE_RINGS_OK	= 3,
+	GVE_FLAGS_NAPI_ENABLED		= 4,
+	GVE_FLAGS_MBX_QUEUE_OK		= 5,
+	GVE_FLAGS_MAILBOX_INTERRUPT_OK	= 6,
 };
 
 enum gve_ethtool_flags_bit {
 	GVE_PRIV_FLAGS_REPORT_STATS		= 0,
 };
 
-static inline bool gve_get_do_reset(struct gve_priv *priv)
+static inline bool gve_get_do_reset(struct gve_adapter *adapter)
 {
-	return test_bit(GVE_PRIV_FLAGS_DO_RESET, &priv->service_task_flags);
+	return test_bit(GVE_FLAGS_DO_RESET, &adapter->service_task_flags);
 }
 
-static inline void gve_set_do_reset(struct gve_priv *priv)
+static inline void gve_set_do_reset(struct gve_adapter *adapter)
 {
-	set_bit(GVE_PRIV_FLAGS_DO_RESET, &priv->service_task_flags);
+	set_bit(GVE_FLAGS_DO_RESET, &adapter->service_task_flags);
 }
 
-static inline void gve_clear_do_reset(struct gve_priv *priv)
+static inline void gve_clear_do_reset(struct gve_adapter *adapter)
 {
-	clear_bit(GVE_PRIV_FLAGS_DO_RESET, &priv->service_task_flags);
+	clear_bit(GVE_FLAGS_DO_RESET, &adapter->service_task_flags);
 }
 
-static inline bool gve_get_reset_in_progress(struct gve_priv *priv)
+static inline bool gve_get_reset_in_progress(struct gve_adapter *adapter)
 {
-	return test_bit(GVE_PRIV_FLAGS_RESET_IN_PROGRESS,
-			&priv->service_task_flags);
+	return test_bit(GVE_FLAGS_RESET_IN_PROGRESS,
+			&adapter->service_task_flags);
 }
 
-static inline void gve_set_reset_in_progress(struct gve_priv *priv)
+static inline void gve_set_reset_in_progress(struct gve_adapter *adapter)
 {
-	set_bit(GVE_PRIV_FLAGS_RESET_IN_PROGRESS, &priv->service_task_flags);
+	set_bit(GVE_FLAGS_RESET_IN_PROGRESS, &adapter->service_task_flags);
 }
 
-static inline void gve_clear_reset_in_progress(struct gve_priv *priv)
+static inline void gve_clear_reset_in_progress(struct gve_adapter *adapter)
 {
-	clear_bit(GVE_PRIV_FLAGS_RESET_IN_PROGRESS, &priv->service_task_flags);
+	clear_bit(GVE_FLAGS_RESET_IN_PROGRESS, &adapter->service_task_flags);
 }
 
-static inline bool gve_get_probe_in_progress(struct gve_priv *priv)
+static inline bool gve_get_probe_in_progress(struct gve_adapter *adapter)
 {
-	return test_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS,
-			&priv->service_task_flags);
+	return test_bit(GVE_FLAGS_PROBE_IN_PROGRESS,
+			&adapter->service_task_flags);
 }
 
-static inline void gve_set_probe_in_progress(struct gve_priv *priv)
+static inline void gve_set_probe_in_progress(struct gve_adapter *adapter)
 {
-	set_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS, &priv->service_task_flags);
+	set_bit(GVE_FLAGS_PROBE_IN_PROGRESS, &adapter->service_task_flags);
 }
 
-static inline void gve_clear_probe_in_progress(struct gve_priv *priv)
+static inline void gve_clear_probe_in_progress(struct gve_adapter *adapter)
 {
-	clear_bit(GVE_PRIV_FLAGS_PROBE_IN_PROGRESS, &priv->service_task_flags);
+	clear_bit(GVE_FLAGS_PROBE_IN_PROGRESS, &adapter->service_task_flags);
 }
 
-static inline bool gve_get_do_report_stats(struct gve_priv *priv)
+static inline bool gve_get_do_report_stats(struct gve_adapter *adapter)
 {
-	return test_bit(GVE_PRIV_FLAGS_DO_REPORT_STATS,
-			&priv->service_task_flags);
+	return test_bit(GVE_FLAGS_DO_REPORT_STATS,
+			&adapter->service_task_flags);
 }
 
-static inline void gve_set_do_report_stats(struct gve_priv *priv)
+static inline void gve_set_do_report_stats(struct gve_adapter *adapter)
 {
-	set_bit(GVE_PRIV_FLAGS_DO_REPORT_STATS, &priv->service_task_flags);
+	set_bit(GVE_FLAGS_DO_REPORT_STATS, &adapter->service_task_flags);
 }
 
-static inline void gve_clear_do_report_stats(struct gve_priv *priv)
+static inline void gve_clear_do_report_stats(struct gve_adapter *adapter)
 {
-	clear_bit(GVE_PRIV_FLAGS_DO_REPORT_STATS, &priv->service_task_flags);
+	clear_bit(GVE_FLAGS_DO_REPORT_STATS, &adapter->service_task_flags);
 }
 
-static inline bool gve_get_admin_queue_ok(struct gve_priv *priv)
+static inline bool gve_get_admin_queue_ok(struct gve_adapter *adapter)
 {
-	return test_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags);
+	return test_bit(GVE_FLAGS_ADMIN_QUEUE_OK, &adapter->state_flags);
 }
 
-static inline void gve_set_admin_queue_ok(struct gve_priv *priv)
+static inline void gve_set_admin_queue_ok(struct gve_adapter *adapter)
 {
-	set_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags);
+	set_bit(GVE_FLAGS_ADMIN_QUEUE_OK, &adapter->state_flags);
 }
 
-static inline void gve_clear_admin_queue_ok(struct gve_priv *priv)
+static inline void gve_clear_admin_queue_ok(struct gve_adapter *adapter)
 {
-	clear_bit(GVE_PRIV_FLAGS_ADMIN_QUEUE_OK, &priv->state_flags);
+	clear_bit(GVE_FLAGS_ADMIN_QUEUE_OK, &adapter->state_flags);
 }
 
-static inline bool gve_get_device_resources_ok(struct gve_priv *priv)
+static inline bool gve_get_device_resources_ok(struct gve_adapter *adapter)
 {
-	return test_bit(GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK, &priv->state_flags);
+	return test_bit(GVE_FLAGS_DEVICE_RESOURCES_OK, &adapter->state_flags);
 }
 
-static inline void gve_set_device_resources_ok(struct gve_priv *priv)
+static inline void gve_set_device_resources_ok(struct gve_adapter *adapter)
 {
-	set_bit(GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK, &priv->state_flags);
+	set_bit(GVE_FLAGS_DEVICE_RESOURCES_OK, &adapter->state_flags);
 }
 
-static inline void gve_clear_device_resources_ok(struct gve_priv *priv)
+static inline void gve_clear_device_resources_ok(struct gve_adapter *adapter)
 {
-	clear_bit(GVE_PRIV_FLAGS_DEVICE_RESOURCES_OK, &priv->state_flags);
+	clear_bit(GVE_FLAGS_DEVICE_RESOURCES_OK, &adapter->state_flags);
 }
 
-static inline bool gve_get_device_rings_ok(struct gve_priv *priv)
+static inline bool gve_get_device_rings_ok(struct gve_adapter *adapter)
 {
-	return test_bit(GVE_PRIV_FLAGS_DEVICE_RINGS_OK, &priv->state_flags);
+	return test_bit(GVE_FLAGS_DEVICE_RINGS_OK, &adapter->state_flags);
 }
 
-static inline void gve_set_device_rings_ok(struct gve_priv *priv)
+static inline void gve_set_device_rings_ok(struct gve_adapter *adapter)
 {
-	set_bit(GVE_PRIV_FLAGS_DEVICE_RINGS_OK, &priv->state_flags);
+	set_bit(GVE_FLAGS_DEVICE_RINGS_OK, &adapter->state_flags);
 }
 
-static inline void gve_clear_device_rings_ok(struct gve_priv *priv)
+static inline void gve_clear_device_rings_ok(struct gve_adapter *adapter)
 {
-	clear_bit(GVE_PRIV_FLAGS_DEVICE_RINGS_OK, &priv->state_flags);
+	clear_bit(GVE_FLAGS_DEVICE_RINGS_OK, &adapter->state_flags);
 }
 
-static inline bool gve_get_napi_enabled(struct gve_priv *priv)
+static inline bool gve_get_napi_enabled(struct gve_adapter *adapter)
 {
-	return test_bit(GVE_PRIV_FLAGS_NAPI_ENABLED, &priv->state_flags);
+	return test_bit(GVE_FLAGS_NAPI_ENABLED, &adapter->state_flags);
 }
 
-static inline void gve_set_napi_enabled(struct gve_priv *priv)
+static inline void gve_set_napi_enabled(struct gve_adapter *adapter)
 {
-	set_bit(GVE_PRIV_FLAGS_NAPI_ENABLED, &priv->state_flags);
+	set_bit(GVE_FLAGS_NAPI_ENABLED, &adapter->state_flags);
 }
 
-static inline void gve_clear_napi_enabled(struct gve_priv *priv)
+static inline void gve_clear_napi_enabled(struct gve_adapter *adapter)
 {
-	clear_bit(GVE_PRIV_FLAGS_NAPI_ENABLED, &priv->state_flags);
+	clear_bit(GVE_FLAGS_NAPI_ENABLED, &adapter->state_flags);
 }
 
 static inline bool gve_get_report_stats(struct gve_priv *priv)
@@ -1079,12 +1217,42 @@ static inline void gve_clear_report_stats(struct gve_priv *priv)
 	clear_bit(GVE_PRIV_FLAGS_REPORT_STATS, &priv->ethtool_flags);
 }
 
+static inline bool gve_get_mbx_queue_ok(struct gve_adapter *adapter)
+{
+	return test_bit(GVE_FLAGS_MBX_QUEUE_OK, &adapter->state_flags);
+}
+
+static inline void gve_set_mbx_queue_ok(struct gve_adapter *adapter)
+{
+	set_bit(GVE_FLAGS_MBX_QUEUE_OK, &adapter->state_flags);
+}
+
+static inline void gve_clear_mbx_queue_ok(struct gve_adapter *adapter)
+{
+	clear_bit(GVE_FLAGS_MBX_QUEUE_OK, &adapter->state_flags);
+}
+
+static inline bool gve_get_mailbox_interrupt_ok(struct gve_adapter *adapter)
+{
+	return test_bit(GVE_FLAGS_MAILBOX_INTERRUPT_OK, &adapter->state_flags);
+}
+
+static inline void gve_set_mailbox_interrupt_ok(struct gve_adapter *adapter)
+{
+	set_bit(GVE_FLAGS_MAILBOX_INTERRUPT_OK, &adapter->state_flags);
+}
+
+static inline void gve_clear_mailbox_interrupt_ok(struct gve_adapter *adapter)
+{
+	clear_bit(GVE_FLAGS_MAILBOX_INTERRUPT_OK, &adapter->state_flags);
+}
+
 /* Returns the address of the ntfy_blocks irq doorbell
  */
 static inline __be32 __iomem *gve_irq_doorbell(struct gve_priv *priv,
 					       struct gve_notify_block *block)
 {
-	return &priv->db_bar2[be32_to_cpu(*block->irq_db_index)];
+	return &priv->db_adminq_bar2[be32_to_cpu(*block->aq_irq_db_index)];
 }
 
 /* Returns the index into ntfy_blocks of the given tx ring's block
@@ -1099,6 +1267,26 @@ static inline u32 gve_tx_idx_to_ntfy(struct gve_priv *priv, u32 queue_idx)
 static inline u32 gve_rx_idx_to_ntfy(struct gve_priv *priv, u32 queue_idx)
 {
 	return (priv->num_ntfy_blks / 2) + queue_idx;
+}
+
+static inline u32 gve_msix_idx_to_ntfy(struct gve_priv *priv, u32 msix_idx)
+{
+	/* In mailbox mode, the first msix vector is reserved for the mailbox
+	 * IRQ vector, so data queue MSI-X vectors start at index 1.
+	 */
+	int base = (priv->adapter->mailbox_mode) ? 1 : 0;
+
+	return msix_idx - base;
+}
+
+static inline u32 gve_ntfy_to_msix_idx(struct gve_priv *priv, u32 ntfy_blk_idx)
+{
+	/* In mailbox mode, the first msix vector is reserved for the mailbox
+	 * IRQ vector, so data queue MSI-X vectors start at index 1.
+	 */
+	int base = (priv->adapter->mailbox_mode) ? 1 : 0;
+
+	return base + ntfy_blk_idx;
 }
 
 static inline bool gve_is_qpl(struct gve_priv *priv)
@@ -1199,10 +1387,12 @@ static inline bool gve_supports_xdp_xmit(struct gve_priv *priv)
 	}
 }
 
-static inline bool gve_is_clock_enabled(struct gve_priv *priv)
+static inline bool gve_is_clock_running(struct gve_priv *priv)
 {
-	return priv->nic_ts_report;
+	return priv->ptp && priv->ptp->started;
 }
+
+void gve_adminq_write_version(u8 __iomem *driver_version_register);
 
 /* gqi napi handler defined in gve_main.c */
 int gve_napi_poll(struct napi_struct *napi, int budget);
@@ -1297,7 +1487,7 @@ struct page_pool *gve_rx_create_page_pool(struct gve_priv *priv,
 
 /* Reset */
 void gve_schedule_reset(struct gve_priv *priv);
-int gve_reset(struct gve_priv *priv, bool attempt_teardown);
+int gve_reset(struct gve_priv *priv);
 void gve_get_curr_alloc_cfgs(struct gve_priv *priv,
 			     struct gve_tx_alloc_rings_cfg *tx_alloc_cfg,
 			     struct gve_rx_alloc_rings_cfg *rx_alloc_cfg);
@@ -1311,6 +1501,9 @@ int gve_adjust_queues(struct gve_priv *priv,
 		      struct gve_rx_queue_config new_rx_config,
 		      struct gve_tx_queue_config new_tx_config,
 		      bool reset_rss);
+/* Initialization sequence */
+int gve_alloc_counter_array(struct gve_priv *priv);
+void gve_free_counter_array(struct gve_priv *priv);
 /* flow steering rule */
 int gve_get_flow_rule_entry(struct gve_priv *priv, struct ethtool_rxnfc *cmd);
 int gve_get_flow_rule_ids(struct gve_priv *priv, struct ethtool_rxnfc *cmd, u32 *rule_locs);
@@ -1319,23 +1512,25 @@ int gve_del_flow_rule(struct gve_priv *priv, struct ethtool_rxnfc *cmd);
 int gve_flow_rules_reset(struct gve_priv *priv);
 /* RSS config */
 int gve_init_rss_config(struct gve_priv *priv, u16 num_queues);
+int gve_configure_rss(struct gve_priv *priv,
+		      struct ethtool_rxfh_param *rxfh);
+void gve_handle_link_status(struct gve_priv *priv);
 /* PTP and timestamping */
 #if IS_ENABLED(CONFIG_PTP_1588_CLOCK)
-int gve_clock_nic_ts_read(struct gve_priv *priv);
-int gve_init_clock(struct gve_priv *priv);
-void gve_teardown_clock(struct gve_priv *priv);
+int gve_ptp_register(struct gve_priv *priv);
+void gve_ptp_unregister(struct gve_priv *priv);
+int gve_ptp_start(struct gve_priv *priv);
+void gve_ptp_stop(struct gve_priv *priv);
 #else /* CONFIG_PTP_1588_CLOCK */
-static inline int gve_clock_nic_ts_read(struct gve_priv *priv)
-{
-	return -EOPNOTSUPP;
-}
 
-static inline int gve_init_clock(struct gve_priv *priv)
+static inline int gve_ptp_register(struct gve_priv *priv)
 {
 	return 0;
 }
 
-static inline void gve_teardown_clock(struct gve_priv *priv) { }
+static inline void gve_ptp_unregister(struct gve_priv *priv) { }
+static inline int gve_ptp_start(struct gve_priv *priv) { return 0; }
+static inline void gve_ptp_stop(struct gve_priv *priv) { }
 #endif /* CONFIG_PTP_1588_CLOCK */
 /* report stats handling */
 void gve_handle_report_stats(struct gve_priv *priv);

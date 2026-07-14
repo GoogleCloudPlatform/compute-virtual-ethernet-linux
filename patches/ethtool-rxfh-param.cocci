@@ -295,11 +295,12 @@ int gve_adminq_query_rss_config(struct gve_priv *priv, struct ethtool_rxfh_param
 +int gve_adminq_query_rss_config(struct gve_priv *priv, u32 *indir, u8 *key, u8 *hfunc)
 +{
 +	struct gve_query_rss_descriptor *descriptor;
++	struct gve_adapter *adapter = priv->adapter;
 +	union gve_adminq_command cmd;
 +	dma_addr_t descriptor_bus;
 +	int err = 0;
 +
-+	descriptor = dma_pool_alloc(priv->adminq_pool, GFP_KERNEL, &descriptor_bus);
++	descriptor = dma_pool_alloc(adapter->adminq_pool, GFP_KERNEL, &descriptor_bus);
 +	if (!descriptor)
 +		return -ENOMEM;
 +
@@ -316,7 +317,7 @@ int gve_adminq_query_rss_config(struct gve_priv *priv, struct ethtool_rxfh_param
 +	err = gve_adminq_process_rss_query(priv, descriptor, indir, key, hfunc);
 +
 +out:
-+	dma_pool_free(priv->adminq_pool, descriptor, descriptor_bus);
++	dma_pool_free(adapter->adminq_pool, descriptor, descriptor_bus);
 +	return err;
 +}
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) || RHEL_VERSION_GTE(9,5) */

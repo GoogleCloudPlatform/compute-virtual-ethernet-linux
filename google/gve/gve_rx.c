@@ -266,7 +266,7 @@ void gve_rx_start_ring_gqi(struct gve_priv *priv, int idx)
 	int ntfy_idx = gve_rx_idx_to_ntfy(priv, idx);
 
 	gve_rx_add_to_block(priv, idx);
-	gve_add_napi(priv, ntfy_idx, gve_napi_poll);
+	gve_add_napi(priv, ntfy_idx, idx, gve_napi_poll);
 }
 
 int gve_rx_alloc_ring_gqi(struct gve_priv *priv,
@@ -386,7 +386,8 @@ int gve_rx_alloc_rings_gqi(struct gve_priv *priv,
 	int err = 0;
 	int i, j;
 
-	rx = kvzalloc_objs(struct gve_rx_ring, cfg->qcfg_rx->max_queues);
+	rx = kvcalloc(cfg->qcfg_rx->max_queues, sizeof(struct gve_rx_ring),
+		      GFP_KERNEL);
 	if (!rx)
 		return -ENOMEM;
 
@@ -430,7 +431,7 @@ void gve_rx_write_doorbell(struct gve_priv *priv, struct gve_rx_ring *rx)
 {
 	u32 db_idx = be32_to_cpu(rx->q_resources->db_index);
 
-	iowrite32be(rx->fill_cnt, &priv->db_bar2[db_idx]);
+	iowrite32be(rx->fill_cnt, &priv->db_adminq_bar2[db_idx]);
 }
 
 static enum pkt_hash_types gve_rss_type(__be16 pkt_flags)

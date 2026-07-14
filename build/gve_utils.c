@@ -109,30 +109,36 @@ void gve_dec_pagecnt_bias(struct gve_rx_slot_page_info *page_info)
 	}
 }
 
-void gve_add_napi(struct gve_priv *priv, int ntfy_idx,
+void gve_add_napi(struct gve_priv *priv, int ntfy_idx, int q_idx,
 		  int (*gve_poll)(struct napi_struct *, int))
 {
 	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 
+	memset(&block->napi, 0, sizeof(block->napi));
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)|| RHEL_VERSION_GTE(10,2)
-	netif_napi_add_locked(priv->dev, &block->napi, gve_poll);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,0,0) || RHEL_VERSION_GTE(9,2) || (RHEL_VERSION_GTE(8,8) && RHEL_VERSION_LT(9,0))
+	if (block->rx)
+		netif_napi_add_config_locked(priv->dev, &block->napi, gve_poll,
+					     q_idx);
+	else
+		netif_napi_add_locked(priv->dev, &block->napi, gve_poll);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0) || RHEL_VERSION_GTE(10,1)
+	if (block->rx) netif_napi_add_config(priv->dev, &block->napi,
+					     gve_poll, q_idx);
+	else netif_napi_add(priv->dev, &block->napi, gve_poll);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6,0,0) || RHEL_VERSION_GTE(9,2) || (RHEL_VERSION_GTE(8,8) && RHEL_VERSION_LT(9,0))
 	netif_napi_add(priv->dev, &block->napi, gve_poll);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,0,0) || RHEL_VERSION_GTE(9,2) || (RHEL_VERSION_GTE(8,8) && RHEL_VERSION_LT(9,0)) */
+#else
 	netif_napi_add(priv->dev, &block->napi, gve_poll, NAPI_POLL_WEIGHT);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,0,0) || RHEL_VERSION_GTE(9,2) || (RHEL_VERSION_GTE(8,8) && RHEL_VERSION_LT(9,0)) */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4,5,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0)
-	napi_hash_add(&block->napi);
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,5,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0) */
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
+#endif
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2)
 	netif_napi_set_irq_locked(&block->napi, block->irq);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0)
 	netif_napi_set_irq(&block->napi, block->irq);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	enable_irq(block->irq);
 }
 
@@ -143,11 +149,11 @@ void gve_remove_napi(struct gve_priv *priv, int ntfy_idx)
 	disable_irq(block->irq);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2)
 	netif_napi_del_locked(&block->napi);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,5,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0)
 	napi_hash_del(&block->napi);
 	synchronize_net();
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,5,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0) */
 	netif_napi_del(&block->napi);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 }

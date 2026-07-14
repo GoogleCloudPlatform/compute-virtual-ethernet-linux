@@ -34,14 +34,10 @@ static void gve_turnup_and_check_status(struct gve_priv *priv)
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
 @@
-parameter P1, P2, P3, P4;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
-static int gve_rx_queue_mem_alloc(P1
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
-                                  ,P2
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0) */
-                                  ,P3, P4)
+static int gve_rx_queue_mem_alloc(struct net_device *dev, void *per_q_mem,
+				  int idx)
 {
 ...
 }
@@ -57,14 +53,9 @@ static void gve_rx_queue_mem_free(struct net_device *dev, void *per_q_mem)
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
 @@
-parameter P1, P2, P3, P4;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
-static int gve_rx_queue_start(P1
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
-                                  ,P2
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0) */
-                                  ,P3, P4)
+static int gve_rx_queue_start(struct net_device *dev, void *per_q_mem, int idx)
 {
 ...
 }

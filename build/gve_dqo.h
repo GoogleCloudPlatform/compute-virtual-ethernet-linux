@@ -73,10 +73,10 @@ static inline void
 gve_tx_put_doorbell_dqo(const struct gve_priv *priv,
 			const struct gve_queue_resources *q_resources, u32 val)
 {
-	u64 index;
+	struct gve_adapter *adapter = priv->adapter;
 
-	index = be32_to_cpu(q_resources->db_index);
-	iowrite32(val, &priv->db_bar2[index]);
+	if (adapter->ctrl_ops->write_q_doorbell)
+		adapter->ctrl_ops->write_q_doorbell(adapter, q_resources, val);
 }
 
 /* Builds register value to write to DQO IRQ doorbell to enable with specified
@@ -99,9 +99,10 @@ static inline void
 gve_write_irq_doorbell_dqo(const struct gve_priv *priv,
 			   const struct gve_notify_block *block, u32 val)
 {
-	u32 index = be32_to_cpu(*block->irq_db_index);
+	struct gve_adapter *adapter = priv->adapter;
 
-	iowrite32(val, &priv->db_bar2[index]);
+	if (adapter->ctrl_ops->write_irq_doorbell_dqo)
+		adapter->ctrl_ops->write_irq_doorbell_dqo(adapter, block, val);
 }
 
 /* Sets interrupt throttling interval and enables interrupt

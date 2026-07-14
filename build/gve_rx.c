@@ -323,7 +323,7 @@ void gve_rx_start_ring_gqi(struct gve_priv *priv, int idx)
 	int ntfy_idx = gve_rx_idx_to_ntfy(priv, idx);
 
 	gve_rx_add_to_block(priv, idx);
-	gve_add_napi(priv, ntfy_idx, gve_napi_poll);
+	gve_add_napi(priv, ntfy_idx, idx, gve_napi_poll);
 }
 
 int gve_rx_alloc_ring_gqi(struct gve_priv *priv,
@@ -459,15 +459,13 @@ int gve_rx_alloc_rings_gqi(struct gve_priv *priv,
 	int err = 0;
 	int i, j;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
-	rx = kvzalloc_objs(struct gve_rx_ring, cfg->qcfg_rx->max_queues);
-#else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
-	rx = kvcalloc(cfg->qcfg_rx->max_queues, sizeof(*rx), GFP_KERNEL);
+	rx = kvcalloc(cfg->qcfg_rx->max_queues, sizeof(struct gve_rx_ring),
+		      GFP_KERNEL);
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-	rx = kcalloc(cfg->qcfg_rx->max_queues, sizeof(*rx), GFP_KERNEL);
+	rx = kcalloc(cfg->qcfg_rx->max_queues, sizeof(struct gve_rx_ring),
+		     GFP_KERNEL);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-#endif
 	if (!rx)
 		return -ENOMEM;
 
@@ -519,7 +517,7 @@ void gve_rx_write_doorbell(struct gve_priv *priv, struct gve_rx_ring *rx)
 {
 	u32 db_idx = be32_to_cpu(rx->q_resources->db_index);
 
-	iowrite32be(rx->fill_cnt, &priv->db_bar2[db_idx]);
+	iowrite32be(rx->fill_cnt, &priv->db_adminq_bar2[db_idx]);
 }
 
 #if RHEL_VERSION_GTE(7, 0) || LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0)

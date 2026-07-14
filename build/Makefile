@@ -10,7 +10,7 @@ endif
 
 obj-m += gve.o
 gve-y := gve_main.o gve_tx.o gve_tx_dqo.o gve_rx.o gve_rx_dqo.o gve_ethtool.o gve_adminq.o gve_utils.o gve_flow_rule.o \
-	    gve_buffer_mgmt_dqo.o
+	    gve_buffer_mgmt_dqo.o gve_mailbox.o
 
 gve-$(CONFIG_PTP_1588_CLOCK) += gve_ptp.o
 
@@ -23,10 +23,7 @@ default:
 	$(MAKE) -C $(KERNELDIR) M=$$PWD
 
 clean:
-	@-rm -rf gve_main.o gve_tx.o gve_tx_dqo.o gve_rx.o gve_rx_dqo.o \
-	gve_ethtool.o gve_adminq.o gve_adminq_dqo.o gve_utils.o gve.o \
-	gve_flow_rule.o gve_buffer_mgmt_dqo.o gve_ptp.o \
-	built-in.o Module.symvers modules.order gve.ko *.mod.* .*.*o.cmd .tmp*
+	$(MAKE) -C $(KERNELDIR) M=$$PWD clean
 
 install:
 	@mkdir -p $(DESTDIR)

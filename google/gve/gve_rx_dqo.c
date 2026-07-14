@@ -208,7 +208,7 @@ void gve_rx_start_ring_dqo(struct gve_priv *priv, int idx)
 	int ntfy_idx = gve_rx_idx_to_ntfy(priv, idx);
 
 	gve_rx_add_to_block(priv, idx);
-	gve_add_napi(priv, ntfy_idx, gve_napi_poll_dqo);
+	gve_add_napi(priv, ntfy_idx, idx, gve_napi_poll_dqo);
 }
 
 int gve_rx_alloc_ring_dqo(struct gve_priv *priv,
@@ -306,9 +306,13 @@ err:
 void gve_rx_write_doorbell_dqo(const struct gve_priv *priv, int queue_idx)
 {
 	const struct gve_rx_ring *rx = &priv->rx[queue_idx];
-	u64 index = be32_to_cpu(rx->q_resources->db_index);
+	const struct gve_queue_resources *q_resources;
+	struct gve_adapter *adapter = priv->adapter;
+	u32 val = rx->dqo.bufq.tail;
 
-	iowrite32(rx->dqo.bufq.tail, &priv->db_bar2[index]);
+	q_resources = rx->q_resources;
+	if (adapter->ctrl_ops->write_q_doorbell)
+		adapter->ctrl_ops->write_q_doorbell(adapter, q_resources, val);
 }
 
 int gve_rx_alloc_rings_dqo(struct gve_priv *priv,
@@ -318,7 +322,8 @@ int gve_rx_alloc_rings_dqo(struct gve_priv *priv,
 	int err;
 	int i;
 
-	rx = kvzalloc_objs(struct gve_rx_ring, cfg->qcfg_rx->max_queues);
+	rx = kvcalloc(cfg->qcfg_rx->max_queues, sizeof(struct gve_rx_ring),
+		      GFP_KERNEL);
 	if (!rx)
 		return -ENOMEM;
 
@@ -481,7 +486,7 @@ int gve_xdp_rx_timestamp(const struct xdp_md *_ctx, u64 *timestamp)
 {
 	const struct gve_xdp_buff *ctx = (void *)_ctx;
 
-	if (!gve_is_clock_enabled(ctx->gve))
+	if (!gve_is_clock_running(ctx->gve))
 		return -ENODATA;
 
 	if (!(ctx->compl_desc->ts_sub_nsecs_low & GVE_DQO_RX_HWTSTAMP_VALID))
@@ -754,17 +759,15 @@ static int gve_rx_xsk_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 static void gve_dma_sync(struct gve_priv *priv, struct gve_rx_ring *rx,
 			 struct gve_rx_buf_state_dqo *buf_state, u16 buf_len)
 {
-	struct gve_rx_slot_page_info *page_info = &buf_state->page_info;
-
 	if (rx->dqo.page_pool) {
 		page_pool_dma_sync_netmem_for_cpu(rx->dqo.page_pool,
-						  page_info->netmem,
-						  page_info->page_offset,
+						  buf_state->page_info.netmem,
+						  buf_state->page_info.page_offset,
 						  buf_len);
 	} else {
 		dma_sync_single_range_for_cpu(&priv->pdev->dev, buf_state->addr,
-					      page_info->page_offset +
-					      page_info->pad,
+					      buf_state->page_info.page_offset +
+					      buf_state->page_info.pad,
 					      buf_len, DMA_FROM_DEVICE);
 	}
 }
@@ -877,7 +880,7 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 				 buf_state->page_info.page_address +
 				 buf_state->page_info.page_offset,
 				 buf_state->page_info.pad,
-				 buf_len, false);
+				 buf_len, true);
 		gve_xdp.gve = priv;
 		gve_xdp.compl_desc = compl_desc;
 
@@ -942,17 +945,10 @@ static int gve_rx_complete_rsc(struct sk_buff *skb,
 			       struct gve_ptype ptype)
 {
 	struct skb_shared_info *shinfo = skb_shinfo(skb);
-	int rsc_segments, rsc_seg_len, hdr_len;
-	skb_frag_t *frag;
-	void *va;
 
-	/* HW-GRO only coalesces TCP. */
+	/* Only TCP is supported right now. */
 	if (ptype.l4_type != GVE_L4_TYPE_TCP)
 		return -EINVAL;
-
-	rsc_seg_len = le16_to_cpu(desc->rsc_seg_len);
-	if (!rsc_seg_len)
-		return 0;
 
 	switch (ptype.l3_type) {
 	case GVE_L3_TYPE_IPV4:
@@ -965,31 +961,7 @@ static int gve_rx_complete_rsc(struct sk_buff *skb,
 		return -EINVAL;
 	}
 
-	if (skb_headlen(skb)) {
-		/* With header-split, payload is in the non-linear part */
-		rsc_segments = DIV_ROUND_UP(skb->data_len, rsc_seg_len);
-	} else {
-		/* HW-GRO packets are guaranteed to have complete TCP/IP
-		 * headers in frag[0] when header-split is not enabled.
-		 */
-		frag = &skb_shinfo(skb)->frags[0];
-		va = skb_frag_address(frag);
-		hdr_len =
-			eth_get_headlen(skb->dev, va, skb_frag_size(frag));
-		rsc_segments = DIV_ROUND_UP(skb->len - hdr_len, rsc_seg_len);
-		skb_copy_to_linear_data(skb, va, hdr_len);
-		skb_frag_size_sub(frag, hdr_len);
-		/* Verify we didn't empty the fragment completely as that could
-		 * otherwise lead to page leaks.
-		 */
-		DEBUG_NET_WARN_ON_ONCE(!skb_frag_size(frag));
-		skb_frag_off_add(frag, hdr_len);
-		skb->data_len -= hdr_len;
-		skb->tail += hdr_len;
-	}
-	shinfo->gso_size = rsc_seg_len;
-	shinfo->gso_segs = rsc_segments;
-
+	shinfo->gso_size = le16_to_cpu(desc->rsc_seg_len);
 	return 0;
 }
 
@@ -1022,7 +994,7 @@ static int gve_rx_complete_skb(struct gve_rx_ring *rx, struct napi_struct *napi,
 			return err;
 	}
 
-	if (rx->ctx.skb_head == napi->skb)
+	if (skb_headlen(rx->ctx.skb_head) == 0)
 		napi_gro_frags(napi);
 	else
 		napi_gro_receive(napi, rx->ctx.skb_head);

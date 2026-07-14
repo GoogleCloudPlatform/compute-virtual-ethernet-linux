@@ -105,12 +105,19 @@ void gve_dec_pagecnt_bias(struct gve_rx_slot_page_info *page_info)
 	}
 }
 
-void gve_add_napi(struct gve_priv *priv, int ntfy_idx,
+void gve_add_napi(struct gve_priv *priv, int ntfy_idx, int q_idx,
 		  int (*gve_poll)(struct napi_struct *, int))
 {
 	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
 
-	netif_napi_add_locked(priv->dev, &block->napi, gve_poll);
+	memset(&block->napi, 0, sizeof(block->napi));
+
+	if (block->rx)
+		netif_napi_add_config_locked(priv->dev, &block->napi, gve_poll,
+					     q_idx);
+	else
+		netif_napi_add_locked(priv->dev, &block->napi, gve_poll);
+
 	netif_napi_set_irq_locked(&block->napi, block->irq);
 	enable_irq(block->irq);
 }

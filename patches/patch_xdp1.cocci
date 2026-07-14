@@ -531,9 +531,9 @@ expression list args;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(10,2)
 xdp_set_features_flag_locked(args);
-+#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(10,2) */
++#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) */
 +xdp_set_features_flag(args);
-+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(10,2) */
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) */
 
 @@
 expression list args;
@@ -565,7 +565,7 @@ int verify_xdp_configuration(args
  )
 {
 ...
-if (dev->features & NETIF_F_GRO_HW) { ... }
+if (dev->features & NETIF_F_LRO) { ... }
 +#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL)
 +	/* Check XDP support for various queue formats. */
 +	switch (priv->queue_format) {

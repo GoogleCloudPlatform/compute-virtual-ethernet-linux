@@ -20,7 +20,8 @@ static inline void gve_tx_put_doorbell(struct gve_priv *priv,
 				       struct gve_queue_resources *q_resources,
 				       u32 val)
 {
-	iowrite32be(val, &priv->db_bar2[be32_to_cpu(q_resources->db_index)]);
+	iowrite32be(val,
+		    &priv->db_adminq_bar2[be32_to_cpu(q_resources->db_index)]);
 }
 
 void gve_xdp_tx_flush(struct gve_priv *priv, u32 xdp_qid)
@@ -262,7 +263,7 @@ void gve_tx_start_ring_gqi(struct gve_priv *priv, int idx)
 	gve_tx_add_to_block(priv, idx);
 
 	tx->netdev_txq = netdev_get_tx_queue(priv->dev, idx);
-	gve_add_napi(priv, ntfy_idx, gve_napi_poll);
+	gve_add_napi(priv, ntfy_idx, idx, gve_napi_poll);
 }
 
 static int gve_tx_alloc_ring_gqi(struct gve_priv *priv,
@@ -353,15 +354,13 @@ int gve_tx_alloc_rings_gqi(struct gve_priv *priv,
 		return -EINVAL;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
-	tx = kvzalloc_objs(struct gve_tx_ring, cfg->qcfg->max_queues);
-#else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
-	tx = kvcalloc(cfg->qcfg->max_queues, sizeof(*tx), GFP_KERNEL);
+	tx = kvcalloc(cfg->qcfg->max_queues, sizeof(struct gve_tx_ring),
+		      GFP_KERNEL);
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-	tx = kcalloc(cfg->qcfg->max_queues, sizeof(*tx), GFP_KERNEL);
+	tx = kcalloc(cfg->qcfg->max_queues, sizeof(struct gve_tx_ring),
+		     GFP_KERNEL);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-#endif
 	if (!tx)
 		return -ENOMEM;
 
@@ -877,7 +876,7 @@ int gve_xdp_xmit_gqi(struct net_device *dev, int n, struct xdp_frame **frames,
 	if (unlikely(flags & ~XDP_XMIT_FLAGS_MASK) || !priv->xdp_prog)
 		return -EINVAL;
 
-	if (!gve_get_napi_enabled(priv))
+	if (!gve_get_napi_enabled(priv->adapter))
 		return -ENETDOWN;
 
 	qid = gve_xdp_tx_queue_id(priv,
