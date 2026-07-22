@@ -175,5 +175,8 @@ expression skb_head;
 skb_head = xdp_build_skb_from_zc(...);
 +#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL) */
 +skb_head = gve_rx_copy_data(priv->dev, napi, xdp->data, buf_len);
++int xdp_metasize = xdp->data - xdp->data_meta;
++if (xdp_metasize > 0)
++	skb_metadata_set(skb_head, xdp_metasize);
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL) */
 
