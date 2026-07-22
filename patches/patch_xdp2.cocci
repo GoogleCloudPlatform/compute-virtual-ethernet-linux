@@ -149,3 +149,31 @@ identifier assign3.xdp_act, assign3.rx, assign3.XDP_ACT;
 	if (xdp_act != rx->xdp_actions[XDP_ACT]) { ... }
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
+
+@xdp_build_skb@
+expression skb_head, skb_tail;
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL)
+skb_head = xdp_build_skb_from_buff(...);
++#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL) */
++skb_head = napi_get_frags(napi);
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL) */
+...
+skb_tail = skb_head;
+
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL)
++if (rx->dqo.page_pool)
++	skb_mark_for_recycle(skb_head);
++
++gve_skb_add_rx_frag(rx, buf_state, 0, buf_len);
++#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL) */
+
+@xdp_build_skb_zc@
+expression skb_head;
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL)
+skb_head = xdp_build_skb_from_zc(...);
++#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL) */
++skb_head = gve_rx_copy_data(priv->dev, napi, xdp->data, buf_len);
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL) */
+

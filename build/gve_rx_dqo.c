@@ -940,8 +940,12 @@ static int gve_rx_xsk_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 	}
 
 	/* Copy the data to skb */
-	rx->ctx.skb_head = gve_rx_copy_data(priv->dev, napi,
-					    xdp->data, buf_len);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL)
+	rx->ctx.skb_head = xdp_build_skb_from_zc(xdp);
+#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL) */
+	rx->ctx.skb_head = gve_rx_copy_data(priv->dev, napi, xdp->data,
+					    buf_len);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL) */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
 	if (unlikely(!rx->ctx.skb_head)) {
 		xsk_buff_free(xdp);
@@ -951,8 +955,6 @@ static int gve_rx_xsk_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 	rx->ctx.skb_tail = rx->ctx.skb_head;
 
-	/* Free XSK buffer and Buffer state */
-	xsk_buff_free(xdp);
 	gve_free_buf_state(rx, buf_state);
 
 	/* Update Stats */
@@ -1137,9 +1139,31 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 			return 0;
 		}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL)
+		rx->ctx.skb_head = xdp_build_skb_from_buff(&gve_xdp.xdp);
+#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL) */
+		rx->ctx.skb_head = napi_get_frags(napi);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL) */
+		if (unlikely(!rx->ctx.skb_head))
+			goto error;
+		rx->ctx.skb_tail = rx->ctx.skb_head;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL)
+		if (rx->dqo.page_pool) skb_mark_for_recycle(rx->ctx.skb_head);
+
+		gve_skb_add_rx_frag(rx, buf_state, 0, buf_len);
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL) */
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0))
+		gve_dec_pagecnt_bias(&buf_state->page_info);
+		gve_try_recycle_buf(priv, rx, buf_state);
+#else
+		gve_reuse_buffer(rx, buf_state);
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,7,0)) */
+
 		u64_stats_update_begin(&rx->statss);
 		rx->xdp_actions[XDP_PASS]++;
 		u64_stats_update_end(&rx->statss);
+		return 0;
 	}
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 
