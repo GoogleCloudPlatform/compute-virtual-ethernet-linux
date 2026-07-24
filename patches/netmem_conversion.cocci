@@ -119,10 +119,13 @@ if (!netmem) {
 @@
 expression p;
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7,2,0))
 if (!gve_is_gqi(p) && !gve_is_qpl(p))
-	dev->netmem_tx = true;
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
+	dev->netmem_tx = NETMEM_TX_DMA;
++#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0))
++if (!gve_is_gqi(p) && !gve_is_qpl(p))
++	dev->netmem_tx = true;
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(7,2,0) */
 
 @@
 expression init, cond, inc;

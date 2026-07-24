@@ -3466,8 +3466,12 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (err)
 		goto abort_with_wq;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7,2,0))
 	if (!gve_is_gqi(priv) && !gve_is_qpl(priv))
 		dev->netmem_tx = NETMEM_TX_DMA;
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0))
+	if (!gve_is_gqi(priv) && !gve_is_qpl(priv)) dev->netmem_tx = true;
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(7,2,0) */
 
 	err = register_netdev(dev);
 	if (err)
@@ -3590,7 +3594,13 @@ static int gve_resume(struct device *dev)
 	return err;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0)
 static DEFINE_SIMPLE_DEV_PM_OPS(gve_pm_ops, gve_suspend, gve_resume);
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(5,17,0) */
+#ifdef CONFIG_PM_SLEEP
+static SIMPLE_DEV_PM_OPS(gve_pm_ops, gve_suspend, gve_resume);
+#endif /* CONFIG_PM_SLEEP */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
 
 static const struct pci_device_id gve_id_table[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_GOOGLE, PCI_DEV_ID_GVNIC) },
@@ -3603,7 +3613,14 @@ static struct pci_driver gve_driver = {
 	.probe		= gve_probe,
 	.remove		= gve_remove,
 	.shutdown	= gve_shutdown,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0)
 	.driver.pm	= pm_sleep_ptr(&gve_pm_ops),
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(5,17,0) */
+#ifdef CONFIG_PM_SLEEP
+	.driver.pm = &gve_pm_ops,
+#endif /* CONFIG_PM_SLEEP */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
+
 };
 
 module_pci_driver(gve_driver);

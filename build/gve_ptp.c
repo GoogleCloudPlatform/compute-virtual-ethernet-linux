@@ -41,7 +41,7 @@ static int gve_ptp_gettime64(struct ptp_clock_info *info,
 	u64 nic_ts;
 	int err;
 
-	err = gve_clock_nic_ts_read(priv, &nic_ts, NULL);
+	err = gve_clock_nic_ts_read(priv);
 	if (err)
 		return err;
 
