@@ -5,7 +5,11 @@
  */
 
 #include "gve_linux_version.h"
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2)
 #include <net/netdev_lock.h>
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
+#include <linux/rtnetlink.h>
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
 #include "gve.h"
 #include "gve_adminq.h"
 #include "gve_dqo.h"
@@ -241,7 +245,11 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	int ring;
 	int i, j;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2)
 	netdev_assert_locked(netdev);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
+	ASSERT_RTNL();
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
 
 	priv = netdev_priv(netdev);
 	num_tx_queues = gve_num_tx_queues(priv);
@@ -1261,19 +1269,21 @@ const struct ethtool_ops gve_ethtool_ops = {
 	.supported_ring_params = ETHTOOL_RING_USE_TCP_DATA_SPLIT |
 				 ETHTOOL_RING_USE_RX_BUF_LEN,
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
-	.op_needs_rtnl = ETHTOOL_OP_NEEDS_RTNL_SCHANNELS |
-			 ETHTOOL_OP_NEEDS_RTNL_SRINGPARAM |
-			 ETHTOOL_OP_NEEDS_RTNL_GLINK,
-	.get_drvinfo = gve_get_drvinfo,
-	.get_strings = gve_get_strings,
-	.get_sset_count = gve_get_sset_count,
-	.get_ethtool_stats = gve_get_ethtool_stats,
-	.set_msglevel = gve_set_msglevel,
-	.get_msglevel = gve_get_msglevel,
-	.set_channels = gve_set_channels,
-	.get_channels = gve_get_channels,
-	.set_rxnfc = gve_set_rxnfc,
-	.get_rxnfc = gve_get_rxnfc,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,2,0)
+				 .op_needs_rtnl = ETHTOOL_OP_NEEDS_RTNL_SCHANNELS |
+				 ETHTOOL_OP_NEEDS_RTNL_SRINGPARAM |
+				 ETHTOOL_OP_NEEDS_RTNL_GLINK,
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(7,2,0) */
+				 .get_drvinfo = gve_get_drvinfo,
+				 .get_strings = gve_get_strings,
+				 .get_sset_count = gve_get_sset_count,
+				 .get_ethtool_stats = gve_get_ethtool_stats,
+				 .set_msglevel = gve_set_msglevel,
+				 .get_msglevel = gve_get_msglevel,
+				 .set_channels = gve_set_channels,
+				 .get_channels = gve_get_channels,
+				 .set_rxnfc = gve_set_rxnfc,
+				 .get_rxnfc = gve_get_rxnfc,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,19,0)
 	.get_rx_ring_count = gve_get_rx_ring_count,
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,19,0) */
