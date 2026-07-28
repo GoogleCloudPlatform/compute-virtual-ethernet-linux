@@ -11,7 +11,7 @@
 #include "gve_linux_version.h"
 #include <linux/version.h>
 #else
-#define KERNEL_VERSION(a,b,c) ((((a) << 16) + (b) << 8) + (c))
+#define KERNEL_VERSION(a, b, c) (((a) << 16) + ((b) << 8) + (c))
 #endif
 #ifndef UTS_RELEASE
 #include <generated/utsrelease.h>
