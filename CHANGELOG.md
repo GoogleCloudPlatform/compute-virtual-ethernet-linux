@@ -1,6 +1,10 @@
 # Feature Changelog
 Below is a changelog of features and major fixes which have been introduced to GVE. Note that it is recommended to always use the latest version of GVE, regardless of the features being used, as there might be smaller stability and compatibility patches introduced in more minor releases.
 
+#### [v1.4.11](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/releases/tag/v1.4.11)
+* Fix header buffer corruption when using header-split with HW-GRO.
+* Fix Rx queue stall on buffer allocation failures under memory pressure.
+* Migrate to standard generic power management.
 #### [v1.4.10](https://github.com/googlecloudplatform/compute-virtual-ethernet-linux/releases/tag/v1.5.0)
 * Optimize and enable HW GRO for DQO.
 * Enable support for UDP GSO when using DQO format.
