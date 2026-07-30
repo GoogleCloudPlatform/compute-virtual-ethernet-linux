@@ -8,6 +8,7 @@ static void gve_drain_page_cache(struct gve_priv *priv)
 +    struct page_frag_cache *nc;
 +#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_VERSION_LT(10,0) */
     int i;
+    ...
 +#if LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_VERSION_LT(10,0)
 +    for (i = 0; i < priv->rx_cfg.num_queues; i++) {
 +        nc = &priv->rx[i].page_cache;
