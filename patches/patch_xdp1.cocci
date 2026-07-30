@@ -188,7 +188,7 @@ static int gve_xsk_wakeup(struct net_device *dev, u32 queue_id, u32 flags)
 @@
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
-static int verify_xdp_configuration(struct net_device *dev)
+static int gve_verify_xdp_configuration(struct net_device *dev)
 {
 ...
 }
@@ -558,7 +558,7 @@ xdp_features_clear_redirect_target_locked(args);
 parameter list args;
 identifier dev;
 @@
-int verify_xdp_configuration(args
+int gve_verify_xdp_configuration(args
 +#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL)
 +, struct netdev_bpf *xdp
 +#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL) */
@@ -583,10 +583,11 @@ if (dev->features & NETIF_F_GRO_HW) { ... }
 
 @@
 expression err;
+expression list pre_args;
 @@
 static int gve_xdp(struct net_device *dev, struct netdev_bpf *xdp) {
 ...
-err = verify_xdp_configuration(dev
+err = gve_verify_xdp_configuration(pre_args
 +#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL)
 +, xdp
 +#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL) */
