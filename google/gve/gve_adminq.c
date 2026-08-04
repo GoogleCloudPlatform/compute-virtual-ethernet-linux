@@ -1322,7 +1322,7 @@ gve_adminq_configure_flow_rule(struct gve_priv *priv,
 
 	if (err == -ETIME) {
 		dev_err(&priv->pdev->dev, "Timeout to configure the flow rule, trigger reset");
-		gve_reset(priv, true);
+		gve_schedule_reset(priv);
 	} else if (!err) {
 		priv->flow_rules_cache.rules_cache_synced = false;
 	}
