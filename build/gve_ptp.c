@@ -26,6 +26,11 @@ int gve_clock_nic_ts_read(struct gve_priv *priv)
 	return 0;
 }
 
+static int gve_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
+{
+	return -EOPNOTSUPP;
+}
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 static int gve_ptp_gettimex64(struct ptp_clock_info *info,
 			      struct timespec64 *ts,
@@ -77,6 +82,7 @@ out:
 static const struct ptp_clock_info gve_ptp_caps = {
 	.owner          = THIS_MODULE,
 	.name		= "gve clock",
+	.adjfine	= gve_ptp_adjfine,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 	.gettimex64	= gve_ptp_gettimex64,
 #else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
