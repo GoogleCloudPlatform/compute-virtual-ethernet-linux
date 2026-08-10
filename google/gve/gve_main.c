@@ -1689,36 +1689,48 @@ static int gve_xsk_pool_disable(struct net_device *dev,
 	if (qid >= priv->rx_cfg.num_queues)
 		return -EINVAL;
 
+	pool = xsk_get_pool_from_qid(dev, qid);
 	clear_bit(qid, priv->xsk_pools);
 
-	pool = xsk_get_pool_from_qid(dev, qid);
+	if (!netif_running(dev) || !priv->tx_cfg.num_xdp_queues) {
+		if (pool)
+			xsk_pool_dma_unmap(pool,
+					   DMA_ATTR_SKIP_CPU_SYNC |
+					   DMA_ATTR_WEAK_ORDERING);
+		return 0;
+	}
+
+	/* Stop and start RDA queues to repost buffers. */
+	if (!gve_is_qpl(priv) && priv->xdp_prog) {
+		err = gve_configure_rings_xdp(priv, priv->rx_cfg.num_queues);
+		if (err) {
+			set_bit(qid, priv->xsk_pools);
+			return err;
+		}
+
+		if (pool)
+			xsk_pool_dma_unmap(pool,
+					   DMA_ATTR_SKIP_CPU_SYNC |
+					   DMA_ATTR_WEAK_ORDERING);
+		return 0;
+	}
+
+	napi_rx = &priv->ntfy_blocks[priv->rx[qid].ntfy_id].napi;
+	napi_disable_locked(napi_rx); /* make sure current rx poll is done */
+
+	tx_qid = gve_xdp_tx_queue_id(priv, qid);
+	napi_tx = &priv->ntfy_blocks[priv->tx[tx_qid].ntfy_id].napi;
+	napi_disable_locked(napi_tx); /* make sure current tx poll is done */
+
+	gve_unreg_xsk_pool(priv, qid);
+	smp_mb(); /* Make sure it is visible to the workers on datapath */
 	if (pool)
 		xsk_pool_dma_unmap(pool,
 				   DMA_ATTR_SKIP_CPU_SYNC |
 				   DMA_ATTR_WEAK_ORDERING);
 
-	if (!netif_running(dev) || !priv->tx_cfg.num_xdp_queues)
-		return 0;
-
-	/* Stop and start RDA queues to repost buffers. */
-	if (!gve_is_qpl(priv) && priv->xdp_prog) {
-		err = gve_configure_rings_xdp(priv, priv->rx_cfg.num_queues);
-		if (err)
-			return err;
-	}
-
-	napi_rx = &priv->ntfy_blocks[priv->rx[qid].ntfy_id].napi;
-	napi_disable(napi_rx); /* make sure current rx poll is done */
-
-	tx_qid = gve_xdp_tx_queue_id(priv, qid);
-	napi_tx = &priv->ntfy_blocks[priv->tx[tx_qid].ntfy_id].napi;
-	napi_disable(napi_tx); /* make sure current tx poll is done */
-
-	gve_unreg_xsk_pool(priv, qid);
-	smp_mb(); /* Make sure it is visible to the workers on datapath */
-
-	napi_enable(napi_rx);
-	napi_enable(napi_tx);
+	napi_enable_locked(napi_rx);
+	napi_enable_locked(napi_tx);
 	if (gve_is_gqi(priv)) {
 		if (gve_rx_work_pending(&priv->rx[qid]))
 			napi_schedule(napi_rx);
