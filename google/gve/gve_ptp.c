@@ -387,7 +387,7 @@ int gve_ptp_register(struct gve_priv *priv)
 		goto free_mutex;
 	}
 
-	priv->ptp = kzalloc(sizeof(*priv->ptp), GFP_KERNEL);
+	priv->ptp = kzalloc_obj(*priv->ptp);
 	if (!priv->ptp) {
 		err = -ENOMEM;
 		goto free_dma_mem;

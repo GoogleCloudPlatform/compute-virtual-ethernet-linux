@@ -457,6 +457,19 @@ identifier buf_state;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
 if (buf_state->xsk_buff) {
+...
+} else {
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
+...
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+}
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
+
+@@
+identifier buf_state;
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+if (buf_state->xsk_buff) {
   return gve_rx_xsk_dqo(...);
 }
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
@@ -531,9 +544,9 @@ expression list args;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(10,2)
 xdp_set_features_flag_locked(args);
-+#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) */
++#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(10,2) */
 +xdp_set_features_flag(args);
-+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) */
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0)) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(10,2) */
 
 @@
 expression list args;
@@ -565,7 +578,7 @@ int verify_xdp_configuration(args
  )
 {
 ...
-if (dev->features & NETIF_F_LRO) { ... }
+if (dev->features & NETIF_F_GRO_HW) { ... }
 +#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL)
 +	/* Check XDP support for various queue formats. */
 +	switch (priv->queue_format) {

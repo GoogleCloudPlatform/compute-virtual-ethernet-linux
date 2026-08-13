@@ -77,12 +77,13 @@ static_assert(sizeof(struct gve_tx_context_cmd_dtype) == 2);
  */
 struct gve_tx_tso_context_desc_dqo {
 	/* The L4 payload bytes that should be segmented. */
-	u32 tso_total_len: 24;
+	u32 tso_total_len: 18;
+	u32 reserved0: 6;
 	u32 flex10: 8;
 
 	/* Max segment size in TSO excluding headers. */
 	u16 mss: 14;
-	u16 reserved: 2;
+	u16 reserved1: 2;
 
 	u8 header_len; /* Header length to use for TSO offload */
 	u8 flex11;

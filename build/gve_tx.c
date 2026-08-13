@@ -354,13 +354,15 @@ int gve_tx_alloc_rings_gqi(struct gve_priv *priv,
 		return -EINVAL;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
+	tx = kvzalloc_objs(struct gve_tx_ring, cfg->qcfg->max_queues);
+#else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
-	tx = kvcalloc(cfg->qcfg->max_queues, sizeof(struct gve_tx_ring),
-		      GFP_KERNEL);
+	tx = kvcalloc(cfg->qcfg->max_queues, sizeof(*tx), GFP_KERNEL);
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-	tx = kcalloc(cfg->qcfg->max_queues, sizeof(struct gve_tx_ring),
-		     GFP_KERNEL);
+	tx = kcalloc(cfg->qcfg->max_queues, sizeof(*tx), GFP_KERNEL);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+#endif
 	if (!tx)
 		return -ENOMEM;
 

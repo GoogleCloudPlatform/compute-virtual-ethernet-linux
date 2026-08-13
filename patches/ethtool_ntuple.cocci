@@ -57,3 +57,31 @@ static int gve_set_channels(struct net_device *netdev,
 
 	return gve_adjust_queues(priv, new_rx_cfg, new_tx_cfg, reset_rss);
 }
+
+@@
+@@
+static int gve_get_rxnfc(...)
+{
+    ...
+	switch (cmd->cmd) {
++#if LINUX_VERSION_CODE < KERNEL_VERSION(7,0,0)
++	case ETHTOOL_GRXRINGS:
++		cmd->data = gve_get_rx_ring_count(netdev);
++		break;
++#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(7,0,0) */
+    case ETHTOOL_GRXCLSRLCNT:
+    ...
+    }
+}
+
+@ gve_ethtool_ops @
+identifier gve_ethtool_ops;
+expression gve_get_rx_ring_count;
+@@
+
+const struct ethtool_ops gve_ethtool_ops = {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,19,0)
+	.get_rx_ring_count = gve_get_rx_ring_count,
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,19,0) */
+};
+
