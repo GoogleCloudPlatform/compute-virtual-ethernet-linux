@@ -2938,6 +2938,65 @@ static const struct xdp_metadata_ops gve_xdp_metadata_ops = {
 };
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)) */
 
+static void gve_set_default_desc_cnt(struct gve_priv *priv,
+				     const struct gve_device_descriptor *descriptor)
+{
+	priv->tx_desc_cnt = be16_to_cpu(descriptor->tx_queue_entries);
+	priv->rx_desc_cnt = be16_to_cpu(descriptor->rx_queue_entries);
+
+	/* set default ranges */
+	priv->max_tx_desc_cnt = priv->tx_desc_cnt;
+	priv->max_rx_desc_cnt = priv->rx_desc_cnt;
+	priv->min_tx_desc_cnt = priv->tx_desc_cnt;
+	priv->min_rx_desc_cnt = priv->rx_desc_cnt;
+}
+
+void gve_set_queue_properties(struct gve_priv *priv,
+			      struct gve_device_descriptor *descriptor)
+{
+	/* set default descriptor counts */
+	gve_set_default_desc_cnt(priv, descriptor);
+
+	priv->max_registered_pages = be64_to_cpu(descriptor->max_registered_pages);
+	priv->tx_pages_per_qpl = be16_to_cpu(descriptor->tx_pages_per_qpl);
+	priv->default_num_queues = be16_to_cpu(descriptor->default_num_queues);
+}
+
+int gve_set_mtu(struct gve_priv *priv,
+		struct gve_device_descriptor *descriptor)
+{
+	u16 mtu;
+
+	mtu = be16_to_cpu(descriptor->mtu);
+	if (mtu < ETH_MIN_MTU) {
+		dev_err(&priv->pdev->dev, "MTU %d below minimum MTU\n", mtu);
+		return -EINVAL;
+	}
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0))
+	priv->max_mtu = mtu;
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0) */
+	priv->dev->max_mtu = mtu;
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0) */
+
+	return 0;
+}
+
+void gve_set_mac(struct gve_priv *priv,
+		 struct gve_device_descriptor *descriptor)
+{
+	u8 *mac;
+
+	mac = descriptor->mac;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0)
+	eth_hw_addr_set(priv->dev, mac);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0)
+	ether_addr_copy(priv->dev->dev_addr, mac);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
+	memcpy(priv->dev->dev_addr, mac, ETH_ALEN);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0) */
+	dev_info(&priv->pdev->dev, "MAC addr: %pM\n", mac);
+}
+
 static int gve_init_priv(struct gve_priv *priv, bool skip_describe_device)
 {
 	int err;
