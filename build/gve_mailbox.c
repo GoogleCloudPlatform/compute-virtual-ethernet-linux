@@ -21,8 +21,8 @@ static const char *gve_mbx_opcode_to_string(enum gve_mbx_opcode opcode)
 	case GVE_MBX_GET_INTERRUPT_DBS: return "GVE_MBX_GET_INTERRUPT_DBS";
 	case GVE_MBX_GET_PTYPE_MAP: return "GVE_MBX_GET_PTYPE_MAP";
 	case GVE_MBX_REPORT_LINK_STATUS: return "GVE_MBX_REPORT_LINK_STATUS";
-	case GVE_MBX_CREATE_TX_QUEUES: return "GVE_MBX_CREATE_TX_QUEUES";
-	case GVE_MBX_CREATE_RX_QUEUES: return "GVE_MBX_CREATE_RX_QUEUES";
+	case GVE_MBX_CONFIG_TX_QUEUES: return "GVE_MBX_CONFIG_TX_QUEUES";
+	case GVE_MBX_CONFIG_RX_QUEUES: return "GVE_MBX_CONFIG_RX_QUEUES";
 	case GVE_MBX_ENABLE_TX_QUEUES: return "GVE_MBX_ENABLE_TX_QUEUES";
 	case GVE_MBX_ENABLE_RX_QUEUES: return "GVE_MBX_ENABLE_RX_QUEUES";
 	case GVE_MBX_DESTROY_TX_QUEUES: return "GVE_MBX_DESTROY_TX_QUEUES";
@@ -57,8 +57,8 @@ static bool gve_mbx_should_log(enum gve_mbx_opcode opcode)
 	case GVE_MBX_GET_INTERRUPT_DBS:
 	case GVE_MBX_GET_PTYPE_MAP:
 	case GVE_MBX_REPORT_LINK_STATUS:
-	case GVE_MBX_CREATE_TX_QUEUES:
-	case GVE_MBX_CREATE_RX_QUEUES:
+	case GVE_MBX_CONFIG_TX_QUEUES:
+	case GVE_MBX_CONFIG_RX_QUEUES:
 	case GVE_MBX_ENABLE_TX_QUEUES:
 	case GVE_MBX_ENABLE_RX_QUEUES:
 	case GVE_MBX_DESTROY_TX_QUEUES:
@@ -443,6 +443,11 @@ int gve_mbx_negotiate_caps(struct gve_adapter *adapter)
 
 	if (adapter->caps->negotiated_caps & GVE_MBX_CAP_NIC_TSTAMP_REG)
 		gve_mbx_get_info_nic_tstamp_reg(adapter);
+
+	if (adapter->caps->negotiated_caps & GVE_MBX_CAP_HW_GRO) {
+		adapter->device_info->gro_hw_supported = true;
+		adapter->device_info->gro_hw_default_enable = false;
+	}
 
 free_caps_msg:
 	kfree(gve_caps_msg);
@@ -851,32 +856,32 @@ void gve_mbx_get_max_queues(struct gve_adapter *adapter, int *max_tx_queues,
 	*max_rx_queues = device_info->max_rx_queues;
 }
 
-static int gve_mbx_create_tx_queues(struct gve_adapter *adapter, u32 start_id,
+static int gve_mbx_config_tx_queues(struct gve_adapter *adapter, u32 start_id,
 				    u32 num_queues)
 {
-	struct gve_mbx_create_tx_q_req *create_tx_q_info;
+	struct gve_mbx_config_tx_q_req *config_tx_q_info;
 	struct gve_priv *priv = adapter->priv;
 	int size, i = 0, err = 0;
 	u32 q_idx;
 
-	size = struct_size(create_tx_q_info, tx_queues, num_queues);
+	size = struct_size(config_tx_q_info, tx_queues, num_queues);
 
 	/* validate size */
 	if (size > GVE_MBX_BUF_SIZE)
 		return -ENOMEM;
 
-	create_tx_q_info = kzalloc(size, GFP_KERNEL);
-	if (!create_tx_q_info)
+	config_tx_q_info = kzalloc(size, GFP_KERNEL);
+	if (!config_tx_q_info)
 		return -ENOMEM;
 
-	create_tx_q_info->num_queues = cpu_to_le16(num_queues);
+	config_tx_q_info->num_queues = cpu_to_le16(num_queues);
 
 	for (q_idx = start_id; q_idx < start_id + num_queues; q_idx++, i++) {
 		struct gve_tx_ring *tx = &priv->tx[q_idx];
 		u32 ntfy_idx = gve_tx_idx_to_ntfy(priv, q_idx);
 		struct gve_mbx_tx_q_info *tx_q_info;
 
-		tx_q_info = &create_tx_q_info->tx_queues[i];
+		tx_q_info = &config_tx_q_info->tx_queues[i];
 
 		tx_q_info->queue_id = cpu_to_le32(q_idx);
 		tx_q_info->msix_index =
@@ -900,35 +905,35 @@ static int gve_mbx_create_tx_queues(struct gve_adapter *adapter, u32 start_id,
 	}
 
 
-	err = gve_send_mbx_msg_wait(adapter, GVE_MBX_CREATE_TX_QUEUES, size,
-				    (u8 *)create_tx_q_info);
+	err = gve_send_mbx_msg_wait(adapter, GVE_MBX_CONFIG_TX_QUEUES, size,
+				    (u8 *)config_tx_q_info);
 	if (err)
-		dev_err(&adapter->pdev->dev, "Failed to send TX create queues message\n");
+		dev_err(&adapter->pdev->dev, "Failed to send TX config queues message\n");
 	else
-		dev_info(&adapter->pdev->dev, "Successfully sent TX create queues message\n");
+		dev_info(&adapter->pdev->dev, "Successfully sent TX config queues message\n");
 
-	kfree(create_tx_q_info);
+	kfree(config_tx_q_info);
 	return err;
 }
 
-static int gve_mbx_create_rx_queues(struct gve_adapter *adapter, u32 num_queues)
+static int gve_mbx_config_rx_queues(struct gve_adapter *adapter, u32 num_queues)
 {
-	struct gve_mbx_create_rx_qs_req *create_rx_q_info;
+	struct gve_mbx_config_rx_qs_req *config_rx_q_info;
 	struct gve_priv *priv = adapter->priv;
 	int size, err = 0, i = 0;
 	u32 q_idx;
 
-	size = struct_size(create_rx_q_info, rx_queues, num_queues);
+	size = struct_size(config_rx_q_info, rx_queues, num_queues);
 
 	/* validate size */
 	if (size > GVE_MBX_BUF_SIZE)
 		return -ENOMEM;
 
-	create_rx_q_info = kzalloc(size, GFP_KERNEL);
-	if (!create_rx_q_info)
+	config_rx_q_info = kzalloc(size, GFP_KERNEL);
+	if (!config_rx_q_info)
 		return -ENOMEM;
 
-	create_rx_q_info->num_queues = cpu_to_le16(num_queues);
+	config_rx_q_info->num_queues = cpu_to_le16(num_queues);
 
 	for (q_idx = 0; q_idx < num_queues; q_idx++, i++) {
 		u32 ntfy_idx = gve_rx_idx_to_ntfy(priv, q_idx);
@@ -938,9 +943,9 @@ static int gve_mbx_create_rx_queues(struct gve_adapter *adapter, u32 num_queues)
 		u32 flags = 0;
 
 		block = &priv->ntfy_blocks[ntfy_idx];
-		rx_q_info = &create_rx_q_info->rx_queues[i];
+		rx_q_info = &config_rx_q_info->rx_queues[i];
 
-		if (priv->dev->features & NETIF_F_LRO)
+		if (priv->dev->features & (NETIF_F_LRO | NETIF_F_GRO_HW))
 			flags |= GVE_MBX_RX_QUEUE_ENABLE_RSC;
 
 		rx_q_info->queue_id = cpu_to_le32(q_idx);
@@ -971,14 +976,14 @@ static int gve_mbx_create_rx_queues(struct gve_adapter *adapter, u32 num_queues)
 	}
 
 
-	err = gve_send_mbx_msg_wait(adapter, GVE_MBX_CREATE_RX_QUEUES, size,
-				    (u8 *)create_rx_q_info);
+	err = gve_send_mbx_msg_wait(adapter, GVE_MBX_CONFIG_RX_QUEUES, size,
+				    (u8 *)config_rx_q_info);
 	if (err)
-		dev_err(&adapter->pdev->dev, "Failed to send create RX queues message\n");
+		dev_err(&adapter->pdev->dev, "Failed to send config RX queues message\n");
 	else
-		dev_info(&adapter->pdev->dev, "Successfully sent create RX queues message\n");
+		dev_info(&adapter->pdev->dev, "Successfully sent config RX queues message\n");
 
-	kfree(create_rx_q_info);
+	kfree(config_rx_q_info);
 	return err;
 }
 
@@ -1153,12 +1158,12 @@ int gve_mbx_create_queues(struct gve_adapter *adapter)
 	int err;
 	int i;
 
-	err = gve_mbx_create_tx_queues(adapter, 0, num_tx_queues);
+	err = gve_mbx_config_tx_queues(adapter, 0, num_tx_queues);
 	if (err) {
 		goto err;
 	}
 
-	err = gve_mbx_create_rx_queues(adapter, priv->rx_cfg.num_queues);
+	err = gve_mbx_config_rx_queues(adapter, priv->rx_cfg.num_queues);
 	if (err) {
 		goto err;
 	}
@@ -1393,49 +1398,49 @@ static void gve_mbx_process_nic_timestamp_reg_info(struct gve_adapter *adapter,
 		(void *)adapter->reg_bar0 + resp->cmd_sync_trigger_offset;
 }
 
-static int gve_mbx_process_create_tx_queues(struct gve_adapter *adapter,
+static int gve_mbx_process_config_tx_queues(struct gve_adapter *adapter,
 					     struct gve_dma_mem *recv_msg)
 {
-	struct gve_mbx_create_tx_qs_resp *created_tx_q_info = recv_msg->va;
+	struct gve_mbx_config_tx_qs_resp *configured_tx_q_info = recv_msg->va;
 	struct gve_priv *priv = adapter->priv;
 	int i;
 
 	dev_info(&priv->pdev->dev, "CREATE_TX_QUEUES: num_qs: %d",
-		 created_tx_q_info->num_queues);
+		 configured_tx_q_info->num_queues);
 
 	/* Populate notify blocks */
-	for (i = 0; i < created_tx_q_info->num_queues; i++) {
-		u32 q_idx = le32_to_cpu(created_tx_q_info->queues[i].queue_id);
+	for (i = 0; i < configured_tx_q_info->num_queues; i++) {
+		u32 q_idx = le32_to_cpu(configured_tx_q_info->queues[i].queue_id);
 		struct gve_tx_ring *tx_ring = &priv->tx[q_idx];
 
 		if (!tx_ring)
 			return -EINVAL;
 
-		tx_ring->q_resources->mbx_db_index = created_tx_q_info->queues[i].tail_db_offset;
+		tx_ring->q_resources->mbx_db_index = configured_tx_q_info->queues[i].tail_db_offset;
 		dev_info(&adapter->pdev->dev, "%s TX Q idx = %d, db_indx = %d\n", __func__, q_idx, le32_to_cpu(tx_ring->q_resources->mbx_db_index));
 	}
 	return 0;
 }
 
-static int gve_mbx_process_create_rx_queues(struct gve_adapter *adapter,
+static int gve_mbx_process_config_rx_queues(struct gve_adapter *adapter,
 					     struct gve_dma_mem *recv_msg)
 {
-	struct gve_mbx_create_rx_qs_resp *created_rx_q_info = recv_msg->va;
+	struct gve_mbx_config_rx_qs_resp *configured_rx_q_info = recv_msg->va;
 	struct gve_priv *priv = adapter->priv;
 	int i;
 
 	dev_info(&priv->pdev->dev, "CREATE_RX_QUEUES: num_qs: %d",
-		 created_rx_q_info->num_queues);
+		 configured_rx_q_info->num_queues);
 
 	/* Populate notify blocks */
-	for (i = 0; i < created_rx_q_info->num_queues; i++) {
-		u32 q_idx = le32_to_cpu(created_rx_q_info->queues[i].queue_id);
+	for (i = 0; i < configured_rx_q_info->num_queues; i++) {
+		u32 q_idx = le32_to_cpu(configured_rx_q_info->queues[i].queue_id);
 		struct gve_rx_ring *rx_ring = &priv->rx[q_idx];
 
 		if (!rx_ring)
 			return -EINVAL;
 
-		rx_ring->q_resources->mbx_db_index = created_rx_q_info->queues[i].tail_db_offset;
+		rx_ring->q_resources->mbx_db_index = configured_rx_q_info->queues[i].tail_db_offset;
 		dev_info(&adapter->pdev->dev,"%s RX Q idx = %d, db_indx = %d\n", __func__, q_idx, le32_to_cpu(rx_ring->q_resources->mbx_db_index));
 	}
 	return 0;
@@ -1587,11 +1592,11 @@ static int gve_process_mbx_msg(struct gve_adapter *adapter, u32 opcode,
 	case GVE_MBX_REPORT_LINK_STATUS:
 		err = gve_mbx_process_link_status(adapter, recv_msg);
 		break;
-	case GVE_MBX_CREATE_TX_QUEUES:
-		err = gve_mbx_process_create_tx_queues(adapter, recv_msg);
+	case GVE_MBX_CONFIG_TX_QUEUES:
+		err = gve_mbx_process_config_tx_queues(adapter, recv_msg);
 		break;
-	case GVE_MBX_CREATE_RX_QUEUES:
-		err = gve_mbx_process_create_rx_queues(adapter, recv_msg);
+	case GVE_MBX_CONFIG_RX_QUEUES:
+		err = gve_mbx_process_config_rx_queues(adapter, recv_msg);
 		break;
 	case GVE_MBX_ENABLE_TX_QUEUES:
 		break;

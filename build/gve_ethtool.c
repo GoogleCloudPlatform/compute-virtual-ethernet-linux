@@ -5,7 +5,11 @@
  */
 
 #include "gve_linux_version.h"
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2)
+#include <net/netdev_lock.h>
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
 #include <linux/rtnetlink.h>
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
 #include "gve.h"
 #include "gve_adminq.h"
 #include "gve_dqo.h"
@@ -47,6 +51,7 @@ static const char gve_gstrings_main_stats[][ETH_GSTRING_LEN] = {
 	"rx_hsplit_unsplit_pkt",
 	"interface_up_cnt", "interface_down_cnt", "reset_cnt",
 	"page_alloc_fail", "dma_mapping_error", "stats_report_trigger_cnt",
+	"rx_critical_low_bufs",
 };
 
 static const char gve_gstrings_rx_stats[][ETH_GSTRING_LEN] = {
@@ -59,6 +64,7 @@ static const char gve_gstrings_rx_stats[][ETH_GSTRING_LEN] = {
 	"rx_xdp_aborted[%u]", "rx_xdp_drop[%u]", "rx_xdp_pass[%u]",
 	"rx_xdp_tx[%u]", "rx_xdp_redirect[%u]",
 	"rx_xdp_tx_errors[%u]", "rx_xdp_redirect_errors[%u]", "rx_xdp_alloc_fails[%u]",
+	"rx_critical_low_bufs[%u]",
 };
 
 static const char gve_gstrings_tx_stats[][ETH_GSTRING_LEN] = {
@@ -221,11 +227,14 @@ gve_get_ethtool_stats(struct net_device *netdev,
 {
 	u64 tmp_rx_pkts, tmp_rx_hsplit_pkt, tmp_rx_bytes, tmp_rx_hsplit_bytes,
 		tmp_rx_skb_alloc_fail, tmp_rx_buf_alloc_fail,
+		tmp_rx_critical_low_bufs,
 		tmp_rx_desc_err_dropped_pkt, tmp_rx_hsplit_unsplit_pkt,
-		tmp_tx_pkts, tmp_tx_bytes;
+		tmp_tx_pkts, tmp_tx_bytes,
+		tmp_xdp_tx_errors, tmp_xdp_redirect_errors;
 	u64 rx_buf_alloc_fail, rx_desc_err_dropped_pkt, rx_hsplit_unsplit_pkt,
 		rx_pkts, rx_hsplit_pkt, rx_skb_alloc_fail, rx_bytes, tx_pkts, tx_bytes,
-		tx_dropped;
+		rx_critical_low_bufs, tx_dropped, xdp_tx_errors,
+		xdp_redirect_errors;
 	int rx_base_stats_idx, max_rx_stats_idx, max_tx_stats_idx;
 	int stats_idx, stats_region_len, nic_stats_len;
 	struct gve_adapter *adapter;
@@ -241,17 +250,23 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	int ring;
 	int i, j;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2)
+	netdev_assert_locked(netdev);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
 	ASSERT_RTNL();
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0))
-	memset(data, 0, stats->n_stats * sizeof(*data));
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0)) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
 
 	priv = netdev_priv(netdev);
 	adapter = priv->adapter;
 	num_tx_queues = gve_num_tx_queues(priv);
-	report_stats = priv->stats_report->stats;
+	report_stats = priv->stats_report ? priv->stats_report->stats : NULL;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
+	rx_qid_to_stats_idx = kmalloc_objs(int, priv->rx_cfg.num_queues);
+#else
 	rx_qid_to_stats_idx = kmalloc_array(priv->rx_cfg.num_queues,
-					    sizeof(int), GFP_KERNEL);
+					    sizeof(*rx_qid_to_stats_idx),
+					    GFP_KERNEL);
+#endif
 	if (!rx_qid_to_stats_idx)
 		return;
 	for (ring = 0; ring < priv->rx_cfg.num_queues; ring++) {
@@ -259,8 +274,13 @@ gve_get_ethtool_stats(struct net_device *netdev,
 		if (!gve_rx_was_added_to_block(priv, ring))
 			num_stopped_rxqs++;
 	}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
+	tx_qid_to_stats_idx = kmalloc_objs(int, num_tx_queues);
+#else
 	tx_qid_to_stats_idx = kmalloc_array(num_tx_queues,
-					    sizeof(int), GFP_KERNEL);
+					    sizeof(*tx_qid_to_stats_idx),
+					    GFP_KERNEL);
+#endif
 	if (!tx_qid_to_stats_idx) {
 		kfree(rx_qid_to_stats_idx);
 		return;
@@ -273,7 +293,9 @@ gve_get_ethtool_stats(struct net_device *netdev,
 
 	for (rx_pkts = 0, rx_bytes = 0, rx_hsplit_pkt = 0,
 	     rx_skb_alloc_fail = 0, rx_buf_alloc_fail = 0,
+	     rx_critical_low_bufs = 0,
 	     rx_desc_err_dropped_pkt = 0, rx_hsplit_unsplit_pkt = 0,
+	     xdp_tx_errors = 0, xdp_redirect_errors = 0,
 	     ring = 0;
 	     ring < priv->rx_cfg.num_queues; ring++) {
 		if (priv->rx) {
@@ -287,10 +309,15 @@ gve_get_ethtool_stats(struct net_device *netdev,
 				tmp_rx_bytes = rx->rbytes;
 				tmp_rx_skb_alloc_fail = rx->rx_skb_alloc_fail;
 				tmp_rx_buf_alloc_fail = rx->rx_buf_alloc_fail;
+				tmp_rx_critical_low_bufs =
+					rx->rx_critical_low_bufs;
 				tmp_rx_desc_err_dropped_pkt =
 					rx->rx_desc_err_dropped_pkt;
 				tmp_rx_hsplit_unsplit_pkt =
 					rx->rx_hsplit_unsplit_pkt;
+				tmp_xdp_tx_errors = rx->xdp_tx_errors;
+				tmp_xdp_redirect_errors =
+					rx->xdp_redirect_errors;
 			} while (u64_stats_fetch_retry(&priv->rx[ring].statss,
 						       start));
 			rx_pkts += tmp_rx_pkts;
@@ -298,8 +325,11 @@ gve_get_ethtool_stats(struct net_device *netdev,
 			rx_bytes += tmp_rx_bytes;
 			rx_skb_alloc_fail += tmp_rx_skb_alloc_fail;
 			rx_buf_alloc_fail += tmp_rx_buf_alloc_fail;
+			rx_critical_low_bufs += tmp_rx_critical_low_bufs;
 			rx_desc_err_dropped_pkt += tmp_rx_desc_err_dropped_pkt;
 			rx_hsplit_unsplit_pkt += tmp_rx_hsplit_unsplit_pkt;
+			xdp_tx_errors += tmp_xdp_tx_errors;
+			xdp_redirect_errors += tmp_xdp_redirect_errors;
 		}
 	}
 	for (tx_pkts = 0, tx_bytes = 0, tx_dropped = 0, ring = 0;
@@ -325,8 +355,8 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	data[i++] = rx_bytes;
 	data[i++] = tx_bytes;
 	/* total rx dropped packets */
-	data[i++] = rx_skb_alloc_fail + rx_buf_alloc_fail +
-		    rx_desc_err_dropped_pkt;
+	data[i++] = rx_skb_alloc_fail + rx_desc_err_dropped_pkt +
+		    xdp_tx_errors + xdp_redirect_errors;
 	data[i++] = tx_dropped;
 	data[i++] = priv->tx_timeo_cnt;
 	data[i++] = rx_skb_alloc_fail;
@@ -339,6 +369,7 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	data[i++] = priv->page_alloc_fail;
 	data[i++] = priv->dma_mapping_error;
 	data[i++] = priv->stats_report_trigger_cnt;
+	data[i++] = rx_critical_low_bufs;
 	i = GVE_MAIN_STATS_LEN;
 
 	rx_base_stats_idx = 0;
@@ -366,22 +397,26 @@ gve_get_ethtool_stats(struct net_device *netdev,
 			max_rx_stats_idx;
 	}
 	/* Preprocess the stats report for rx, map queue id to start index */
-	skip_nic_stats = false;
-	for (stats_idx = rx_base_stats_idx; stats_idx < max_rx_stats_idx;
-		stats_idx += NIC_RX_STATS_REPORT_NUM) {
-		u32 stat_name = be32_to_cpu(report_stats[stats_idx].stat_name);
-		u32 queue_id = be32_to_cpu(report_stats[stats_idx].queue_id);
+	if (report_stats) {
+		skip_nic_stats = false;
+		for (stats_idx = rx_base_stats_idx; stats_idx < max_rx_stats_idx;
+			stats_idx += NIC_RX_STATS_REPORT_NUM) {
+			u32 stat_name = be32_to_cpu(report_stats[stats_idx].stat_name);
+			u32 queue_id = be32_to_cpu(report_stats[stats_idx].queue_id);
 
-		if (stat_name == 0) {
-			/* no stats written by NIC yet */
-			skip_nic_stats = true;
-			break;
+			if (stat_name == 0) {
+				/* no stats written by NIC yet */
+				skip_nic_stats = true;
+				break;
+			}
+			if (queue_id < 0 || queue_id >= priv->rx_cfg.num_queues) {
+				net_err_ratelimited("Invalid rxq id in NIC stats\n");
+				continue;
+			}
+			rx_qid_to_stats_idx[queue_id] = stats_idx;
 		}
-		if (queue_id < 0 || queue_id >= priv->rx_cfg.num_queues) {
-			net_err_ratelimited("Invalid rxq id in NIC stats\n");
-			continue;
-		}
-		rx_qid_to_stats_idx[queue_id] = stats_idx;
+	} else {
+		skip_nic_stats = true;
 	}
 	/* walk RX rings */
 	if (priv->rx) {
@@ -398,8 +433,13 @@ gve_get_ethtool_stats(struct net_device *netdev,
 				tmp_rx_hsplit_bytes = rx->rx_hsplit_bytes;
 				tmp_rx_skb_alloc_fail = rx->rx_skb_alloc_fail;
 				tmp_rx_buf_alloc_fail = rx->rx_buf_alloc_fail;
+				tmp_rx_critical_low_bufs =
+					rx->rx_critical_low_bufs;
 				tmp_rx_desc_err_dropped_pkt =
 					rx->rx_desc_err_dropped_pkt;
+				tmp_xdp_tx_errors = rx->xdp_tx_errors;
+				tmp_xdp_redirect_errors =
+					rx->xdp_redirect_errors;
 			} while (u64_stats_fetch_retry(&priv->rx[ring].statss,
 						       start));
 			data[i++] = tmp_rx_bytes;
@@ -410,8 +450,9 @@ gve_get_ethtool_stats(struct net_device *netdev,
 			data[i++] = rx->rx_frag_alloc_cnt;
 			/* rx dropped packets */
 			data[i++] = tmp_rx_skb_alloc_fail +
-				tmp_rx_buf_alloc_fail +
-				tmp_rx_desc_err_dropped_pkt;
+				    tmp_rx_desc_err_dropped_pkt +
+				    tmp_xdp_tx_errors +
+				    tmp_xdp_redirect_errors;
 			data[i++] = rx->rx_copybreak_pkt;
 			data[i++] = rx->rx_copied_pkt;
 			/* stats from NIC */
@@ -438,28 +479,33 @@ gve_get_ethtool_stats(struct net_device *netdev,
 			} while (u64_stats_fetch_retry(&priv->rx[ring].statss,
 						       start));
 			i += GVE_XDP_ACTIONS + 3; /* XDP rx counters */
+			data[i++] = tmp_rx_critical_low_bufs;
 		}
 	} else {
 		i += priv->rx_cfg.num_queues * NUM_GVE_RX_CNTS;
 	}
 
-	skip_nic_stats = false;
-	/* NIC TX stats start right after NIC RX stats */
-	for (stats_idx = max_rx_stats_idx; stats_idx < max_tx_stats_idx;
-		stats_idx += NIC_TX_STATS_REPORT_NUM) {
-		u32 stat_name = be32_to_cpu(report_stats[stats_idx].stat_name);
-		u32 queue_id = be32_to_cpu(report_stats[stats_idx].queue_id);
+	if (report_stats) {
+		skip_nic_stats = false;
+		/* NIC TX stats start right after NIC RX stats */
+		for (stats_idx = max_rx_stats_idx; stats_idx < max_tx_stats_idx;
+			stats_idx += NIC_TX_STATS_REPORT_NUM) {
+			u32 stat_name = be32_to_cpu(report_stats[stats_idx].stat_name);
+			u32 queue_id = be32_to_cpu(report_stats[stats_idx].queue_id);
 
-		if (stat_name == 0) {
-			/* no stats written by NIC yet */
-			skip_nic_stats = true;
-			break;
+			if (stat_name == 0) {
+				/* no stats written by NIC yet */
+				skip_nic_stats = true;
+				break;
+			}
+			if (queue_id < 0 || queue_id >= num_tx_queues) {
+				net_err_ratelimited("Invalid txq id in NIC stats\n");
+				continue;
+			}
+			tx_qid_to_stats_idx[queue_id] = stats_idx;
 		}
-		if (queue_id < 0 || queue_id >= num_tx_queues) {
-			net_err_ratelimited("Invalid txq id in NIC stats\n");
-			continue;
-		}
-		tx_qid_to_stats_idx[queue_id] = stats_idx;
+	} else {
+		skip_nic_stats = true;
 	}
 	/* walk TX rings */
 	if (priv->tx) {
@@ -1013,6 +1059,13 @@ static int gve_set_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd)
 	return err;
 }
 
+static u32 gve_get_rx_ring_count(struct net_device *netdev)
+{
+	struct gve_priv *priv = netdev_priv(netdev);
+
+	return priv->rx_cfg.num_queues;
+}
+
 static int gve_get_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd, u32 *rule_locs)
 {
 	struct gve_priv *priv = netdev_priv(netdev);
@@ -1020,9 +1073,10 @@ static int gve_get_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd, u
 	int err = 0;
 
 	switch (cmd->cmd) {
-	case ETHTOOL_GRXRINGS:
-		cmd->data = priv->rx_cfg.num_queues;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(7,0,0)
+	case ETHTOOL_GRXRINGS:  cmd->data = gve_get_rx_ring_count(netdev);
 		break;
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(7,0,0) */
 	case ETHTOOL_GRXCLSRLCNT:
 		if (!priv->max_flow_rules || !ops->query_flow_rules)
 			return -EOPNOTSUPP;
@@ -1251,16 +1305,24 @@ const struct ethtool_ops gve_ethtool_ops = {
 	.supported_ring_params = ETHTOOL_RING_USE_TCP_DATA_SPLIT |
 				 ETHTOOL_RING_USE_RX_BUF_LEN,
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
-	.get_drvinfo = gve_get_drvinfo,
-	.get_strings = gve_get_strings,
-	.get_sset_count = gve_get_sset_count,
-	.get_ethtool_stats = gve_get_ethtool_stats,
-	.set_msglevel = gve_set_msglevel,
-	.get_msglevel = gve_get_msglevel,
-	.set_channels = gve_set_channels,
-	.get_channels = gve_get_channels,
-	.set_rxnfc = gve_set_rxnfc,
-	.get_rxnfc = gve_get_rxnfc,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,2,0)
+				 .op_needs_rtnl = ETHTOOL_OP_NEEDS_RTNL_SCHANNELS |
+				 ETHTOOL_OP_NEEDS_RTNL_SRINGPARAM |
+				 ETHTOOL_OP_NEEDS_RTNL_GLINK,
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(7,2,0) */
+				 .get_drvinfo = gve_get_drvinfo,
+				 .get_strings = gve_get_strings,
+				 .get_sset_count = gve_get_sset_count,
+				 .get_ethtool_stats = gve_get_ethtool_stats,
+				 .set_msglevel = gve_set_msglevel,
+				 .get_msglevel = gve_get_msglevel,
+				 .set_channels = gve_set_channels,
+				 .get_channels = gve_get_channels,
+				 .set_rxnfc = gve_set_rxnfc,
+				 .get_rxnfc = gve_get_rxnfc,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,19,0)
+	.get_rx_ring_count = gve_get_rx_ring_count,
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,19,0) */
 	.get_rxfh_indir_size = gve_get_rxfh_indir_size,
 	.get_rxfh_key_size = gve_get_rxfh_key_size,
 	.get_rxfh = gve_get_rxfh,

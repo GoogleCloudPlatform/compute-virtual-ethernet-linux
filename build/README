@@ -52,27 +52,27 @@ NOTE: The requirement to run this variant of gve may be different than the requi
 
 # Installation
 
-The source code in this repository should not be used to build production images. It is offered for reference and development only. For production images, the driver should be installed via the published packages. Utilizing the appropriate package repository is strongly encouraged over installing the github artifacts directly to receive critical functionality and security fixes automatically.
+The source code in this repository should not be used to build production images. It is offered for reference and development only. For production images, the driver should be installed via the published packages.
 
 ## RPM Package Installation
 
-This driver has been published to a yum repo found at https://packages.cloud.google.com/yum/repos/gve-el10-stable
+This driver has been published to an Artifact Repository yum repo found at https://packages.cloud.google.com/yum/repos/gve-el10-stable
 
 The public key for this RPM can be found at https://packages.cloud.google.com/yum/doc/rpm-package-key-v10.gpg
 
-Alternatively GVE releases can be found [here](https://github.com/GoogleCloudPlatform/compute-virtual-ethernet-linux/releases). GVE releases support installation as an RPM.
-
-Download the target release and run
+Here is an example .repo file to place in `/etc/yum.repos.d/gve.repo` in RHEL 10.2
 
 ```
-sudo rpm -ivh gve-<VERSION>-1dkms.noarch.rpm
+[gve-el10-stable]
+name=Artifact Registry Repository for RHEL 10 for gve with U4 support
+baseurl=https://packages.cloud.google.com/yum/repos/gve-el10-stable
+enabled=1
+gpgcheck=1
+repo_gpgcheck=0
+gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key-v10.gpg
 ```
 
-to install as an RPM.
-
-`VERSION` above is simply the GVE release version that was downloaded, say, `1.4.10~17`.
-
-Depending on the distro, installing the package might not load the driver. If the driver has not been loaded, refer to [Loading the Driver](#loading-the-driver).
+You may need to run `sudo dnf install dnf-plugin-artifact-registry` if this is the first Artifact Repository repo in your image.
 
 ## Building from Source
 If the source is part of a tarball from GitHub, this source code should

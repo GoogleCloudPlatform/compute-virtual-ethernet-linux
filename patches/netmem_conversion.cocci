@@ -119,10 +119,13 @@ if (!netmem) {
 @@
 expression p;
 @@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7,2,0))
 if (!gve_is_gqi(p) && !gve_is_qpl(p))
-	dev->netmem_tx = true;
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
+	dev->netmem_tx = NETMEM_TX_DMA;
++#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0))
++if (!gve_is_gqi(p) && !gve_is_qpl(p))
++	dev->netmem_tx = true;
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(7,2,0) */
 
 @@
 expression init, cond, inc;
@@ -179,25 +182,17 @@ if (!rx->ctx.skb_head && rx->dqo.page_pool &&
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 
 @@
+expression dev, offset, pad, buf_len, dma_mode, addr;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 if (rx->dqo.page_pool) {
-	page_pool_dma_sync_netmem_for_cpu(rx->dqo.page_pool,
-				buf_state->page_info.netmem,
-				buf_state->page_info.page_offset,
-				buf_len);
+	page_pool_dma_sync_netmem_for_cpu(...);
 } else {
-	dma_sync_single_range_for_cpu(&priv->pdev->dev, buf_state->addr,
-				buf_state->page_info.page_offset +
-				buf_state->page_info.pad,
-				buf_len, DMA_FROM_DEVICE);
-}
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
-+	dma_sync_single_range_for_cpu(&priv->pdev->dev, buf_state->addr,
-+				      buf_state->page_info.page_offset,
-+				      buf_len, DMA_FROM_DEVICE);
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
-
+	dma_sync_single_range_for_cpu(...);
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
+}
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 
 @@
 @@

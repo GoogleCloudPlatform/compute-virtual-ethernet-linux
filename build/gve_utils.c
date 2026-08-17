@@ -10,9 +10,12 @@
 
 bool gve_tx_was_added_to_block(struct gve_priv *priv, int queue_idx)
 {
-	struct gve_notify_block *block =
-			&priv->ntfy_blocks[gve_tx_idx_to_ntfy(priv, queue_idx)];
+	struct gve_notify_block *block;
 
+	if (!priv->ntfy_blocks)
+		return false;
+
+	block = &priv->ntfy_blocks[gve_tx_idx_to_ntfy(priv, queue_idx)];
 	return block->tx != NULL;
 }
 
@@ -40,9 +43,12 @@ void gve_tx_add_to_block(struct gve_priv *priv, int queue_idx)
 
 bool gve_rx_was_added_to_block(struct gve_priv *priv, int queue_idx)
 {
-	struct gve_notify_block *block =
-			&priv->ntfy_blocks[gve_rx_idx_to_ntfy(priv, queue_idx)];
+	struct gve_notify_block *block;
 
+	if (!priv->ntfy_blocks)
+		return false;
+
+	block = &priv->ntfy_blocks[gve_rx_idx_to_ntfy(priv, queue_idx)];
 	return block->rx != NULL;
 }
 

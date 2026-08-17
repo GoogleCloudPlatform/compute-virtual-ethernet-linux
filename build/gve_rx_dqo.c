@@ -23,14 +23,30 @@
 #include <net/xdp_sock_drv.h>
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
+static void gve_rx_starvation_timer(struct timer_list *t)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || (RHEL_VERSION_GTE(9,8) && RHEL_VERSION_LT(10,0)) || RHEL_VERSION_GTE(10,2)
+	struct gve_rx_ring *rx = timer_container_of(rx, t, starvation_timer);
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(6,16,0) || (RHEL_VERSION_GTE(9,8) && RHEL_VERSION_LT(10,0)) || RHEL_VERSION_GTE(10,2) */
+	struct gve_rx_ring *rx = from_timer(rx, t, starvation_timer);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || (RHEL_VERSION_GTE(9,8) && RHEL_VERSION_LT(10,0)) || RHEL_VERSION_GTE(10,2) */
+	struct gve_priv *priv = rx->gve;
+	struct gve_notify_block *block;
+
+	block = &priv->ntfy_blocks[rx->ntfy_id];
+	napi_schedule(&block->napi);
+}
+
 static void gve_rx_free_hdr_bufs(struct gve_priv *priv, struct gve_rx_ring *rx)
 {
 	struct device *hdev = &priv->pdev->dev;
-	int buf_count = rx->dqo.bufq.mask + 1;
 
 	if (rx->dqo.hdr_bufs.data) {
-		dma_free_coherent(hdev, priv->header_buf_size * buf_count,
-				  rx->dqo.hdr_bufs.data, rx->dqo.hdr_bufs.addr);
+		size_t size =
+			(size_t)priv->header_buf_size * rx->dqo.num_buf_states;
+
+		dma_free_coherent(hdev, size, rx->dqo.hdr_bufs.data,
+				  rx->dqo.hdr_bufs.addr);
 		rx->dqo.hdr_bufs.data = NULL;
 	}
 }
@@ -111,6 +127,13 @@ static void gve_rx_reset_ring_dqo(struct gve_priv *priv, int idx)
 			if (bs->page_info.page) gve_free_page_dqo(priv, bs,
 								  !rx->dqo.qpl);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+			if (gve_buf_state_is_allocated(rx, bs) && bs->xsk_buff) {
+				xsk_buff_free(bs->xsk_buff);
+				bs->xsk_buff = NULL;
+			}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 		}
 	}
 
@@ -121,9 +144,7 @@ static void gve_rx_reset_ring_dqo(struct gve_priv *priv, int idx)
 void gve_rx_stop_ring_dqo(struct gve_priv *priv, int idx)
 {
 	int ntfy_idx = gve_rx_idx_to_ntfy(priv, idx);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
 	struct gve_rx_ring *rx = &priv->rx[idx];
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
 
 	if (!gve_rx_was_added_to_block(priv, idx))
 		return;
@@ -134,6 +155,11 @@ void gve_rx_stop_ring_dqo(struct gve_priv *priv, int idx)
 #elif (LINUX_VERSION_CODE < KERNEL_VERSION(6,11,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
 	if (rx->dqo.page_pool) rx->dqo.page_pool->p.napi = NULL;
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,2,0)
+	timer_shutdown_sync(&rx->starvation_timer);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,2,0) */
+	del_timer_sync(&rx->starvation_timer);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,2,0) */
 	gve_remove_napi(priv, ntfy_idx);
 	gve_rx_remove_from_block(priv, idx);
 	gve_rx_reset_ring_dqo(priv, idx);
@@ -235,8 +261,10 @@ static int gve_rx_alloc_hdr_bufs(struct gve_priv *priv, struct gve_rx_ring *rx,
 void gve_rx_start_ring_dqo(struct gve_priv *priv, int idx)
 {
 	int ntfy_idx = gve_rx_idx_to_ntfy(priv, idx);
+	struct gve_rx_ring *rx = &priv->rx[idx];
 
 	gve_rx_add_to_block(priv, idx);
+	timer_setup(&rx->starvation_timer, gve_rx_starvation_timer, 0);
 	gve_add_napi(priv, ntfy_idx, idx, gve_napi_poll_dqo);
 }
 
@@ -300,7 +328,7 @@ int gve_rx_alloc_ring_dqo(struct gve_priv *priv,
 
 	/* Allocate header buffers for header-split */
 	if (cfg->enable_header_split)
-		if (gve_rx_alloc_hdr_bufs(priv, rx, buffer_queue_slots))
+		if (gve_rx_alloc_hdr_bufs(priv, rx, rx->dqo.num_buf_states))
 			goto err;
 
 	/* Allocate RX completion queue */
@@ -381,13 +409,15 @@ int gve_rx_alloc_rings_dqo(struct gve_priv *priv,
 	int err;
 	int i;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
+	rx = kvzalloc_objs(struct gve_rx_ring, cfg->qcfg_rx->max_queues);
+#else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
-	rx = kvcalloc(cfg->qcfg_rx->max_queues, sizeof(struct gve_rx_ring),
-		      GFP_KERNEL);
+	rx = kvcalloc(cfg->qcfg_rx->max_queues, sizeof(*rx), GFP_KERNEL);
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
-	rx = kcalloc(cfg->qcfg_rx->max_queues, sizeof(struct gve_rx_ring),
-		     GFP_KERNEL);
+	rx = kcalloc(cfg->qcfg_rx->max_queues, sizeof(*rx), GFP_KERNEL);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
+#endif
 	if (!rx)
 		return -ENOMEM;
 
@@ -440,6 +470,7 @@ void gve_rx_post_buffers_dqo(struct gve_rx_ring *rx)
 	struct gve_rx_compl_queue_dqo *complq = &rx->dqo.complq;
 	struct gve_rx_buf_queue_dqo *bufq = &rx->dqo.bufq;
 	struct gve_priv *priv = rx->gve;
+	u32 num_bufs_avail_to_hw;
 	u32 num_avail_slots;
 	u32 num_full_slots;
 	u32 num_posted = 0;
@@ -488,10 +519,13 @@ void gve_rx_post_buffers_dqo(struct gve_rx_ring *rx)
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
 		
 
-		if (rx->dqo.hdr_bufs.data)
+		if (rx->dqo.hdr_bufs.data) {
+			u16 buf_id = le16_to_cpu(desc->buf_id);
+
 			desc->header_buf_addr =
 				cpu_to_le64(rx->dqo.hdr_bufs.addr +
-					    priv->header_buf_size * bufq->tail);
+					(size_t)priv->header_buf_size * buf_id);
+		}
 
 		bufq->tail = (bufq->tail + 1) & bufq->mask;
 		complq->num_free_slots--;
@@ -502,6 +536,29 @@ void gve_rx_post_buffers_dqo(struct gve_rx_ring *rx)
 	}
 
 	rx->fill_cnt += num_posted;
+
+	/* If the queue has fewer than GVE_RX_BUF_THRESH_DQO descriptors
+	 * visible to the hardware, the hardware is in danger of starving
+	 * and cannot trigger interrupts.
+	 *
+	 * We use a threshold of 32 because a single maximum-sized RSC
+	 * packet can consume up to 19 descriptors in the Rx path. Lower
+	 * thresholds (e.g., 8 or 16) would be unsafe as they could cause
+	 * the device to drop/stall on a maximum-sized RSC packet.
+	 *
+	 * Start the timer to periodically reschedule NAPI and recover.
+	 */
+	num_bufs_avail_to_hw =
+		((bufq->tail & ~(GVE_RX_BUF_THRESH_DQO - 1)) -
+		 bufq->head) & bufq->mask;
+
+	if (num_bufs_avail_to_hw < GVE_RX_BUF_THRESH_DQO) {
+		u64_stats_update_begin(&rx->statss);
+		rx->rx_critical_low_bufs++;
+		u64_stats_update_end(&rx->statss);
+		mod_timer(&rx->starvation_timer,
+			  jiffies + msecs_to_jiffies(GVE_RX_NAPI_RESCHED_MS));
+	}
 }
 
 static void gve_rx_skb_csum(struct sk_buff *skb,
@@ -928,15 +985,13 @@ static void gve_dma_sync(struct gve_priv *priv, struct gve_rx_ring *rx,
 						  buf_state->page_info.page_offset,
 						  buf_len);
 	} else {
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 		dma_sync_single_range_for_cpu(&priv->pdev->dev, buf_state->addr,
 					      buf_state->page_info.page_offset +
 					      buf_state->page_info.pad,
 					      buf_len, DMA_FROM_DEVICE);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 	}
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
-	dma_sync_single_range_for_cpu(&priv->pdev->dev, buf_state->addr,
-				      buf_state->page_info.page_offset,
-				      buf_len, DMA_FROM_DEVICE);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 }
 
@@ -973,12 +1028,22 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 	}
 
 	if (unlikely(compl_desc->rx_error)) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+		if (buf_state->xsk_buff) {
+			xsk_buff_free(buf_state->xsk_buff);
+			gve_free_buf_state(rx, buf_state);
+		} else {
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
-		gve_free_buffer(rx, buf_state);
+			gve_free_buffer(rx, buf_state);
 #else
-		gve_enqueue_buf_state(rx, &rx->dqo.recycled_buf_states,
-				      buf_state);
+			gve_enqueue_buf_state(rx,
+					      &rx->dqo.recycled_buf_states,
+					      buf_state);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+		}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 		return -EINVAL;
 	}
 
@@ -1016,10 +1081,13 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 		int unsplit = 0;
 
 		if (hdr_len && !hbo) {
-			rx->ctx.skb_head = gve_rx_copy_data(priv->dev, napi,
-							    rx->dqo.hdr_bufs.data +
-							    desc_idx * priv->header_buf_size,
-							    hdr_len);
+			size_t offset =
+				(size_t)buffer_id * priv->header_buf_size;
+
+			rx->ctx.skb_head =
+				gve_rx_copy_data(priv->dev, napi,
+						 rx->dqo.hdr_bufs.data + offset,
+						 hdr_len);
 			if (unlikely(!rx->ctx.skb_head))
 				goto error;
 			rx->ctx.skb_tail = rx->ctx.skb_head;
@@ -1160,10 +1228,17 @@ static int gve_rx_complete_rsc(struct sk_buff *skb,
 			       struct gve_ptype ptype)
 {
 	struct skb_shared_info *shinfo = skb_shinfo(skb);
+	int rsc_segments, rsc_seg_len, hdr_len;
+	skb_frag_t *frag;
+	void *va;
 
-	/* Only TCP is supported right now. */
+	/* HW-GRO only coalesces TCP. */
 	if (ptype.l4_type != GVE_L4_TYPE_TCP)
 		return -EINVAL;
+
+	rsc_seg_len = le16_to_cpu(desc->rsc_seg_len);
+	if (!rsc_seg_len)
+		return 0;
 
 	switch (ptype.l3_type) {
 	case GVE_L3_TYPE_IPV4:
@@ -1176,7 +1251,35 @@ static int gve_rx_complete_rsc(struct sk_buff *skb,
 		return -EINVAL;
 	}
 
-	shinfo->gso_size = le16_to_cpu(desc->rsc_seg_len);
+	if (skb_headlen(skb)) {
+		/* With header-split, payload is in the non-linear part */
+		rsc_segments = DIV_ROUND_UP(skb->data_len, rsc_seg_len);
+	} else {
+		/* HW-GRO packets are guaranteed to have complete TCP/IP
+		 * headers in frag[0] when header-split is not enabled.
+		 */
+		frag = &skb_shinfo(skb)->frags[0];
+		va = skb_frag_address(frag);
+		hdr_len =
+			eth_get_headlen(skb->dev, va, skb_frag_size(frag));
+		rsc_segments = DIV_ROUND_UP(skb->len - hdr_len, rsc_seg_len);
+#if !defined(KUNIT_KERNEL)
+		skb_copy_to_linear_data(skb, va, hdr_len);
+		skb_frag_size_sub(frag, hdr_len);
+		/* Verify we didn't empty the fragment completely as that could
+		 * otherwise lead to page leaks.
+		 */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,19,0)
+		DEBUG_NET_WARN_ON_ONCE(!skb_frag_size(frag));
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(5,19,0) */
+		skb_frag_off_add(frag, hdr_len);
+		skb->data_len -= hdr_len;
+		skb->tail += hdr_len;
+#endif
+	}
+	shinfo->gso_size = rsc_seg_len;
+	shinfo->gso_segs = rsc_segments;
+
 	return 0;
 }
 
@@ -1209,7 +1312,7 @@ static int gve_rx_complete_skb(struct gve_rx_ring *rx, struct napi_struct *napi,
 			return err;
 	}
 
-	if (skb_headlen(rx->ctx.skb_head) == 0)
+	if (rx->ctx.skb_head == napi->skb)
 		napi_gro_frags(napi);
 	else
 		napi_gro_receive(napi, rx->ctx.skb_head);
@@ -1297,13 +1400,14 @@ int gve_rx_poll_dqo(struct gve_notify_block *block, int budget)
 		/* Free running counter of completed descriptors */
 		rx->cnt++;
 
-		if (!rx->ctx.skb_head)
-			continue;
-
 		if (!compl_desc->end_of_packet)
 			continue;
 
 		work_done++;
+
+		if (!rx->ctx.skb_head)
+			continue;
+
 		pkt_bytes = rx->ctx.skb_head->len;
 		/* The ethernet header (first ETH_HLEN bytes) is snipped off
 		 * by eth_type_trans.

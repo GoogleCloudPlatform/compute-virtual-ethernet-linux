@@ -445,8 +445,6 @@ static int adminq_status_to_err(struct gve_adapter *adapter, u32 status)
 	case GVE_ADMINQ_COMMAND_PASSED:
 		return 0;
 	case GVE_ADMINQ_COMMAND_UNSET:
-		dev_err(&adapter->pdev->dev,
-			"parse_aq_err: err and status both unset, this should not be possible.\n");
 		return -EINVAL;
 	case GVE_ADMINQ_COMMAND_ERROR_ABORTED:
 	case GVE_ADMINQ_COMMAND_ERROR_CANCELLED:
@@ -488,6 +486,31 @@ static int gve_adminq_parse_err(struct gve_adapter *adapter, u32 status)
 	return err;
 }
 
+static bool gve_adminq_is_retryable(enum gve_adminq_opcodes opcode)
+{
+	switch (opcode) {
+	case GVE_ADMINQ_REPORT_NIC_TIMESTAMP:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static enum gve_adminq_opcodes gve_extract_opcode(union gve_adminq_command *cmd)
+{
+	u32 opcode;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,20,0)
+	opcode = be32_to_cpu(READ_ONCE(cmd->opcode));
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(3,20,0) */
+	opcode = be32_to_cpu(ACCESS_ONCE(cmd->opcode));
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,20,0) */
+	if (opcode == GVE_ADMINQ_EXTENDED_COMMAND)
+		opcode = be32_to_cpu(cmd->extended_command.inner_opcode);
+
+	return opcode;
+}
+
 /* Flushes all AQ commands currently queued and waits for them to complete.
  * If there are failures, it will return the first error.
  */
@@ -512,7 +535,8 @@ static int gve_adminq_kick_and_wait(struct gve_adapter *adapter)
 
 	for (i = tail; i < head; i++) {
 		union gve_adminq_command *cmd;
-		u32 status, err;
+		u32 status;
+		int err;
 
 		cmd = &adapter->adminq[i & adapter->adminq_mask];
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,20,0)
@@ -521,9 +545,18 @@ static int gve_adminq_kick_and_wait(struct gve_adapter *adapter)
 		status = be32_to_cpu(ACCESS_ONCE(cmd->status));
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,20,0) */
 		err = gve_adminq_parse_err(adapter, status);
-		if (err)
+		if (err) {
+			enum gve_adminq_opcodes opcode = gve_extract_opcode(cmd);
+
+			adapter->adminq_cmd_fail++;
+			if (!gve_adminq_is_retryable(opcode) || err != -EAGAIN)
+				dev_err_ratelimited(&adapter->pdev->dev,
+						    "AQ command %d failed with status %d\n",
+						    opcode, status);
+
 			// Return the first error if we failed.
 			return err;
+		}
 	}
 
 	return 0;
@@ -848,7 +881,7 @@ static void gve_adminq_get_create_rx_queue_cmd(struct gve_priv *priv,
 		cmd->create_rx_queue.rx_buff_ring_size =
 			cpu_to_be16(priv->rx_desc_cnt);
 		cmd->create_rx_queue.enable_rsc =
-			!!(priv->dev->features & NETIF_F_LRO);
+			!!(priv->dev->features & NETIF_F_GRO_HW);
 		if (priv->header_split_enabled)
 			cmd->create_rx_queue.header_buffer_size =
 				cpu_to_be16(priv->header_buf_size);
@@ -1077,6 +1110,12 @@ static void gve_enable_supported_features(
 	    (supported_features_mask & GVE_SUP_NIC_TIMESTAMP_MASK)) {
 		device_info->nic_timestamp_supported = true;
 		device_info->clk_read_type = GVE_DEV_CLK_ADMINQ;
+	}
+
+	if (device_info->queue_format == GVE_DQO_RDA_FORMAT ||
+	    device_info->queue_format == GVE_DQO_QPL_FORMAT) {
+		device_info->gro_hw_supported = true;
+		device_info->gro_hw_default_enable = true;
 	}
 }
 
