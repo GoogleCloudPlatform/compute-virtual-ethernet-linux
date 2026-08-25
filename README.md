@@ -45,6 +45,8 @@ Device Class  | `0x200`  | Ethernet
 
 This driver has formally been tested in the following distros:
 * RHEL 10.2
+* AlmaLinux 10
+* Ubuntu 26.04
 
 Reach out to support to request verification for more distros/kernels.
 
@@ -60,7 +62,7 @@ This driver has been published to an Artifact Repository yum repo found at https
 
 The public key for this RPM can be found at https://packages.cloud.google.com/yum/doc/rpm-package-key-v10.gpg
 
-Here is an example .repo file to place in `/etc/yum.repos.d/gve.repo` in RHEL 10.2
+Here is an example .repo file to place in `/etc/yum.repos.d/gve.repo` in EL10 based distros (e.g. RHEL 10.2, AlmaLinux 10, etc...)
 
 ```
 [gve-el10-stable]
@@ -73,6 +75,37 @@ gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key-v10.gpg
 ```
 
 You may need to run `sudo dnf install dnf-plugin-artifact-registry` if this is the first Artifact Repository repo in your image.
+
+## DEB Package Installation
+
+This driver has been published to a public apt repo found at `https://packages.cloud.google.com/apt` with suite `gve-ubuntu2604-stable`.
+
+You will need to fetch the signing key:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y curl gnupg
+
+sudo mkdir -p /usr/share/keyrings
+curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/gve-archive-keyring.gpg
+```
+
+Here is an example `.sources` file to place in `/etc/apt/sources.list.d/gve.sources` in Ubuntu 26.04:
+
+```
+Types: deb
+URIs: https://packages.cloud.google.com/apt
+Suites: gve-ubuntu2604-stable
+Components: main
+Signed-By: /usr/share/keyrings/gve-archive-keyring.gpg
+```
+
+Then install the driver package:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y gve
+```
 
 ## Building from Source
 If the source is part of a tarball from GitHub, this source code should
