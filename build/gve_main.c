@@ -1596,7 +1596,8 @@ static void gve_drain_page_cache(struct gve_priv *priv)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_VERSION_LT(10,0)
 	struct page_frag_cache *nc;
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_VERSION_LT(10,0) */
-	int i;
+int i;
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_VERSION_LT(10,0)
 	for (i = 0;i < priv->rx_cfg.num_queues;i++) {
 		nc = &priv->rx[i].page_cache;
@@ -1607,7 +1608,6 @@ static void gve_drain_page_cache(struct gve_priv *priv)
 		}
 	}
 #else /* LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_VERSION_LT(10,0) */
-
 	for (i = 0; i < priv->rx_cfg.num_queues; i++)
 		page_frag_cache_drain(&priv->rx[i].page_cache);
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,9,0) || RHEL_VERSION_LT(10,0) */
@@ -2072,7 +2072,11 @@ static int gve_xsk_wakeup(struct net_device *dev, u32 queue_id, u32 flags)
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 
 static int gve_verify_xdp_configuration(struct net_device *dev,
-					struct netlink_ext_ack *extack)
+					struct netlink_ext_ack *extack
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL)
+					, struct netdev_bpf *xdp
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL) */
+					)
 {
 	struct gve_priv *priv = netdev_priv(dev);
 	u16 max_xdp_mtu;
@@ -2084,6 +2088,16 @@ static int gve_verify_xdp_configuration(struct net_device *dev,
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,12,0) */
 		return -EOPNOTSUPP;
 	}
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL)
+	/* Check XDP support for various queue formats. */
+	switch (priv->queue_format) {
+	case GVE_GQI_QPL_FORMAT:/* GQI_QPL supports everything, so ignore. */ 
+	case GVE_DQO_RDA_FORMAT:  break;
+default:  netdev_warn(dev, "XDP is not supported in mode %d.\n",
+		      priv->queue_format);
+		return -EOPNOTSUPP;
+	}
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL) */
 
 	if (priv->header_split_enabled) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
@@ -2136,7 +2150,11 @@ static int gve_xdp(struct net_device *dev, struct netdev_bpf *xdp)
 	struct gve_priv *priv = netdev_priv(dev);
 	int err;
 
-	err = gve_verify_xdp_configuration(dev, xdp->extack);
+	err = gve_verify_xdp_configuration(dev, xdp->extack
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL)
+					   , xdp
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)) || defined(KUNIT_KERNEL) */
+			);
 	if (err)
 		return err;
 	switch (xdp->command) {
@@ -3205,7 +3223,7 @@ static void gve_rx_queue_mem_free(struct net_device *dev, void *per_q_mem)
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 static int gve_rx_queue_mem_alloc(struct net_device *dev
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0) || (LINUX_VERSION_CODE >= KERNEL_VERSION(6,18,45) && LINUX_VERSION_CODE < KERNEL_VERSION(6,19,0))
 				  ,
 				  struct netdev_queue_config *qcfg
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0) */
@@ -3234,7 +3252,7 @@ static int gve_rx_queue_mem_alloc(struct net_device *dev
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 static int gve_rx_queue_start(struct net_device *dev
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0) || (LINUX_VERSION_CODE >= KERNEL_VERSION(6,18,45) && LINUX_VERSION_CODE < KERNEL_VERSION(6,19,0))
 			      ,
 			      struct netdev_queue_config *qcfg
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0) */

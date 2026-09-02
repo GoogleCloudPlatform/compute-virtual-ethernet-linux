@@ -4,8 +4,7 @@
 @ptp_caps@
 @@
 static const struct ptp_clock_info gve_ptp_caps = {
-	.owner          = THIS_MODULE,
-	.name		= "gve clock",
+	...,
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 	.gettimex64	= gve_ptp_gettimex64,
 +#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
