@@ -525,14 +525,28 @@ void gve_rx_post_buffers_dqo(struct gve_rx_ring *rx)
 	}
 
 	rx->fill_cnt += num_posted;
-	num_bufs_avail_to_hw = ((bufq->tail & ~(GVE_RX_BUF_THRESH_DQO - 1)) - bufq->head) & bufq->mask;
+
+	/* If the queue has fewer than GVE_RX_BUF_THRESH_DQO descriptors
+	 * visible to the hardware, the hardware is in danger of starving
+	 * and cannot trigger interrupts.
+	 *
+	 * We use a threshold of 32 because a single maximum-sized RSC
+	 * packet can consume up to 19 descriptors in the Rx path. Lower
+	 * thresholds (e.g., 8 or 16) would be unsafe as they could cause
+	 * the device to drop/stall on a maximum-sized RSC packet.
+	 *
+	 * Start the timer to periodically reschedule NAPI and recover.
+	 */
+	num_bufs_avail_to_hw =
+		((bufq->tail & ~(GVE_RX_BUF_THRESH_DQO - 1)) -
+		 bufq->head) & bufq->mask;
 
 	if (num_bufs_avail_to_hw < GVE_RX_BUF_THRESH_DQO) {
 		u64_stats_update_begin(&rx->statss);
 		rx->rx_critical_low_bufs++;
 		u64_stats_update_end(&rx->statss);
 		mod_timer(&rx->starvation_timer,
-		          jiffies + msecs_to_jiffies(GVE_RX_NAPI_RESCHED_MS));
+			  jiffies + msecs_to_jiffies(GVE_RX_NAPI_RESCHED_MS));
 	}
 }
 
