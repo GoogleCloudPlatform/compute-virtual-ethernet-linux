@@ -96,13 +96,13 @@ identifier assigned.ndo_struct;
 @@
 
 struct net_device_ops ndo_struct = {
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0)
-+	.ndo_do_ioctl		=	gve_eth_ioctl,
-+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) && LINUX_VERSION_CODE < KERNEL_VERSION(6,6,0)
-+	.ndo_eth_ioctl		=	gve_eth_ioctl,
-+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0)
 	.ndo_hwtstamp_get	=	gve_get_ts_config,
 	.ndo_hwtstamp_set	=	gve_set_ts_config,
++#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || RHEL_VERSION_GTE(9, 0)
++	.ndo_eth_ioctl		=	gve_eth_ioctl,
++#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0)
++	.ndo_do_ioctl		=	gve_eth_ioctl,
 +#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0) */
 };
 
