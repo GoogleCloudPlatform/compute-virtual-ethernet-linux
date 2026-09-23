@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.10-22-oot"
+#define GVE_VERSION		 "1.4.10-24-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -132,6 +132,12 @@ static int gve_alloc_flow_rule_caches(struct gve_priv *priv)
 	if (!priv->max_flow_rules)
 		return 0;
 
+	priv->flow_rules_bitmap = bitmap_zalloc(priv->max_flow_rules, GFP_KERNEL);
+	if (!priv->flow_rules_bitmap) {
+		dev_err(&priv->pdev->dev, "Cannot alloc flow rules bitmap\n");
+		return -ENOMEM;
+	}
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(7,0,0)
 	flow_rules_cache->rules_cache =
 		kvzalloc_objs(*flow_rules_cache->rules_cache,
@@ -149,7 +155,8 @@ static int gve_alloc_flow_rule_caches(struct gve_priv *priv)
 #endif
 	if (!flow_rules_cache->rules_cache) {
 		dev_err(&priv->pdev->dev, "Cannot alloc flow rules cache\n");
-		return -ENOMEM;
+		err = -ENOMEM;
+		goto free_bitmap;
 	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
@@ -176,6 +183,9 @@ free_rules_cache:
 	kfree(flow_rules_cache->rules_cache);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
 	flow_rules_cache->rules_cache = NULL;
+free_bitmap:
+	bitmap_free(priv->flow_rules_bitmap);
+	priv->flow_rules_bitmap = NULL;
 	return err;
 }
 
@@ -183,6 +193,8 @@ static void gve_free_flow_rule_caches(struct gve_priv *priv)
 {
 	struct gve_flow_rules_cache *flow_rules_cache = &priv->flow_rules_cache;
 
+	bitmap_free(priv->flow_rules_bitmap);
+	priv->flow_rules_bitmap = NULL;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
 	kvfree(flow_rules_cache->rule_ids_cache);
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0) */
@@ -2217,11 +2229,16 @@ int gve_init_rss_config(struct gve_priv *priv, u16 num_queues) {
 int gve_flow_rules_reset(struct gve_priv *priv)
 {
 	const struct gve_ctrl_ops *ops = priv->adapter->ctrl_ops;
+	int err;
 
 	if (!priv->max_flow_rules || !ops->reset_flow_rules)
 		return 0;
 
-	return ops->reset_flow_rules(priv->adapter);
+	err = ops->reset_flow_rules(priv->adapter);
+	if (!err && priv->flow_rules_bitmap)
+		bitmap_zero(priv->flow_rules_bitmap, priv->max_flow_rules);
+
+	return err;
 }
 
 int gve_adjust_config(struct gve_priv *priv,

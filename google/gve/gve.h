@@ -7,6 +7,7 @@
 #ifndef _GVE_H_
 #define _GVE_H_
 
+#include <linux/bitmap.h>
 #include <linux/dma-mapping.h>
 #include <linux/dmapool.h>
 #include <linux/ethtool_netlink.h>
@@ -1046,6 +1047,7 @@ struct gve_priv {
 
 	u32 max_flow_rules;
 	u32 num_flow_rules;
+	unsigned long *flow_rules_bitmap;
 
 	struct gve_flow_rules_cache flow_rules_cache;
 

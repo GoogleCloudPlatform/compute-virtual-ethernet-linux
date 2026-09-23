@@ -1104,6 +1104,17 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 		rx->rx_hsplit_unsplit_pkt += unsplit;
 		rx->rx_hsplit_bytes += hdr_len;
 		u64_stats_update_end(&rx->statss);
+
+		if (!buf_len) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+			gve_free_buffer(rx, buf_state);
+#else
+			gve_enqueue_buf_state(rx,
+					      &rx->dqo.recycled_buf_states,
+					      buf_state);
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+			return 0;
+		}
 	} else {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0))
 		if (!rx->ctx.skb_head && rx->dqo.page_pool &&

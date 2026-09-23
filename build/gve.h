@@ -8,6 +8,7 @@
 #define _GVE_H_
 
 #include "gve_linux_version.h"
+#include <linux/bitmap.h>
 #include <linux/dma-mapping.h>
 #include <linux/dmapool.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
@@ -1074,6 +1075,7 @@ struct gve_priv {
 
 	u32 max_flow_rules;
 	u32 num_flow_rules;
+	unsigned long *flow_rules_bitmap;
 
 	struct gve_flow_rules_cache flow_rules_cache;
 
