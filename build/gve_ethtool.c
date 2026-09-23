@@ -1087,7 +1087,7 @@ static int gve_get_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd, u
 			return err;
 
 		cmd->rule_cnt = priv->num_flow_rules;
-		cmd->data = priv->max_flow_rules;
+		cmd->data = priv->max_flow_rules | RX_CLS_LOC_SPECIAL;
 		break;
 	case ETHTOOL_GRXCLSRULE:
 		err = gve_get_flow_rule_entry(priv, cmd);

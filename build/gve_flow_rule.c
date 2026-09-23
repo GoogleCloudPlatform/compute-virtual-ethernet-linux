@@ -286,6 +286,26 @@ int gve_get_flow_rule_ids(struct gve_priv *priv, struct ethtool_rxnfc *cmd, u32 
 	return err;
 }
 
+static int gve_get_flow_rule_location(struct gve_priv *priv,
+				      struct ethtool_rx_flow_spec *fsp)
+{
+	u32 loc;
+
+	if (fsp->location == RX_CLS_LOC_ANY) {
+		loc = find_first_zero_bit(priv->flow_rules_bitmap,
+					  priv->max_flow_rules);
+		if (loc >= priv->max_flow_rules)
+			return -ENOSPC;
+		fsp->location = loc;
+		return 0;
+	}
+
+	if (fsp->location & RX_CLS_LOC_SPECIAL)
+		return -EINVAL;
+
+	return 0;
+}
+
 int gve_add_flow_rule(struct gve_priv *priv, struct ethtool_rxnfc *cmd)
 {
 	const struct gve_ctrl_ops *ops = priv->adapter->ctrl_ops;
@@ -312,7 +332,13 @@ int gve_add_flow_rule(struct gve_priv *priv, struct ethtool_rxnfc *cmd)
 	if (err)
 		goto out;
 
+	err = gve_get_flow_rule_location(priv, fsp);
+	if (err)
+		goto out;
+
 	err = ops->add_flow_rule(priv->adapter, rule, fsp->location);
+	if (!err && fsp->location < priv->max_flow_rules)
+		set_bit(fsp->location, priv->flow_rules_bitmap);
 
 out:
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,18,0)
@@ -330,9 +356,14 @@ int gve_del_flow_rule(struct gve_priv *priv, struct ethtool_rxnfc *cmd)
 {
 	struct ethtool_rx_flow_spec *fsp = (struct ethtool_rx_flow_spec *)&cmd->fs;
 	const struct gve_ctrl_ops *ops = priv->adapter->ctrl_ops;
+	int err;
 
 	if (!priv->max_flow_rules || !ops->del_flow_rule)
 		return -EOPNOTSUPP;
 
-	return ops->del_flow_rule(priv->adapter, fsp->location);
+	err = ops->del_flow_rule(priv->adapter, fsp->location);
+	if (!err && fsp->location < priv->max_flow_rules)
+		clear_bit(fsp->location, priv->flow_rules_bitmap);
+
+	return err;
 }
