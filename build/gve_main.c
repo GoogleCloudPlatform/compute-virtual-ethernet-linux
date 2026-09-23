@@ -2790,16 +2790,16 @@ static const struct net_device_ops gve_netdev_ops = {
 	.ndo_xdp_xmit		=	gve_xdp_xmit,
 	.ndo_xsk_wakeup		=	gve_xsk_wakeup,
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0)
-	.ndo_do_ioctl = gve_eth_ioctl,
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) && LINUX_VERSION_CODE < KERNEL_VERSION(6,6,0)
-	
-	.ndo_eth_ioctl = gve_eth_ioctl,
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0)
-	
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0)
 	.ndo_hwtstamp_get	=	gve_get_ts_config,
 	.ndo_hwtstamp_set	=	gve_set_ts_config,
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || RHEL_VERSION_GTE(9, 0)
+	.ndo_eth_ioctl = gve_eth_ioctl,
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0)
+	
+	.ndo_do_ioctl = gve_eth_ioctl,
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0) */
+
 };
 
 static void gve_handle_status(struct gve_priv *priv, u32 status)
