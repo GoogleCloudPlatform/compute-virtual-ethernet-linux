@@ -666,9 +666,9 @@ static void gve_get_ringparam(struct net_device *netdev,
 	cmd->rx_pending = priv->rx_desc_cnt;
 	cmd->tx_pending = priv->tx_desc_cnt;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7)
 	kernel_cmd->rx_buf_len = priv->rx_cfg.packet_buffer_size;
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7) */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
 	if (!gve_header_split_supported(priv))
@@ -736,11 +736,11 @@ static int gve_set_ringparam(struct net_device *netdev,
 	int err = 0;
 
 	gve_get_curr_alloc_cfgs(priv, &tx_alloc_cfg, &rx_alloc_cfg);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7)
 
 	err = gve_set_rx_buf_len_config(priv, kernel_cmd->rx_buf_len, extack,
 					&rx_alloc_cfg);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7) */
 	if (err)
 		return err;
 
@@ -1270,17 +1270,17 @@ static int gve_get_ts_info(struct net_device *netdev
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0))
 #define ETHTOOL_RING_USE_TCP_DATA_SPLIT 0
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0) */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5,17,0))
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5,17,0) && RHEL_RELEASE_CODE == 0) || RHEL_VERSION_LT(8, 7)
 #define ETHTOOL_RING_USE_RX_BUF_LEN 0
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(5,17,0) */
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(5,17,0) && RHEL_RELEASE_CODE == 0) || RHEL_VERSION_LT(8, 7) */
 const struct ethtool_ops gve_ethtool_ops = {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,7,0)
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS,
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,7,0) */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7)
 	.supported_ring_params = ETHTOOL_RING_USE_TCP_DATA_SPLIT |
 				 ETHTOOL_RING_USE_RX_BUF_LEN,
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7) */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(7,2,0)
 				 .op_needs_rtnl = ETHTOOL_OP_NEEDS_RTNL_SCHANNELS |
 				 ETHTOOL_OP_NEEDS_RTNL_SRINGPARAM |

@@ -1325,11 +1325,11 @@ void gve_rx_free_rings_gqi(struct gve_priv *priv,
 void gve_rx_start_ring_gqi(struct gve_priv *priv, int idx);
 void gve_rx_stop_ring_gqi(struct gve_priv *priv, int idx);
 bool gve_header_split_supported(const struct gve_priv *priv);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7)
 int gve_set_rx_buf_len_config(struct gve_priv *priv, u32 rx_buf_len,
 			      struct netlink_ext_ack *extack,
 			      struct gve_rx_alloc_rings_cfg *rx_alloc_cfg);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7) */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
 int gve_set_hsplit_config(struct gve_priv *priv, u8 tcp_data_split,
 			  struct gve_rx_alloc_rings_cfg *rx_alloc_cfg);
