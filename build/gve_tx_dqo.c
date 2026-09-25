@@ -671,13 +671,15 @@ static int gve_prep_tso(struct sk_buff *skb)
 	err = skb_cow_head(skb, 0);
 	if (err < 0)
 		return err;
+	shinfo = skb_shinfo(skb);
 
 	l4_start = skb_transport_offset(skb);
 	paylen = skb->len - l4_start;
 
-	switch (shinfo->gso_type) {
-	case SKB_GSO_TCPV4:
-	case SKB_GSO_TCPV6:
+	/* gso_type is a bitmask: SKB_GSO_DODGY, SKB_GSO_TCP_ECN and
+	 * SKB_GSO_TCP_FIXEDID may be set alongside the protocol bit.
+	 */
+	if (shinfo->gso_type & (SKB_GSO_TCPV4 | SKB_GSO_TCPV6)) {
 		tcp = tcp_hdr(skb);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0))
 		csum_replace_by_diff(&tcp->check,
@@ -690,8 +692,7 @@ static int gve_prep_tso(struct sk_buff *skb)
 #else
 		header_len = skb_transport_offset(skb) + tcp_hdrlen(skb);
 #endif
-		break;
-	case SKB_GSO_UDP_L4:
+	} else if (shinfo->gso_type & SKB_GSO_UDP_L4) {
 		udp = udp_hdr(skb);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0))
 		csum_replace_by_diff(&udp->check,
@@ -700,8 +701,7 @@ static int gve_prep_tso(struct sk_buff *skb)
 		udp->check = csum_fold(csum_add((__force __wsum)htonl(paylen), ~csum_unfold(udp->check)));
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0) */
 		header_len = sizeof(struct udphdr) + l4_start;
-		break;
-	default:
+	} else {
 		return -EINVAL;
 	}
 
