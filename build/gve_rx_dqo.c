@@ -1033,12 +1033,22 @@ static int gve_rx_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 	}
 
 	if (unlikely(compl_desc->rx_error)) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+		if (buf_state->xsk_buff) {
+			xsk_buff_free(buf_state->xsk_buff);
+			gve_free_buf_state(rx, buf_state);
+		} else {
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
-		gve_free_buffer(rx, buf_state);
+			gve_free_buffer(rx, buf_state);
 #else
-		gve_enqueue_buf_state(rx, &rx->dqo.recycled_buf_states,
-				      buf_state);
+			gve_enqueue_buf_state(rx,
+					      &rx->dqo.recycled_buf_states,
+					      buf_state);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+		}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
 		return -EINVAL;
 	}
 
