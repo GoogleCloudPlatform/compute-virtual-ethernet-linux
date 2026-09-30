@@ -59,19 +59,58 @@ netif_napi_del_locked(napi);
 
 @@
 expression napi;
+identifier other_napi_disable !~ "gve_xsk_pool_disable";
+type T;
 @@
+T other_napi_disable(...) {
+<...
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2)
 		napi_disable_locked(napi);
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 +		napi_disable(napi);
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+...>
+}
+
+@@
+expression napi;
+identifier other_napi_disable !~ "gve_xsk_pool_disable";
+type T;
+@@
+T other_napi_disable(...) {
+<...
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2)
+		napi_enable_locked(napi);
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
++		napi_enable(napi);
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
+...>
+}
 
 @@
 expression napi;
 @@
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2)
+int gve_xsk_pool_disable(...) {
+<...
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || RHEL_VERSION_GTE(10,2)
+napi_disable_locked(napi);
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
++		napi_disable(napi);
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
+...>
+}
+
+
+@@
+expression napi;
+@@
+int gve_xsk_pool_disable(...) {
+<...
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || RHEL_VERSION_GTE(10,2)
 		napi_enable_locked(napi);
-+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
++#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
 +		napi_enable(napi);
-+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
++#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
+...>
+}
 

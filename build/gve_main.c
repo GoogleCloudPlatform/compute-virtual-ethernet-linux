@@ -2024,17 +2024,35 @@ static int gve_xsk_pool_disable(struct net_device *dev,
 	}
 
 	napi_rx = &priv->ntfy_blocks[priv->rx[qid].ntfy_id].napi;
-	napi_disable(napi_rx); /* make sure current rx poll is done */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || RHEL_VERSION_GTE(10,2)
+	napi_disable_locked(napi_rx);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
+	napi_disable(napi_rx);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
+ /* make sure current rx poll is done */
 
 	tx_qid = gve_xdp_tx_queue_id(priv, qid);
 	napi_tx = &priv->ntfy_blocks[priv->tx[tx_qid].ntfy_id].napi;
-	napi_disable(napi_tx); /* make sure current tx poll is done */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || RHEL_VERSION_GTE(10,2)
+	napi_disable_locked(napi_tx);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
+	napi_disable(napi_tx);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
+ /* make sure current tx poll is done */
 
 	gve_unreg_xsk_pool(priv, qid);
 	smp_mb(); /* Make sure it is visible to the workers on datapath */
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || RHEL_VERSION_GTE(10,2)
+	napi_enable_locked(napi_rx);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
 	napi_enable(napi_rx);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) || RHEL_VERSION_GTE(10,2)
+	napi_enable_locked(napi_tx);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
 	napi_enable(napi_tx);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,16,0) */
 	if (gve_is_gqi(priv)) {
 		if (gve_rx_work_pending(&priv->rx[qid]))
 			napi_schedule(napi_rx);
@@ -2314,9 +2332,9 @@ static void gve_turndown(struct gve_priv *priv)
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2)
 		napi_disable_locked(&block->napi);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 		napi_disable(&block->napi);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	}
 	for (idx = 0; idx < priv->rx_cfg.num_queues; idx++) {
 		int ntfy_idx = gve_rx_idx_to_ntfy(priv, idx);
@@ -2331,9 +2349,9 @@ static void gve_turndown(struct gve_priv *priv)
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0) */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2)
 		napi_disable_locked(&block->napi);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 		napi_disable(&block->napi);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 	}
 
 	/* Stop tx queues */
@@ -2369,9 +2387,9 @@ static void gve_turnup(struct gve_priv *priv)
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2)
 		napi_enable_locked(&block->napi);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 		napi_enable(&block->napi);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 
 		if (idx < priv->tx_cfg.num_queues) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0)
@@ -2404,9 +2422,9 @@ static void gve_turnup(struct gve_priv *priv)
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2)
 		napi_enable_locked(&block->napi);
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 		napi_enable(&block->napi);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) || RHEL_VERSION_GTE(10,2) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0) */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0)
 		netif_queue_set_napi(priv->dev, idx, NETDEV_QUEUE_TYPE_RX,
 				     &block->napi);
