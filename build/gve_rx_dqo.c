@@ -127,6 +127,14 @@ static void gve_rx_reset_ring_dqo(struct gve_priv *priv, int idx)
 			if (bs->page_info.page) gve_free_page_dqo(priv, bs,
 								  !rx->dqo.qpl);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0)) */
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
+			if (gve_buf_state_is_allocated(rx, bs) &&
+			    bs->xsk_buff) {
+				xsk_buff_free(bs->xsk_buff);
+				bs->xsk_buff = NULL;
+			}
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
 		}
 	}
 
