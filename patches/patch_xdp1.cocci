@@ -457,6 +457,19 @@ identifier buf_state;
 @@
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
 if (buf_state->xsk_buff) {
+...
+} else {
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
+...
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+}
++#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
+
+@@
+identifier buf_state;
+@@
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0))
+if (buf_state->xsk_buff) {
   return gve_rx_xsk_dqo(...);
 }
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) */
