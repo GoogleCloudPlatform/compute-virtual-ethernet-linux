@@ -636,7 +636,8 @@ static void gve_rx_skb_hwtstamp(struct gve_rx_ring *rx,
 {
 	struct sk_buff *skb = rx->ctx.skb_head;
 
-	if (desc->ts_sub_nsecs_low & GVE_DQO_RX_HWTSTAMP_VALID) {
+	if (desc->ts_sub_nsecs_low & GVE_DQO_RX_HWTSTAMP_VALID &&
+	    gve_is_last_sync_nic_counter_valid(rx->gve)) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0)
 		skb_hwtstamps(skb)->hwtstamp =
 			gve_rx_get_hwtstamp(rx->gve, le32_to_cpu(desc->ts));
@@ -649,7 +650,7 @@ int gve_xdp_rx_timestamp(const struct xdp_md *_ctx, u64 *timestamp)
 {
 	const struct gve_xdp_buff *ctx = (void *)_ctx;
 
-	if (!gve_is_clock_running(ctx->gve))
+	if (!gve_is_last_sync_nic_counter_valid(ctx->gve))
 		return -ENODATA;
 
 	if (!(ctx->compl_desc->ts_sub_nsecs_low & GVE_DQO_RX_HWTSTAMP_VALID))

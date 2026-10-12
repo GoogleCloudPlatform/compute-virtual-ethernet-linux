@@ -20,7 +20,7 @@
 #define GVE_MBX_RX_BASE			0x08400000
 #define GVE_MBX_TX_BASE			(GVE_MBX_RX_BASE + 0x14)
 
-#define GVE_MBX_RX_LEN_M		GENMASK(12, 0)
+#define GVE_MBX_RX_LEN_M		GENMASK(9, 0)
 #define GVE_MBX_RX_ENABLE_M		BIT(31)
 #define GVE_MBX_RX_HEAD_M		GENMASK(12, 0)
 
@@ -154,6 +154,7 @@ enum gve_mbx_opcode {
 	GVE_MBX_ADD_FLOW_RULE		= 0x6015,
 	GVE_MBX_DEL_FLOW_RULE		= 0x6016,
 	GVE_MBX_RESET_FLOW_RULES	= 0x6017,
+	GVE_MBX_GET_LINK_STATS		= 0x6018,
 };
 
 enum gve_mbx_caps {
@@ -425,7 +426,34 @@ struct gve_mbx_del_flow_rule_req {
 	__le32 rule_id;
 };
 
-
+/**
+ * struct gve_mbx_get_link_stats_resp - Link statistics response from device
+ *
+ * @rx_unicast: Number of unicast packets received
+ * @rx_multicast: Number of multicast packets received
+ * @tx_packets: Number of packets successfully transmitted
+ * @rx_bytes: Number of bytes received
+ * @tx_bytes: Number of bytes transmitted
+ * @rx_errors: Number of bad packets received (excludes rx_dropped)
+ * @tx_errors: Packets that could not be sent due to error (excludes tx_dropped)
+ * @rx_dropped: Packets received but dropped (e.g., due to lack of resources)
+ * @tx_dropped: Packets dropped on their way to transmission
+ * @rx_length_errors: Packets dropped due to invalid length
+ * @no_rx_buffer_drops: Packets dropped by device due to buffer exhaustion
+ */
+struct gve_mbx_get_link_stats_resp {
+	__le64 rx_unicast;
+	__le64 rx_multicast;
+	__le64 tx_packets;
+	__le64 rx_bytes;
+	__le64 tx_bytes;
+	__le64 rx_errors;
+	__le64 tx_errors;
+	__le64 rx_dropped;
+	__le64 tx_dropped;
+	__le64 rx_length_errors;
+	__le64 no_rx_buffer_drops;
+};
 
 struct gve_mbx_tx_q_info {
 	__le32 queue_id;
@@ -562,4 +590,5 @@ int gve_mbx_add_flow_rule(struct gve_adapter *adapter,
 			  struct gve_flow_rule *rule, u32 loc);
 int gve_mbx_del_flow_rule(struct gve_adapter *adapter, u32 loc);
 int gve_mbx_reset_flow_rules(struct gve_adapter *adapter);
+int gve_mbx_get_link_stats(struct gve_adapter *adapter);
 #endif /* _GVE_MAILBOX_H */

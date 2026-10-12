@@ -6,7 +6,7 @@ static const struct netdev_stat_ops gve_stat_ops = {
 };
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
-@@
+@ exists @
 identifier dev;
 @@
 static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)

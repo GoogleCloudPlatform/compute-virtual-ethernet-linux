@@ -106,6 +106,23 @@ static void gve_get_stats(struct net_device *dev, struct rtnl_link_stats64 *s)
 			s->tx_dropped += tx_dropped;
 		}
 	}
+
+	if (priv->adapter->mailbox_mode) {
+		struct gve_hw_link_stats mbx_link_stats;
+		struct gve_adapter *adapter = priv->adapter;
+
+		do {
+			start = u64_stats_fetch_begin(&adapter->mbx_link_stats_sync);
+			mbx_link_stats = adapter->mbx_link_stats;
+		} while (u64_stats_fetch_retry(&adapter->mbx_link_stats_sync, start));
+
+		s->rx_missed_errors = mbx_link_stats.no_rx_buffer_drops;
+		s->rx_errors = mbx_link_stats.rx_errors;
+		s->tx_errors = mbx_link_stats.tx_errors;
+		s->rx_length_errors = mbx_link_stats.rx_length_errors;
+		s->rx_dropped += mbx_link_stats.rx_dropped;
+		s->tx_dropped += mbx_link_stats.tx_dropped;
+	}
 }
 
 static int gve_alloc_flow_rule_caches(struct gve_priv *priv)
@@ -705,18 +722,10 @@ static int gve_setup_control_plane_resources(struct gve_priv *priv)
 		}
 	}
 
-	if (priv->ptp) {
-		err = gve_ptp_start(priv);
-		if (err) {
-			dev_warn(&priv->pdev->dev, "Failed to start clock, continuing without PTP support");
-			err = 0;
-		}
-	}
-
 	err = gve_init_rss_config(priv, priv->rx_cfg.num_queues);
 	if (err) {
 		dev_err(&priv->pdev->dev, "Failed to init RSS config");
-		goto stop_clock;
+		goto release_db_resources;
 	}
 
 	if (ops->setup_stats_report) {
@@ -731,8 +740,6 @@ static int gve_setup_control_plane_resources(struct gve_priv *priv)
 	gve_set_device_resources_ok(priv->adapter);
 	return 0;
 
-stop_clock:
-	gve_ptp_stop(priv);
 release_db_resources:
 	if (ops->free_db_resources)
 		ops->free_db_resources(priv->adapter);
@@ -751,8 +758,6 @@ static void gve_teardown_control_plane_resources(struct gve_priv *priv)
 {
 	const struct gve_ctrl_ops *ops = priv->adapter->ctrl_ops;
 	int err;
-
-	gve_ptp_stop(priv);
 
 	/* Tell device its resources are being freed */
 	if (gve_get_device_resources_ok(priv->adapter)) {
@@ -782,7 +787,6 @@ static void gve_uninit_priv(struct gve_priv *priv)
 
 	gve_teardown_notify_blocks(priv);
 	gve_teardown_control_plane_resources(priv);
-	gve_ptp_unregister(priv);
 	adapter->ctrl_ops->free_ctrl_plane(adapter);
 	/*
 	 * Free any resources shared with the device only after we have a
@@ -2257,6 +2261,7 @@ static int gve_set_ts_config(struct net_device *dev,
 			     struct netlink_ext_ack *extack)
 {
 	struct gve_priv *priv = netdev_priv(dev);
+	int err;
 
 	if (kernel_config->tx_type != HWTSTAMP_TX_OFF) {
 		NL_SET_ERR_MSG_MOD(extack, "TX timestamping is not supported");
@@ -2264,14 +2269,24 @@ static int gve_set_ts_config(struct net_device *dev,
 	}
 
 	if (kernel_config->rx_filter != HWTSTAMP_FILTER_NONE) {
-		if (!gve_is_clock_running(priv)) {
+		if (!gve_is_clock_enabled(priv)) {
 			NL_SET_ERR_MSG_MOD(extack,
 					   "RX timestamping is not supported");
 			kernel_config->rx_filter = HWTSTAMP_FILTER_NONE;
 			return -EOPNOTSUPP;
 		}
 
+		err = gve_ptp_start_periodic(priv);
+		if (err) {
+			NL_SET_ERR_MSG_MOD(extack,
+					   "Failed to start periodic clock readings");
+			kernel_config->rx_filter = HWTSTAMP_FILTER_NONE;
+			return err;
+		}
+
 		kernel_config->rx_filter = HWTSTAMP_FILTER_ALL;
+	} else {
+		gve_ptp_stop_periodic(priv);
 	}
 
 	priv->ts_config.rx_filter = kernel_config->rx_filter;
@@ -2639,24 +2654,13 @@ static int gve_init_priv(struct gve_priv *priv)
 	priv->dev_art_ns_h = adapter->dev_art_ns_h;
 	priv->dev_clk_cmd_sync = adapter->dev_clk_cmd_sync;
 
-	if (priv->nic_timestamp_supported) {
-		err = gve_ptp_register(priv);
-		if (err) {
-			dev_warn(&priv->pdev->dev, "Failed to register PTP device: err=%d, continuing without PTP support\n", err);
-			err = 0;
-		}
-	}
-
 	err = gve_setup_device(priv);
 	if (err) {
 		dev_err(&priv->pdev->dev,
 			"Could not setup device: err=%d\n", err);
-		goto unregister_ptp;
+		return err;
 	}
 	return 0;
-
-unregister_ptp:
-	gve_ptp_unregister(priv);
 
 err:
 	return err;
@@ -3049,6 +3053,7 @@ static struct gve_adapter *gve_alloc_adapter(void) {
 		return NULL;
 
 	mutex_init(&adapter->adminq_lock);
+
 	adapter->device_info = kzalloc(sizeof(*adapter->device_info), GFP_KERNEL);
 	if (!adapter->device_info)
 		goto free_adapter;
@@ -3085,7 +3090,7 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (err)
 		goto abort_with_adapter;
 
-	err = pci_enable_ptm(pdev, NULL);
+	err = pci_enable_ptm(pdev);
 	if (err)
 		pci_dbg(pdev, "PCIe PTM is not supported by PCIe bus/controller\n");
 
@@ -3229,6 +3234,14 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (!gve_is_gqi(priv) && !gve_is_qpl(priv))
 		dev->netmem_tx = NETMEM_TX_DMA;
 
+	if (priv->nic_timestamp_supported) {
+		err = gve_init_clock(priv);
+		if (err) {
+			dev_warn(&priv->pdev->dev, "Failed to init clock, continuing without PTP support");
+			err = 0;
+		}
+	}
+
 	err = register_netdev(dev);
 	if (err)
 		goto abort_with_gve_init;
@@ -3240,6 +3253,7 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	return 0;
 
 abort_with_gve_init:
+	gve_teardown_clock(priv);
 	gve_uninit_priv(priv);
 
 abort_with_wq:
@@ -3291,6 +3305,7 @@ static void gve_remove(struct pci_dev *pdev)
 	reg_bar = priv->reg_bar0;
 
 	unregister_netdev(netdev);
+	gve_teardown_clock(priv);
 	gve_uninit_priv(priv);
 	destroy_workqueue(priv->gve_wq);
 	gve_free_adapter(priv->adapter);

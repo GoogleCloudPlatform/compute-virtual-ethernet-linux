@@ -46,7 +46,7 @@ static const char gve_gstrings_main_stats[][ETH_GSTRING_LEN] = {
 	"rx_hsplit_unsplit_pkt",
 	"interface_up_cnt", "interface_down_cnt", "reset_cnt",
 	"page_alloc_fail", "dma_mapping_error", "stats_report_trigger_cnt",
-	"rx_critical_low_bufs",
+	"rx_critical_low_bufs", "ptp_precise_xtstamps", "ptp_fallback_xtstamps",
 };
 
 static const char gve_gstrings_rx_stats[][ETH_GSTRING_LEN] = {
@@ -280,6 +280,8 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	data[i++] = priv->dma_mapping_error;
 	data[i++] = priv->stats_report_trigger_cnt;
 	data[i++] = rx_critical_low_bufs;
+	data[i++] = priv->ptp_precise_xtstamps;
+	data[i++] = priv->ptp_fallback_xtstamps;
 	i = GVE_MAIN_STATS_LEN;
 
 	rx_base_stats_idx = 0;
@@ -999,15 +1001,14 @@ static int gve_get_ts_info(struct net_device *netdev,
 
 	ethtool_op_get_ts_info(netdev, info);
 
-	if (priv->nic_timestamp_supported) {
+	if (gve_is_clock_enabled(priv)) {
 		info->so_timestamping |= SOF_TIMESTAMPING_RX_HARDWARE |
 					 SOF_TIMESTAMPING_RAW_HARDWARE;
 
 		info->rx_filters |= BIT(HWTSTAMP_FILTER_NONE) |
 				    BIT(HWTSTAMP_FILTER_ALL);
 
-		if (priv->ptp)
-			info->phc_index = ptp_clock_index(priv->ptp->clock);
+		info->phc_index = ptp_clock_index(priv->ptp->clock);
 	}
 
 	return 0;

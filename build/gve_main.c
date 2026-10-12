@@ -38,7 +38,7 @@
 #define GVE_DEFAULT_RX_COPYBREAK	(256)
 
 #define DEFAULT_MSG_LEVEL	(NETIF_MSG_DRV | NETIF_MSG_LINK)
-#define GVE_VERSION		 "1.4.10-24-oot"
+#define GVE_VERSION		 "1.0.0-562-63edec6b3b1c-cb3fd259bc3b-oot"
 #define GVE_VERSION_PREFIX	"GVE-"
 
 // Minimum amount of time between queue kicks in msec (10 seconds)
@@ -114,6 +114,23 @@ static void gve_get_stats(struct net_device *dev, struct rtnl_link_stats64 *s)
 			s->tx_bytes += bytes;
 			s->tx_dropped += tx_dropped;
 		}
+	}
+
+	if (priv->adapter->mailbox_mode) {
+		struct gve_hw_link_stats mbx_link_stats;
+		struct gve_adapter *adapter = priv->adapter;
+
+		do {
+			start = u64_stats_fetch_begin(&adapter->mbx_link_stats_sync);
+			mbx_link_stats = adapter->mbx_link_stats;
+		} while (u64_stats_fetch_retry(&adapter->mbx_link_stats_sync, start));
+
+		s->rx_missed_errors = mbx_link_stats.no_rx_buffer_drops;
+		s->rx_errors = mbx_link_stats.rx_errors;
+		s->tx_errors = mbx_link_stats.tx_errors;
+		s->rx_length_errors = mbx_link_stats.rx_length_errors;
+		s->rx_dropped += mbx_link_stats.rx_dropped;
+		s->tx_dropped += mbx_link_stats.tx_dropped;
 	}
 }
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0)) || (RHEL_VERSION_LTE(7,6))
@@ -896,18 +913,10 @@ static int gve_setup_control_plane_resources(struct gve_priv *priv)
 		}
 	}
 
-	if (priv->ptp) {
-		err = gve_ptp_start(priv);
-		if (err) {
-			dev_warn(&priv->pdev->dev, "Failed to start clock, continuing without PTP support");
-			err = 0;
-		}
-	}
-
 	err = gve_init_rss_config(priv, priv->rx_cfg.num_queues);
 	if (err) {
 		dev_err(&priv->pdev->dev, "Failed to init RSS config");
-		goto stop_clock;
+		goto release_db_resources;
 	}
 
 	if (ops->setup_stats_report) {
@@ -922,8 +931,6 @@ static int gve_setup_control_plane_resources(struct gve_priv *priv)
 	gve_set_device_resources_ok(priv->adapter);
 	return 0;
 
-stop_clock:
-	gve_ptp_stop(priv);
 release_db_resources:
 	if (ops->free_db_resources)
 		ops->free_db_resources(priv->adapter);
@@ -942,8 +949,6 @@ static void gve_teardown_control_plane_resources(struct gve_priv *priv)
 {
 	const struct gve_ctrl_ops *ops = priv->adapter->ctrl_ops;
 	int err;
-
-	gve_ptp_stop(priv);
 
 	/* Tell device its resources are being freed */
 	if (gve_get_device_resources_ok(priv->adapter)) {
@@ -973,7 +978,6 @@ static void gve_uninit_priv(struct gve_priv *priv)
 
 	gve_teardown_notify_blocks(priv);
 	gve_teardown_control_plane_resources(priv);
-	gve_ptp_unregister(priv);
 	adapter->ctrl_ops->free_ctrl_plane(adapter);
 	/*
 	 * Free any resources shared with the device only after we have a
@@ -1688,7 +1692,6 @@ static void gve_queues_mem_remove(struct gve_priv *priv)
 	priv->rx = NULL;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 static void gve_turnup_and_check_status(struct gve_priv *priv)
 {
 	const struct gve_ctrl_ops *ops = priv->adapter->ctrl_ops;
@@ -1698,7 +1701,6 @@ static void gve_turnup_and_check_status(struct gve_priv *priv)
 		ops->report_link_status(priv->adapter);
 	gve_handle_link_status(priv);
 }
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
 /* The passed-in queue memory is stored into priv and the queues are made live.
  * No memory is allocated. Passed-in memory is freed on errors.
@@ -2553,7 +2555,7 @@ bool gve_header_split_supported(const struct gve_priv *priv)
 		priv->queue_format == GVE_DQO_RDA_FORMAT && !priv->xdp_prog;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7)
 int gve_set_rx_buf_len_config(struct gve_priv *priv, u32 rx_buf_len,
 			      struct netlink_ext_ack *extack,
 			      struct gve_rx_alloc_rings_cfg *rx_alloc_cfg)
@@ -2599,7 +2601,7 @@ int gve_set_rx_buf_len_config(struct gve_priv *priv, u32 rx_buf_len,
 
 	return 0;
 }
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7) */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
 int gve_set_hsplit_config(struct gve_priv *priv, u8 tcp_data_split,
@@ -2700,6 +2702,7 @@ static int gve_set_ts_config(struct net_device *dev,
 			     struct netlink_ext_ack *extack)
 {
 	struct gve_priv *priv = netdev_priv(dev);
+	int err;
 
 	if (kernel_config->tx_type != HWTSTAMP_TX_OFF) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
@@ -2709,7 +2712,7 @@ static int gve_set_ts_config(struct net_device *dev,
 	}
 
 	if (kernel_config->rx_filter != HWTSTAMP_FILTER_NONE) {
-		if (!gve_is_clock_running(priv)) {
+		if (!gve_is_clock_enabled(priv)) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
 			NL_SET_ERR_MSG_MOD(extack,
 					   "RX timestamping is not supported");
@@ -2718,7 +2721,19 @@ static int gve_set_ts_config(struct net_device *dev,
 			return -EOPNOTSUPP;
 		}
 
+		err = gve_ptp_start_periodic(priv);
+		if (err) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
+			NL_SET_ERR_MSG_MOD(extack,
+					   "Failed to start periodic clock readings");
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4,12,0) */
+			kernel_config->rx_filter = HWTSTAMP_FILTER_NONE;
+			return err;
+		}
+
 		kernel_config->rx_filter = HWTSTAMP_FILTER_ALL;
+	} else {
+		gve_ptp_stop_periodic(priv);
 	}
 
 	priv->ts_config.rx_filter = kernel_config->rx_filter;
@@ -2794,16 +2809,16 @@ static const struct net_device_ops gve_netdev_ops = {
 	.ndo_xdp_xmit		=	gve_xdp_xmit,
 	.ndo_xsk_wakeup		=	gve_xsk_wakeup,
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL) */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0)
-	.ndo_do_ioctl = gve_eth_ioctl,
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) && LINUX_VERSION_CODE < KERNEL_VERSION(6,6,0)
-	
-	.ndo_eth_ioctl = gve_eth_ioctl,
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0)
-	
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0)
 	.ndo_hwtstamp_get	=	gve_get_ts_config,
 	.ndo_hwtstamp_set	=	gve_set_ts_config,
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0) || RHEL_VERSION_GTE(9, 0)
+	.ndo_eth_ioctl = gve_eth_ioctl,
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0)
+	
+	.ndo_do_ioctl = gve_eth_ioctl,
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0) */
+
 };
 
 static void gve_handle_status(struct gve_priv *priv, u32 status)
@@ -3183,24 +3198,13 @@ static int gve_init_priv(struct gve_priv *priv)
 	priv->dev_art_ns_h = adapter->dev_art_ns_h;
 	priv->dev_clk_cmd_sync = adapter->dev_clk_cmd_sync;
 
-	if (priv->nic_timestamp_supported) {
-		err = gve_ptp_register(priv);
-		if (err) {
-			dev_warn(&priv->pdev->dev, "Failed to register PTP device: err=%d, continuing without PTP support\n", err);
-			err = 0;
-		}
-	}
-
 	err = gve_setup_device(priv);
 	if (err) {
 		dev_err(&priv->pdev->dev,
 			"Could not setup device: err=%d\n", err);
-		goto unregister_ptp;
+		return err;
 	}
 	return 0;
-
-unregister_ptp:
-	gve_ptp_unregister(priv);
 
 err:
 	return err;
@@ -3619,6 +3623,7 @@ static struct gve_adapter *gve_alloc_adapter(void) {
 		return NULL;
 
 	mutex_init(&adapter->adminq_lock);
+
 	adapter->device_info = kzalloc(sizeof(*adapter->device_info), GFP_KERNEL);
 	if (!adapter->device_info)
 		goto free_adapter;
@@ -3737,8 +3742,12 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pci_set_drvdata(pdev, dev);
 	dev->ethtool_ops = &gve_ethtool_ops;
 	dev->netdev_ops = &gve_netdev_ops;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 	dev->queue_mgmt_ops = &gve_queue_mgmt_ops;
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
 	dev->stat_ops = &gve_stat_ops;
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
 	/* Set default and supported features.
 	 *
@@ -3809,6 +3818,14 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (!gve_is_gqi(priv) && !gve_is_qpl(priv)) dev->netmem_tx = true;
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(7,2,0) */
 
+	if (priv->nic_timestamp_supported) {
+		err = gve_init_clock(priv);
+		if (err) {
+			dev_warn(&priv->pdev->dev, "Failed to init clock, continuing without PTP support");
+			err = 0;
+		}
+	}
+
 	err = register_netdev(dev);
 	if (err)
 		goto abort_with_gve_init;
@@ -3820,6 +3837,7 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	return 0;
 
 abort_with_gve_init:
+	gve_teardown_clock(priv);
 	gve_uninit_priv(priv);
 
 abort_with_wq:
@@ -3871,6 +3889,7 @@ static void gve_remove(struct pci_dev *pdev)
 	reg_bar = priv->reg_bar0;
 
 	unregister_netdev(netdev);
+	gve_teardown_clock(priv);
 	gve_uninit_priv(priv);
 	destroy_workqueue(priv->gve_wq);
 	gve_free_adapter(priv->adapter);
