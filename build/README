@@ -44,6 +44,7 @@ Device Class  | `0x200`  | Ethernet
 # Supported Kernels
 
 This driver has formally been tested in the following distros:
+* RHEL 9.6
 * RHEL 10.2
 * AlmaLinux 10
 * Ubuntu 26.04
@@ -58,11 +59,28 @@ The source code in this repository should not be used to build production images
 
 ## RPM Package Installation
 
-This driver has been published to an Artifact Repository yum repo found at https://packages.cloud.google.com/yum/repos/gve-el10-stable
+This driver has been published to Artifact Registry yum repositories:
+* **EL9 (e.g. RHEL 9.6):** https://packages.cloud.google.com/yum/repos/gve-el9-stable
+* **EL10 (e.g. RHEL 10.2, AlmaLinux 10):** https://packages.cloud.google.com/yum/repos/gve-el10-stable
 
-The public key for this RPM can be found at https://packages.cloud.google.com/yum/doc/rpm-package-key-v10.gpg
+The public key for these RPMs can be found at https://packages.cloud.google.com/yum/doc/rpm-package-key-v10.gpg
 
-Here is an example .repo file to place in `/etc/yum.repos.d/gve.repo` in EL10 based distros (e.g. RHEL 10.2, AlmaLinux 10, etc...)
+> [!NOTE]
+> Even though RHEL 9.6 is an EL9 distribution, its RPM package in `gve-el9-stable` is signed with the RHEL 10 key (`rpm-package-key-v10.gpg`) rather than the default Google Cloud EL 6–9 key (`rpm-package-key.gpg`).
+
+Here is an example `.repo` file to place in `/etc/yum.repos.d/gve.repo` in EL9 based distros (e.g. RHEL 9.6):
+
+```
+[gve-el9-stable]
+name=Artifact Registry Repository for RHEL 9 for gve with U4 support
+baseurl=https://packages.cloud.google.com/yum/repos/gve-el9-stable
+enabled=1
+gpgcheck=1
+repo_gpgcheck=0
+gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key-v10.gpg
+```
+
+Here is an example `.repo` file to place in `/etc/yum.repos.d/gve.repo` in EL10 based distros (e.g. RHEL 10.2, AlmaLinux 10, etc...):
 
 ```
 [gve-el10-stable]
@@ -75,6 +93,12 @@ gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key-v10.gpg
 ```
 
 You may need to run `sudo dnf install dnf-plugin-artifact-registry` if this is the first Artifact Repository repo in your image.
+
+Then install the driver package:
+
+```bash
+sudo dnf install -y kmod-gve
+```
 
 ## DEB Package Installation
 

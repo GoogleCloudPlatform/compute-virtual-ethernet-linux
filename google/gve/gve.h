@@ -790,6 +790,20 @@ struct gve_rss_config {
 	u32 *hash_lut;
 };
 
+struct gve_hw_link_stats {
+	u64 rx_unicast;
+	u64 rx_multicast;
+	u64 tx_packets;
+	u64 rx_bytes;
+	u64 tx_bytes;
+	u64 rx_errors;
+	u64 tx_errors;
+	u64 rx_dropped;
+	u64 tx_dropped;
+	u64 rx_length_errors;
+	u64 no_rx_buffer_drops;
+};
+
 enum gve_rss_hash_type {
 	GVE_RSS_HASH_IPV4,
 	GVE_RSS_HASH_TCPV4,
@@ -806,7 +820,10 @@ struct gve_ptp {
 	struct ptp_clock_info info;
 	struct ptp_clock *clock;
 	struct gve_priv *priv;
-	bool started;
+	spinlock_t mmio_lock;
+	struct mutex nic_ts_read_lock; /* Protects nic_ts_report */
+	struct gve_nic_ts_report *nic_ts_report;
+	dma_addr_t nic_ts_report_bus;
 };
 
 enum gve_dev_clk_read_type {
@@ -907,6 +924,13 @@ struct gve_adapter {
 	struct workqueue_struct *gve_mbx_wq;
 	struct delayed_work gve_mbx_task;
 	struct work_struct gve_mbx_lsc_event_task;
+
+	/* Mailbox stats */
+	struct gve_hw_link_stats mbx_link_stats;
+	struct delayed_work mbx_link_stats_task;
+	struct u64_stats_sync mbx_link_stats_sync;
+	struct workqueue_struct *stats_wq;
+
 	u32 mbx_irq_db_offset;
 
 	int next_msix_vec;
@@ -1014,6 +1038,8 @@ struct gve_priv {
 	u32 stats_report_trigger_cnt; /* count of device-requested stats-reports since last reset */
 	u32 suspend_cnt; /* count of times suspended */
 	u32 resume_cnt; /* count of times resumed */
+	u32 ptp_precise_xtstamps; /* count of time sandwiches from firmware */
+	u32 ptp_fallback_xtstamps; /* count of time sandwiches from guest */
 	struct workqueue_struct *gve_wq;
 	struct work_struct service_task;
 	struct work_struct stats_report_task;
@@ -1063,13 +1089,10 @@ struct gve_priv {
 	__le64 __iomem *dev_art_ns_l;
 	__le64 __iomem *dev_art_ns_h;
 	__le64 __iomem *dev_clk_cmd_sync;
-	spinlock_t clk_lock;
 	struct gve_ptp *ptp;
 	struct kernel_hwtstamp_config ts_config;
-	struct gve_nic_ts_report *nic_ts_report;
-	dma_addr_t nic_ts_report_bus;
-	struct mutex nic_ts_read_lock; /* Protects nic timestamp reads */
 	u64 last_sync_nic_counter; /* Clock counter from last NIC TS report */
+	unsigned long last_sync_nic_jiffies; /* jiffies at which NIC TS was last sampled */
 };
 
 enum gve_service_task_flags_bit {
@@ -1153,21 +1176,6 @@ static inline void gve_set_do_report_stats(struct gve_adapter *adapter)
 static inline void gve_clear_do_report_stats(struct gve_adapter *adapter)
 {
 	clear_bit(GVE_FLAGS_DO_REPORT_STATS, &adapter->service_task_flags);
-}
-
-static inline bool gve_get_admin_queue_ok(struct gve_adapter *adapter)
-{
-	return test_bit(GVE_FLAGS_ADMIN_QUEUE_OK, &adapter->state_flags);
-}
-
-static inline void gve_set_admin_queue_ok(struct gve_adapter *adapter)
-{
-	set_bit(GVE_FLAGS_ADMIN_QUEUE_OK, &adapter->state_flags);
-}
-
-static inline void gve_clear_admin_queue_ok(struct gve_adapter *adapter)
-{
-	clear_bit(GVE_FLAGS_ADMIN_QUEUE_OK, &adapter->state_flags);
 }
 
 static inline bool gve_get_device_resources_ok(struct gve_adapter *adapter)
@@ -1395,9 +1403,9 @@ static inline bool gve_supports_xdp_xmit(struct gve_priv *priv)
 	}
 }
 
-static inline bool gve_is_clock_running(struct gve_priv *priv)
+static inline bool gve_is_clock_enabled(struct gve_priv *priv)
 {
-	return priv->ptp && priv->ptp->started;
+	return priv->ptp;
 }
 
 void gve_adminq_write_version(u8 __iomem *driver_version_register);
@@ -1525,21 +1533,20 @@ int gve_configure_rss(struct gve_priv *priv,
 void gve_handle_link_status(struct gve_priv *priv);
 /* PTP and timestamping */
 #if IS_ENABLED(CONFIG_PTP_1588_CLOCK)
-int gve_ptp_register(struct gve_priv *priv);
-void gve_ptp_unregister(struct gve_priv *priv);
-int gve_ptp_start(struct gve_priv *priv);
-void gve_ptp_stop(struct gve_priv *priv);
+int gve_init_clock(struct gve_priv *priv);
+void gve_teardown_clock(struct gve_priv *priv);
+int gve_ptp_start_periodic(struct gve_priv *priv);
+void gve_ptp_stop_periodic(struct gve_priv *priv);
 #else /* CONFIG_PTP_1588_CLOCK */
 
-static inline int gve_ptp_register(struct gve_priv *priv)
+static inline int gve_init_clock(struct gve_priv *priv)
 {
 	return 0;
 }
 
-static inline void gve_ptp_unregister(struct gve_priv *priv) { }
-static inline int gve_ptp_start(struct gve_priv *priv) { return 0; }
-static inline void gve_ptp_stop(struct gve_priv *priv) { }
+static inline void gve_teardown_clock(struct gve_priv *priv) { }
 #endif /* CONFIG_PTP_1588_CLOCK */
+bool gve_is_last_sync_nic_counter_valid(struct gve_priv *priv);
 /* report stats handling */
 void gve_handle_report_stats(struct gve_priv *priv);
 /* exported by ethtool.c */

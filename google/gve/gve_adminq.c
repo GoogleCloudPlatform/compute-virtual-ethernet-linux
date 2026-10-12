@@ -22,6 +22,21 @@
 #define GVE_DEVICE_OPTION_TOO_BIG_FMT \
 	"Length of %s option larger than expected. Possible older version of guest driver.\n"
 
+static inline bool gve_get_admin_queue_ok(struct gve_adapter *adapter)
+{
+	return test_bit(GVE_FLAGS_ADMIN_QUEUE_OK, &adapter->state_flags);
+}
+
+static inline void gve_set_admin_queue_ok(struct gve_adapter *adapter)
+{
+	set_bit(GVE_FLAGS_ADMIN_QUEUE_OK, &adapter->state_flags);
+}
+
+static inline void gve_clear_admin_queue_ok(struct gve_adapter *adapter)
+{
+	clear_bit(GVE_FLAGS_ADMIN_QUEUE_OK, &adapter->state_flags);
+}
+
 static struct gve_device_option *
 gve_get_next_option(struct gve_device_descriptor *descriptor,
 		    struct gve_device_option *option)
@@ -353,6 +368,7 @@ int gve_adminq_alloc(struct gve_adapter *adapter)
 		iowrite32be(GVE_DRIVER_STATUS_RUN_MASK,
 			    &reg_bar0->driver_status);
 	}
+	
 	gve_set_admin_queue_ok(adapter);
 	return 0;
 err:
@@ -404,7 +420,6 @@ static void gve_adminq_release(struct gve_adapter *adapter)
 
 void gve_adminq_free(struct gve_adapter *adapter)
 {
-	/* Wait for any in-progress command to complete */
 	mutex_lock(&adapter->adminq_lock);
 	if (!gve_get_admin_queue_ok(adapter))
 		return;
@@ -438,7 +453,7 @@ static bool gve_adminq_wait_for_cmd(struct gve_adapter *adapter, u32 prod_cnt)
 	return false;
 }
 
-static int adminq_status_to_err(struct gve_adapter *adapter, u32 status)
+static int gve_adminq_parse_err(struct gve_adapter *adapter, u32 status)
 {
 	switch (status) {
 	case GVE_ADMINQ_COMMAND_PASSED:
@@ -472,17 +487,6 @@ static int adminq_status_to_err(struct gve_adapter *adapter, u32 status)
 			"parse_aq_err: unknown status code %d\n", status);
 		return -EINVAL;
 	}
-}
-
-static int gve_adminq_parse_err(struct gve_adapter *adapter, u32 status)
-{
-	int err = adminq_status_to_err(adapter, status);
-	if (err != 0 && err != -EAGAIN) {
-		dev_err_ratelimited(&adapter->pdev->dev, "AQ command failed with status %d\n", status);
-		adapter->adminq_cmd_fail++;
-	}
-
-	return err;
 }
 
 static bool gve_adminq_is_retryable(enum gve_adminq_opcodes opcode)
@@ -563,7 +567,7 @@ static int gve_adminq_issue_cmd(struct gve_adapter *adapter,
 
 	lockdep_assert_held(&adapter->adminq_lock);
 	if (!gve_get_admin_queue_ok(adapter))
-		return -EBUSY;
+		return -ENXIO;
 
 	tail = ioread32be(&reg_bar0->adminq_event_counter);
 
@@ -670,6 +674,11 @@ static int gve_adminq_execute_cmd(struct gve_adapter *adapter,
 	int err;
 
 	mutex_lock(&adapter->adminq_lock);
+	if (!gve_get_admin_queue_ok(adapter)) {
+		err = -ENXIO;
+		goto out;
+	}
+
 	tail = ioread32be(&reg_bar0->adminq_event_counter);
 	head = adapter->adminq_prod_cnt;
 	if (tail != head) {

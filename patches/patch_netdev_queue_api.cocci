@@ -12,7 +12,7 @@ static const struct netdev_queue_mgmt_ops gve_queue_mgmt_ops = {
 };
 +#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
-@@
+@ exists @
 identifier dev;
 @@
 static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
@@ -24,14 +24,6 @@ static int gve_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	...
 }
 
-@@
-@@
-+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0))
-static void gve_turnup_and_check_status(struct gve_priv *priv)
-{
-...
-}
-+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)) */
 
 @@
 parameter P1, P2, P3, P4;

@@ -51,7 +51,7 @@ static const char gve_gstrings_main_stats[][ETH_GSTRING_LEN] = {
 	"rx_hsplit_unsplit_pkt",
 	"interface_up_cnt", "interface_down_cnt", "reset_cnt",
 	"page_alloc_fail", "dma_mapping_error", "stats_report_trigger_cnt",
-	"rx_critical_low_bufs",
+	"rx_critical_low_bufs", "ptp_precise_xtstamps", "ptp_fallback_xtstamps",
 };
 
 static const char gve_gstrings_rx_stats[][ETH_GSTRING_LEN] = {
@@ -370,6 +370,8 @@ gve_get_ethtool_stats(struct net_device *netdev,
 	data[i++] = priv->dma_mapping_error;
 	data[i++] = priv->stats_report_trigger_cnt;
 	data[i++] = rx_critical_low_bufs;
+	data[i++] = priv->ptp_precise_xtstamps;
+	data[i++] = priv->ptp_fallback_xtstamps;
 	i = GVE_MAIN_STATS_LEN;
 
 	rx_base_stats_idx = 0;
@@ -674,9 +676,9 @@ static void gve_get_ringparam(struct net_device *netdev,
 	cmd->rx_pending = priv->rx_desc_cnt;
 	cmd->tx_pending = priv->tx_desc_cnt;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7)
 	kernel_cmd->rx_buf_len = priv->rx_cfg.packet_buffer_size;
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7) */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6,8,0))
 	if (!gve_header_split_supported(priv))
@@ -746,11 +748,11 @@ static int gve_set_ringparam(struct net_device *netdev,
 	int err = 0;
 
 	gve_get_curr_alloc_cfgs(priv, &tx_alloc_cfg, &rx_alloc_cfg);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7)
 
 	err = gve_set_rx_buf_len_config(priv, kernel_cmd->rx_buf_len, extack,
 					&rx_alloc_cfg);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7) */
 	if (err)
 		return err;
 
@@ -1274,19 +1276,16 @@ static int gve_get_ts_info(struct net_device *netdev
 	struct gve_priv *priv = netdev_priv(netdev);
 
 	ethtool_op_get_ts_info(netdev, info);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0)
 
-	if (priv->nic_timestamp_supported) {
+	if (gve_is_clock_enabled(priv)) {
 		info->so_timestamping |= SOF_TIMESTAMPING_RX_HARDWARE |
 					 SOF_TIMESTAMPING_RAW_HARDWARE;
 
 		info->rx_filters |= BIT(HWTSTAMP_FILTER_NONE) |
 				    BIT(HWTSTAMP_FILTER_ALL);
 
-		if (priv->ptp)
-			info->phc_index = ptp_clock_index(priv->ptp->clock);
+		info->phc_index = ptp_clock_index(priv->ptp->clock);
 	}
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,9,0) */
 
 	return 0;
 }
@@ -1294,17 +1293,17 @@ static int gve_get_ts_info(struct net_device *netdev
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0))
 #define ETHTOOL_RING_USE_TCP_DATA_SPLIT 0
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(6,8,0) */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5,17,0))
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5,17,0) && RHEL_RELEASE_CODE == 0) || RHEL_VERSION_LT(8, 7)
 #define ETHTOOL_RING_USE_RX_BUF_LEN 0
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(5,17,0) */
+#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(5,17,0) && RHEL_RELEASE_CODE == 0) || RHEL_VERSION_LT(8, 7) */
 const struct ethtool_ops gve_ethtool_ops = {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,7,0)
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS,
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,7,0) */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7)
 	.supported_ring_params = ETHTOOL_RING_USE_TCP_DATA_SPLIT |
 				 ETHTOOL_RING_USE_RX_BUF_LEN,
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0) || RHEL_VERSION_GTE(8, 7) */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(7,2,0)
 				 .op_needs_rtnl = ETHTOOL_OP_NEEDS_RTNL_SCHANNELS |
 				 ETHTOOL_OP_NEEDS_RTNL_SRINGPARAM |

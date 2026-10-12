@@ -35,6 +35,7 @@ static const char *gve_mbx_opcode_to_string(enum gve_mbx_opcode opcode)
 	case GVE_MBX_ADD_FLOW_RULE: return "GVE_MBX_ADD_FLOW_RULE";
 	case GVE_MBX_DEL_FLOW_RULE: return "GVE_MBX_DEL_FLOW_RULE";
 	case GVE_MBX_RESET_FLOW_RULES: return "GVE_MBX_RESET_FLOW_RULES";
+	case GVE_MBX_GET_LINK_STATS: return "GVE_MBX_GET_LINK_STATS";
 	default: return "[invalid opcode]";
 	}
 }
@@ -216,6 +217,9 @@ int gve_send_mbx_msg_wait(struct gve_adapter *adapter, u32 opcode, u16 msg_size,
 	u16 cookie, index = 0;
 	int err;
 
+	if (!gve_get_mbx_queue_ok(adapter))
+		return -EIO;
+
 	if (gve_mbx_in_reset(adapter)) {
 		dev_err_ratelimited(&adapter->pdev->dev,
 				    "Mailbox reset detected, cannot send mbx msg\n");
@@ -227,9 +231,6 @@ int gve_send_mbx_msg_wait(struct gve_adapter *adapter, u32 opcode, u16 msg_size,
 		gve_schedule_reset(adapter->priv);
 		return -EIO;
 	}
-
-	if (!gve_get_mbx_queue_ok(adapter))
-		return -EIO;
 
 	mbx_msg = kzalloc(sizeof(*mbx_msg), GFP_KERNEL);
 	if (!mbx_msg)
@@ -572,6 +573,19 @@ int gve_mbx_report_link_status(struct gve_adapter *adapter)
 	if (err)
 		dev_err(&adapter->pdev->dev,
 			"Failed to send report link status request");
+
+	return err;
+}
+
+int gve_mbx_get_link_stats(struct gve_adapter *adapter)
+{
+	int err;
+
+	err = gve_send_mbx_msg_wait(adapter, GVE_MBX_GET_LINK_STATS, 0,
+				    NULL);
+	if (err)
+		dev_dbg(&adapter->pdev->dev,
+			"Failed to send get link stats request");
 
 	return err;
 }
@@ -1568,6 +1582,41 @@ static int gve_mbx_process_flow_rule_stats(struct gve_adapter *adapter,
 	return 0;
 }
 
+static int gve_mbx_process_link_stats(struct gve_adapter *adapter,
+				      struct gve_dma_mem *recv_msg)
+{
+	struct gve_mbx_get_link_stats_resp *resp = recv_msg->va;
+
+	u64_stats_update_begin(&adapter->mbx_link_stats_sync);
+	adapter->mbx_link_stats.rx_unicast = le64_to_cpu(resp->rx_unicast);
+	adapter->mbx_link_stats.rx_multicast = le64_to_cpu(resp->rx_multicast);
+	adapter->mbx_link_stats.tx_packets = le64_to_cpu(resp->tx_packets);
+	adapter->mbx_link_stats.rx_bytes = le64_to_cpu(resp->rx_bytes);
+	adapter->mbx_link_stats.tx_bytes = le64_to_cpu(resp->tx_bytes);
+	adapter->mbx_link_stats.rx_errors = le64_to_cpu(resp->rx_errors);
+	adapter->mbx_link_stats.tx_errors = le64_to_cpu(resp->tx_errors);
+	adapter->mbx_link_stats.rx_dropped = le64_to_cpu(resp->rx_dropped);
+	adapter->mbx_link_stats.tx_dropped = le64_to_cpu(resp->tx_dropped);
+	adapter->mbx_link_stats.rx_length_errors = le64_to_cpu(resp->rx_length_errors);
+	adapter->mbx_link_stats.no_rx_buffer_drops = le64_to_cpu(resp->no_rx_buffer_drops);
+	u64_stats_update_end(&adapter->mbx_link_stats_sync);
+
+	return 0;
+}
+
+static void gve_mbx_link_stats_task(struct work_struct *work)
+{
+	struct gve_adapter *adapter = container_of(work, struct gve_adapter,
+						   mbx_link_stats_task.work);
+	struct gve_priv *priv = adapter->priv;
+
+	if (priv && priv->link_up)
+		gve_mbx_get_link_stats(adapter);
+
+	queue_delayed_work(adapter->stats_wq, &adapter->mbx_link_stats_task,
+			   msecs_to_jiffies(1000));
+}
+
 static int gve_process_mbx_msg(struct gve_adapter *adapter, u32 opcode,
 			       struct gve_dma_mem *recv_msg)
 {
@@ -1633,6 +1682,9 @@ static int gve_process_mbx_msg(struct gve_adapter *adapter, u32 opcode,
 		break;
 	case GVE_MBX_RESET_FLOW_RULES:
 		/* No processing needed. */
+		break;
+	case GVE_MBX_GET_LINK_STATS:
+		err = gve_mbx_process_link_stats(adapter, recv_msg);
 		break;
 	default:
 		err = -EBADMSG;
@@ -1712,9 +1764,10 @@ static void gve_process_mbx_resp_status(struct gve_adapter *adapter,
 	u16 opcode = le16_to_cpu(recv_desc->cmd_opcode);
 	u16 retval = le16_to_cpu(recv_desc->cmd_retval);
 
-	dev_err(&adapter->pdev->dev,
-		"Error 0x%04X received in mailbox response for opcode %s 0x%04X\n",
-		retval, gve_mbx_opcode_to_string(opcode), opcode);
+	if (opcode != GVE_MBX_GET_LINK_STATS)
+		dev_err(&adapter->pdev->dev,
+			"Error 0x%04X received in mailbox response for opcode %s 0x%04X\n",
+			retval, gve_mbx_opcode_to_string(opcode), opcode);
 
 	/* GVE_MBX_STATUS_UNAVAILABLE_ERROR means that the device is in
 	 * an unrecoverable state. Trigger reset.
@@ -1965,11 +2018,14 @@ void gve_free_mailbox(struct gve_adapter *adapter)
 
 	gve_clear_mbx_queue_ok(adapter);
 
+	cancel_delayed_work_sync(&adapter->gve_mbx_task);
+	cancel_work_sync(&adapter->gve_mbx_lsc_event_task);
+	cancel_delayed_work_sync(&adapter->mbx_link_stats_task);
+
 	err = gve_mbx_reset(adapter);
 	if (err)
 		dev_err(&adapter->pdev->dev, "Failed to reset in mailbox mode\n");
 
-	cancel_delayed_work_sync(&adapter->gve_mbx_task);
 	if (adapter->mbx_rx) {
 		gve_free_mbx_rcv_buffers(adapter);
 		gve_free_mbx_desc_ring(adapter, adapter->mbx_rx);
@@ -1988,6 +2044,10 @@ void gve_free_mailbox(struct gve_adapter *adapter)
 	if (adapter->gve_mbx_wq) {
 		destroy_workqueue(adapter->gve_mbx_wq);
 		adapter->gve_mbx_wq = NULL;
+	}
+	if (adapter->stats_wq) {
+		destroy_workqueue(adapter->stats_wq);
+		adapter->stats_wq = NULL;
 	}
 }
 
@@ -2080,9 +2140,20 @@ static int gve_alloc_mailbox(struct gve_adapter *adapter)
 		goto free_mbx_msg_queue;
 	}
 
+	adapter->stats_wq = alloc_workqueue("gve-stats", 0, 0);
+	if (!adapter->stats_wq) {
+		err = -ENOMEM;
+		dev_err(&adapter->pdev->dev,
+			"Failed to allocate stats workqueue\n");
+		goto free_mbx_cmd_wq;
+	}
+
 	gve_post_initial_rx_bufs(adapter);
 	return 0;
 
+free_mbx_cmd_wq:
+	destroy_workqueue(adapter->gve_mbx_wq);
+	adapter->gve_mbx_wq = NULL;
 free_mbx_msg_queue:
 	gve_free_mbx_msg_queue(adapter);
 free_mbx_rcv_bufs:
@@ -2152,11 +2223,17 @@ int gve_initialize_mbx(struct gve_adapter *adapter)
 	gve_mbx_reg_init(adapter->mbx_tx, adapter->reg_bar0);
 	gve_mbx_reg_init(adapter->mbx_rx, adapter->reg_bar0);
 
+	gve_set_mbx_queue_ok(adapter);
+
 	INIT_DELAYED_WORK(&adapter->gve_mbx_task, gve_mbx_task);
 	queue_delayed_work(adapter->gve_mbx_wq, &adapter->gve_mbx_task, 0);
 
 	INIT_WORK(&adapter->gve_mbx_lsc_event_task, gve_mbx_lsc_event_task);
-	gve_set_mbx_queue_ok(adapter);
+	u64_stats_init(&adapter->mbx_link_stats_sync);
+	INIT_DELAYED_WORK(&adapter->mbx_link_stats_task, gve_mbx_link_stats_task);
+	queue_delayed_work(adapter->stats_wq, &adapter->mbx_link_stats_task,
+			   msecs_to_jiffies(1000));
+
 	//TODO: log to be removed after debug */
 	dev_info(&adapter->pdev->dev, "mailbox queues set up successfully");
 	return 0;
