@@ -953,9 +953,8 @@ static int gve_rx_xsk_dqo(struct napi_struct *napi, struct gve_rx_ring *rx,
 #else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL) */
 	rx->ctx.skb_head = gve_rx_copy_data(priv->dev, napi, xdp->data,
 					    buf_len);
-	int xdp_metasize = xdp->data - xdp->data_meta;
-	if (xdp_metasize > 0)
-		skb_metadata_set(rx->ctx.skb_head, xdp_metasize);
+	if (xdp->data > xdp->data_meta)
+		skb_metadata_set(rx->ctx.skb_head, xdp->data - xdp->data_meta);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(6,14,0)) || defined(KUNIT_KERNEL) */
 	
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,14,0)) || defined(KUNIT_KERNEL)
